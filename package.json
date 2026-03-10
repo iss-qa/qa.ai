@@ -1,0 +1,18 @@
+{
+  "name": "qamind-monorepo",
+  "private": true,
+  "engines": {
+    "node": ">=20.0"
+  },
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "turbo": "^2.1.0",
+    "typescript": "^5.0.0"
+  }
+}

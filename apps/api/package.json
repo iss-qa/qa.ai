@@ -1,0 +1,30 @@
+{
+  "name": "api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format cjs --dts",
+    "start": "node dist/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "@fastify/websocket": "^11.2.0",
+    "@supabase/supabase-js": "^2.98.0",
+    "dotenv": "^17.3.1",
+    "fastify": "^5.8.2",
+    "fastify-plugin": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.37",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

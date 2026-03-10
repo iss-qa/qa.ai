@@ -1,0 +1,8 @@
+{
+    "name": "daemon",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "dev": "../../.venv/bin/python main.py"
+    }
+}

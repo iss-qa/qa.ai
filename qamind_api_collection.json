@@ -1,0 +1,195 @@
+{
+    "info": {
+        "_postman_id": "a1b2c3d4-e5f6-4a5b-b6c7-d8e9f0a1b2c3",
+        "name": "QAMind Backend API",
+        "description": "Collection completa para testes do backend do QAMind (SaaS Layer)",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "Health",
+            "item": [
+                {
+                    "name": "Check Status",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/health",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "health"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Tests",
+            "item": [
+                {
+                    "name": "List Tests",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/tests",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "tests"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Runs",
+            "item": [
+                {
+                    "name": "List Runs",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/runs",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "runs"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Trigger Run (External)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "x-api-key",
+                                "value": "sua-api-key-aqui",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"testCaseId\": \"uuid-do-teste\",\n    \"environment\": \"staging\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/runs/trigger",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "runs",
+                                "trigger"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Billing",
+            "item": [
+                {
+                    "name": "Create Checkout Session",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"planId\": \"pro_plan\",\n    \"organizationId\": \"uuid-da-org\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/billing/checkout",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "billing",
+                                "checkout"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Mock Stripe Webhook",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"type\": \"checkout.session.completed\",\n    \"data\": {\n        \"object\": {\n            \"client_reference_id\": \"uuid-da-org\"\n        }\n    }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/billing/webhook",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "billing",
+                                "webhook"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        }
+    ],
+    "event": [
+        {
+            "listen": "prerequest",
+            "script": {
+                "type": "text/javascript",
+                "exec": [
+                    ""
+                ]
+            }
+        },
+        {
+            "listen": "test",
+            "script": {
+                "type": "text/javascript",
+                "exec": [
+                    ""
+                ]
+            }
+        }
+    ],
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://localhost:3001",
+            "type": "string"
+        }
+    ]
+}
