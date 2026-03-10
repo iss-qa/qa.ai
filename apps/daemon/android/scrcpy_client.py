@@ -195,10 +195,10 @@ class ScrcpyClient:
         pressure_int = int(pressure * 0xffff)
         
         msg = struct.pack(
-            '>BBiIIHHHII',
+            '>BBqIIHHHII',
             0x02,           # type: INJECT_TOUCH_EVENT
             action_code,
-            0,              # pointer_id
+            0,              # pointer_id (q = 8 bytes in v2+)
             x, y,
             self.frame_width, self.frame_height,
             pressure_int,
