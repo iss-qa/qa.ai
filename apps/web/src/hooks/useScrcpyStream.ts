@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
-// Detectar se um NAL unit é IDR frame (keyframe)
-function isIDRFrame(data: Uint8Array): boolean {
-    // Procurar start code 0x00000001 e verificar NAL type
+function isKeyframe(data: Uint8Array): boolean {
     for (let i = 0; i < data.length - 4; i++) {
         if (data[i] === 0 && data[i + 1] === 0 && data[i + 2] === 0 && data[i + 3] === 1) {
             const nalType = data[i + 4] & 0x1F;
-            if (nalType === 5) return true; // IDR slice
+            if (nalType === 5) return true;
         }
     }
     return false;
@@ -42,11 +40,6 @@ export function useScrcpyStream(udid: string | null) {
             error: (e) => console.error('Decoder error:', e),
         });
 
-        decoder.configure({
-            codec: 'avc1.42001E',  // H.264 Baseline Profile
-            optimizeForLatency: true,  // priorizar latência em vez de qualidade
-        });
-
         decoderRef.current = decoder;
 
         // Conectar WebSocket
@@ -55,6 +48,8 @@ export function useScrcpyStream(udid: string | null) {
         const ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
         wsRef.current = ws;
+
+        let configBuffer: Uint8Array | null = null;
 
         ws.onmessage = async (event) => {
             // Mensagem JSON = metadados (device_info)
@@ -73,20 +68,50 @@ export function useScrcpyStream(udid: string | null) {
             // Dados binários = frame H.264
             const frameData = new Uint8Array(event.data);
 
-            // Identificar tipo de frame: IDR (keyframe) vs P-frame
-            // NAL unit type está nos bits 0-4 do byte após o start code
-            const isKeyframe = isIDRFrame(frameData);
+            const isKey = isKeyframe(frameData);
+            
+            // Check se é o pacote de configuração (SPS/PPS)
+            if (frameData.length > 7 && (frameData[4] & 0x1F) === 7) {
+                configBuffer = frameData;
+                
+                if (decoder.state === 'unconfigured') {
+                    const profile = frameData[5].toString(16).padStart(2, '0').toUpperCase();
+                    const compat = frameData[6].toString(16).padStart(2, '0').toUpperCase();
+                    const level = frameData[7].toString(16).padStart(2, '0').toUpperCase();
+                    const codecString = `avc1.${profile}${compat}${level}`;
+                    
+                    try {
+                        decoder.configure({
+                            codec: codecString,
+                            optimizeForLatency: true,
+                        });
+                        console.log("[Scrcpy] Decoder configured:", codecString);
+                    } catch (e) {
+                        console.error("[Scrcpy] Configure failed:", e);
+                    }
+                }
+                return; // Guardamos o SPSP/PPS, não alimentamos o decoder com isso isoladamente
+            }
+
+            let chunkData = frameData;
+            
+            // Sempre prepender o configBuffer antes de um keyframe (IDR) para garantir estabilidade do decodificador
+            if (isKey && configBuffer) {
+                chunkData = new Uint8Array(configBuffer.length + frameData.length);
+                chunkData.set(configBuffer, 0);
+                chunkData.set(frameData, configBuffer.length);
+            }
 
             try {
                 if (decoder.state === 'configured') {
                     decoder.decode(new EncodedVideoChunk({
-                        type: isKeyframe ? 'key' : 'delta',
-                        timestamp: performance.now() * 1000, // microssegundos
-                        data: frameData,
+                        type: isKey ? 'key' : 'delta',
+                        timestamp: performance.now() * 1000,
+                        data: chunkData,
                     }));
                 }
             } catch (e) {
-                // Ignorar erros de decode em frames fora de ordem
+                // Ignore
             }
         };
 

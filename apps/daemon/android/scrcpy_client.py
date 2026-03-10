@@ -4,6 +4,7 @@ import struct
 import os
 import httpx
 import logging
+import secrets
 
 logger = logging.getLogger("scrcpy_client")
 
@@ -34,6 +35,7 @@ class ScrcpyClient:
         self._video_socket = None
         self._control_socket = None
         self._process = None
+        self.scid_hex = f"{secrets.randbelow(0x7FFFFFFF):08x}"
         # Use a unique port per device based on a hash of udid to avoid conflicts
         self.local_port = self.LOCAL_PORT_BASE + (hash(udid) % 1000)
     
@@ -45,12 +47,19 @@ class ScrcpyClient:
         4. Configurar adb forward
         5. Conectar sockets
         """
+        logger.info("[scrcpy_client] 1. _ensure_server_jar()")
         await self._ensure_server_jar()
+        logger.info("[scrcpy_client] 2. _push_server_to_device()")
         await self._push_server_to_device()
+        logger.info("[scrcpy_client] 3. _start_server_on_device()")
         await self._start_server_on_device()
+        logger.info("[scrcpy_client] Aguardando server iniciar...")
         await asyncio.sleep(0.5)  # aguardar server iniciar
+        logger.info("[scrcpy_client] 4. _setup_forward()")
         await self._setup_forward()
+        logger.info("[scrcpy_client] 5. _connect_sockets()")
         await self._connect_sockets()
+        logger.info("[scrcpy_client] start() completo")
     
     async def _ensure_server_jar(self):
         """Baixar o scrcpy-server.jar se não existir."""
@@ -83,6 +92,7 @@ class ScrcpyClient:
             f"CLASSPATH=/data/local/tmp/scrcpy-server.jar "
             f"app_process / com.genymobile.scrcpy.Server "
             f"{SCRCPY_SERVER_VERSION} "
+            f"scid={self.scid_hex} "
             f"tunnel_forward=true "
             f"video_codec=h264 "
             f"max_fps={self.max_fps} "
@@ -101,11 +111,19 @@ class ScrcpyClient:
     
     async def _setup_forward(self):
         """Configurar adb forward para acessar o socket do device localmente."""
+        # Limpar forward anterior se existir
+        await asyncio.create_subprocess_exec(
+            'adb', '-s', self.udid,
+            'forward', '--remove', f'tcp:{self.local_port}',
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        
         proc = await asyncio.create_subprocess_exec(
             'adb', '-s', self.udid,
             'forward', f'tcp:{self.local_port}',
-            f'localabstract:scrcpy',
-            stdout=asyncio.subprocess.PIPE
+            f'localabstract:scrcpy_{self.scid_hex}',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
         await proc.wait()
     
@@ -119,10 +137,15 @@ class ScrcpyClient:
                 # Video socket
                 reader_v, writer_v = await asyncio.open_connection('127.0.0.1', self.local_port)
                 
+                # Control socket (segunda conexão na mesma porta)
+                reader_c, writer_c = await asyncio.open_connection('127.0.0.1', self.local_port)
+                
+                # Consumir dummy byte do video socket
+                _dummy = await reader_v.readexactly(1)
+                
                 # Ler device info do header (64 bytes)
                 device_name_bytes = await reader_v.readexactly(64)   # device name
                 
-                # The video codec id is sometimes included in newer versions before width/height
                 # Let's read 4 bytes for codec
                 codec_id = await reader_v.readexactly(4)
                 
@@ -130,22 +153,21 @@ class ScrcpyClient:
                 height_bytes = await reader_v.readexactly(4)
                 
                 self.device_name = device_name_bytes.decode('utf-8', errors='ignore').rstrip('\x00')
+                self.codec_id = codec_id.decode('utf-8', errors='ignore')
                 self.frame_width = struct.unpack('>I', width_bytes)[0]
                 self.frame_height = struct.unpack('>I', height_bytes)[0]
                 
                 self._video_reader = reader_v
                 self._video_writer = writer_v
-                
-                # Control socket (segunda conexão na mesma porta)
-                reader_c, writer_c = await asyncio.open_connection('127.0.0.1', self.local_port)
                 self._control_writer = writer_c
                 
-                logger.info(f"Conectado: {self.device_name} {self.frame_width}x{self.frame_height}")
+                logger.info(f"Conectado ao espelhamento: {self.device_name} ({self.codec_id}) {self.frame_width}dx{self.frame_height}")
                 return
-            except (ConnectionRefusedError, asyncio.IncompleteReadError):
+            except (ConnectionRefusedError, asyncio.IncompleteReadError) as e:
+                logger.warning(f"Tentativa de conexão falhou ({e}), tentando novamente...")
                 await asyncio.sleep(0.5)
                 
-        raise ConnectionError(f"Failed to connect to scrcpy server on device {self.udid}")
+        raise ConnectionError(f"Falha ao conectar ao servidor scrcpy no device {self.udid} após várias tentativas")
     
     async def read_video_frame(self) -> bytes | None:
         """
@@ -221,5 +243,14 @@ class ScrcpyClient:
                 stderr=asyncio.subprocess.PIPE
             )
             await proc.wait()
+            
+            # Kill the spawned app_process on the device
+            kill_proc = await asyncio.create_subprocess_exec(
+                'adb', '-s', self.udid,
+                'shell', 'pkill', 'app_process',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await kill_proc.wait()
         except Exception as e:
             logger.error(f"Error removing adb forward: {e}")
