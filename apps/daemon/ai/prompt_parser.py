@@ -16,8 +16,8 @@ REGRAS OBRIGATÓRIAS:
 2. Após abrir app: sempre adicionar step de wait (2000ms) para carregar.
 3. Para campos de formulário: step de TAP no campo ANTES do step de TYPE.
 4. Após ação crítica (login, submit): adicionar step de assert para validar.
-5. Para encontrar apps: use o NOME VISÍVEL na tela (não o package name).
-6. Para botões: prefira o texto visível ("Entrar", "Login") sobre IDs técnicos.
+5. Quando disponível, use o CONTEXTO DE UI fornecido para extrair o text, resource-id ou content-desc **EXATO** dos elementos da tela atual, criando uma lista de `target_strategies` forte ("resource-id:...", "text:...", etc.).
+6. Para botões e campos de input, a prioridade de estratégias deve ser: 1) resource-id, 2) content-desc (como hint/placeholder), 3) text exato.
 
 RETORNE SOMENTE JSON VÁLIDO — sem markdown, sem texto antes ou depois:
 {
@@ -148,16 +148,21 @@ class PromptParser:
             logger.error(f"Error parsing prompt with AI: {e}")
             raise ValueError(f"Failed to parse prompt: {str(e)}")
             
-    async def parse_stream(self, prompt: str, platform: str = "android"):
-        logger.info(f"Stream parsing prompt for {platform}: {prompt}")
+    async def parse_stream(self, prompt: str, platform: str = "android", ui_context: str = ""):
+        logger.info(f"Stream parsing prompt for {platform}. With UI Context: {bool(ui_context)}")
+        
+        user_content = f"Opcode da Plataforma: {platform}\n\nInstrução: {prompt}"
+        if ui_context:
+            user_content += f"\n\nCONTEXTO DE UI DA TELA ATUAL:\n```xml\n{ui_context}\n```\n(Use os elementos acima para compor `target_strategies` exatas.)"
+            
         try:
             async with self.client.messages.stream(
-                model="claude-sonnet-4-6",
+                model="claude-3-5-sonnet-20241022",
                 max_tokens=2048,
                 system=PARSE_SYSTEM_PROMPT,
                 messages=[{
                     "role": "user",
-                    "content": f"Opcode da Plataforma: {platform}\n\nInstrução: {prompt}"
+                    "content": user_content
                 }]
             ) as stream:
                 async for text in stream.text_stream:

@@ -112,6 +112,9 @@ class VisionAnalyzer:
 
     async def _url_to_base64(self, url: str) -> str:
         if not url: return ""
+        if url.startswith("data:image"):
+            return url.split(",")[1]
+            
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(url, timeout=10.0)

@@ -42,7 +42,12 @@ class RunOrchestrator:
         self.corrector = auto_corrector
         self.screenshots = screenshot_handler
         self.ws = ws_broadcaster
-        self.db: Client = create_client(supabase_url, supabase_key)
+        self.db: Optional[Client] = None
+        if supabase_url and supabase_key:
+            try:
+                self.db = create_client(supabase_url, supabase_key)
+            except Exception as e:
+                logger.warning(f"Failed to create Supabase client: {e}")
         self.is_cancelled = False
     
     async def cancel(self):
@@ -56,6 +61,7 @@ class RunOrchestrator:
         if platform == "web" and hasattr(self.executor, "start_session"):
             await self.executor.start_session()
         
+        logger.info(f"[EXECUTOR] Run {run_id} started. Total steps: {len(test_case.steps)}")
         await self.ws.broadcast(RunEvent(
             type=EventType.RUN_STARTED,
             run_id=run_id,
@@ -88,6 +94,7 @@ class RunOrchestrator:
                 ))
                 
                 # Trigger Bug Engine asynchronously so we don't block the return
+                logger.info(f"[EXECUTOR] Run {run_id} failed at step {i + 1}.")
                 asyncio.create_task(self._trigger_bug_engine(
                     test_case=test_case,
                     run_id=run_id,
@@ -105,9 +112,11 @@ class RunOrchestrator:
             data={"total_steps": len(test_case.steps)}
         ))
         
+        
         if platform == "web" and hasattr(self.executor, "stop_session"):
             await self.executor.stop_session()
         
+        logger.info(f"[EXECUTOR] Run {run_id} completed successfully.")
         return RunSummary(status="passed", total_steps=len(test_case.steps))
         
     async def _execute_with_ai_loop(self, step: TestStep, run_id: str, step_num: int, history: list) -> StepResult:
@@ -186,6 +195,9 @@ class RunOrchestrator:
         return result
         
     async def _save_step_result(self, run_id: str, result: StepResult):
+        if not self.db:
+            logger.info(f"[EXECUTOR] Skipping DB save for step {result.step_num} (No DB configured)")
+            return
         try:
             # Depending on DB schema, handle mapping. For MVP, wrap in try/except to avoid crashing the runner
             self.db.table("run_steps").insert({
@@ -230,6 +242,10 @@ class RunOrchestrator:
             pdf_gen = PDFGenerator()
             pdf_bytes = await pdf_gen.generate(bug_content, evidence)
             
+            if not self.db:
+                logger.warning("No DB client found. Cannot generate Bug Report.")
+                return
+
             # Upload para Supabase Storage
             # Requires a 'reports' bucket in supabase
             file_path = f"{run_id}/bug_report_{failed_step_num}.pdf"

@@ -5,6 +5,7 @@ import httpx
 import os
 import logging
 import asyncio
+import base64
 
 logger = logging.getLogger("screenshot")
 
@@ -65,6 +66,12 @@ class ScreenshotHandler:
             img_byte_arr = io.BytesIO()
             img.save(img_byte_arr, format='JPEG', quality=self.QUALITY, optimize=True)
             img_byte_arr.seek(0)
+            
+            # Temporary fallback for local testing without Supabase configured
+            if not self.supabase_key or self.supabase_key == "your-supabase-key-here":
+                logger.info(f"Skipping screenshot upload for {step_num}_{phase} (No Supabase key). Returning base64 data URI.")
+                b64_data = base64.b64encode(img_byte_arr.read()).decode('utf-8')
+                return f"data:image/jpeg;base64,{b64_data}"
             
             # 4. Upload to Supabase Storage
             filename = f"{run_id}/step_{step_num}_{phase}.jpg"

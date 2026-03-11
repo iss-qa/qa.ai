@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
 from enum import Enum
+from pydantic import Field
 
 class StepAction(str, Enum):
     TAP = "tap"
@@ -33,3 +34,5 @@ class StepResult(BaseModel):
     error_message: Optional[str] = None
     element_found: bool = False
     retry_count: int = 0
+    strategies_log: list[dict] = Field(default_factory=list)
+    suggestion: Optional[str] = None

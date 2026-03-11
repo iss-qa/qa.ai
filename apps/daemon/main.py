@@ -147,6 +147,7 @@ class ParseRequest(BaseModel):
     prompt: str
     platform: str = "android"
     project_id: str = "default_project"
+    device_udid: Optional[str] = None
 
 @app.post("/api/tests/parse-prompt")
 async def parse_prompt(req: ParseRequest):
@@ -162,8 +163,18 @@ async def parse_prompt(req: ParseRequest):
 
 @app.post("/api/tests/parse-prompt-stream")
 async def parse_prompt_stream(req: ParseRequest):
+    ui_context = ""
+    if req.device_udid:
+        try:
+            d = device_manager_instance.get_device(req.device_udid)
+            if d:
+                ui_context = d.dump_hierarchy()
+                logger.info(f"UI Context retrieved for {req.device_udid}, length: {len(ui_context)}")
+        except Exception as e:
+            logger.warning(f"Failed to get UI context for {req.device_udid}: {e}")
+            
     return StreamingResponse(
-        prompt_parser.parse_stream(req.prompt, req.platform),
+        prompt_parser.parse_stream(req.prompt, req.platform, ui_context=ui_context),
         media_type="text/event-stream"
     )
 
@@ -179,6 +190,8 @@ active_runs = {}
 
 @app.post("/api/runs")
 async def start_run(request: RunAIRequest):
+    import traceback
+    logger.info(f"[EXECUTOR] Recebida a requisição POST /api/runs: run_id={request.run_id}, udid={request.device_udid}, steps={len(request.steps)}")
     try:
         if request.platform == "web":
             executor = WebDriverExecutor(ws_server)
@@ -201,15 +214,15 @@ async def start_run(request: RunAIRequest):
         
         active_runs[request.run_id] = orchestrator
         
-        # We start it asynchronously so the endpoint returns immediately 
-        # But for MVP, it's easier to just await it and return the summary
         test_case = TestCase(steps=request.steps)
-        summary = await orchestrator.run(test_case, request.run_id, request.device_udid, platform=request.platform)
+        # Execute asynchronously so endpoint returns immediately
+        asyncio.create_task(orchestrator.run(test_case, request.run_id, request.device_udid, platform=request.platform))
         
-        del active_runs[request.run_id]
-        return summary.model_dump()
+        return {"status": "started", "run_id": request.run_id}
         
     except Exception as e:
+        traceback.print_exc()
+        logger.error(f"[EXECUTOR] Exception in start_run: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/runs/{run_id}/cancel")

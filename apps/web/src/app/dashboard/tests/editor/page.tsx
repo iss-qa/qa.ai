@@ -1,12 +1,26 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Bot, Play, Save, Smartphone, X, Loader2, ArrowLeft, MousePointerClick, Keyboard, FileText, CheckCircle2, Wifi, Plus, UploadCloud, ChevronLeft, Circle, Copy, Camera } from 'lucide-react';
+import { Bot, Play, Save, Smartphone, Loader2, ArrowLeft, MousePointerClick, Keyboard, CheckCircle2, Wifi, UploadCloud, ChevronLeft, Circle, Copy, Camera, Trash2, Edit2, Check, GripVertical, CopyPlus, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import Link from 'next/link';
 import { useDeviceStore } from '@/store/deviceStore';
 import { ConnectDeviceModal } from '@/components/ConnectDeviceModal';
 import { DevicePreview } from '@/components/DevicePreview';
 import { DeviceToolbar } from '@/components/DeviceToolbar';
+
+export interface TestStep {
+    id: string;
+    action: string;
+    target: string;
+    status: string;
+    value?: string;
+    error_message?: string;
+    strategies_log?: any[];
+    suggestion?: string;
+}
 
 function useDeviceStream(udid: string | null) {
     const [frameSrc, setFrameSrc] = useState<string | null>(null);
@@ -52,42 +66,227 @@ function useDeviceStream(udid: string | null) {
     return frameSrc;
 }
 
+function SortableStepItem({
+    step, index, isEditing, isExecuting,
+    onEdit, onDelete, onDuplicate, onCopy,
+    editingData, setEditingData,
+    onSaveEdit, onCancelEdit
+}: {
+    step: TestStep;
+    index: number;
+    isEditing: boolean;
+    isExecuting: boolean;
+    onEdit: (data: Partial<TestStep>) => void;
+    onDelete: () => void;
+    onDuplicate: (step: TestStep) => void;
+    onCopy: (step: TestStep) => void;
+    editingData: Partial<TestStep>;
+    setEditingData: (data: Partial<TestStep>) => void;
+    onSaveEdit: () => void;
+    onCancelEdit: () => void;
+}) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: step.id });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 2 : 1,
+        opacity: isDragging ? 0.8 : 1
+    };
+    
+    const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+
+    return (
+        <div ref={setNodeRef} style={style} className={`bg-white/5 border ${step.status === 'error' ? 'border-red-500/50' : 'border-white/10'} rounded-lg p-3 hover:bg-white/10 transition-colors group relative ${isDragging ? 'shadow-2xl ring-2 ring-brand' : ''}`}>
+            {!isExecuting && !isEditing && (
+                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity z-10 bg-[#0A0C14]/80 p-0.5 rounded backdrop-blur-sm border border-white/5 shadow-xl">
+                    <button {...attributes} {...listeners} className="p-1.5 cursor-grab active:cursor-grabbing hover:bg-white/10 text-slate-400 rounded-md" title="Mover">
+                        <GripVertical className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => onDuplicate(step)} className="p-1.5 hover:bg-brand/20 text-slate-400 hover:text-brand rounded-md" title="Duplicar">
+                        <CopyPlus className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => onCopy(step)} className="p-1.5 hover:bg-brand/20 text-slate-400 hover:text-brand rounded-md" title="Copiar">
+                        <Copy className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => onEdit(step)} className="p-1.5 hover:bg-brand/20 text-slate-400 hover:text-brand rounded-md" title="Editar">
+                        <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={onDelete} className="p-1.5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded-md" title="Remover">
+                        <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+            )}
+
+            {isEditing ? (
+                <div className="flex flex-col gap-2 relative z-20">
+                    <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                        <span className="text-xs font-bold text-brandLight">Editando Passo {index + 1}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[10px] text-zinc-500 uppercase font-bold">Ação</label>
+                            <select
+                                value={editingData.action}
+                                onChange={e => setEditingData({ ...editingData, action: e.target.value })}
+                                className="bg-black/40 border border-white/10 rounded px-2 py-1.5 text-xs text-white"
+                            >
+                                <option value="tap">TAP</option>
+                                <option value="type">TYPE</option>
+                                <option value="open_app">OPEN_APP</option>
+                                <option value="assert_text">ASSERT_TEXT</option>
+                                <option value="wait">WAIT</option>
+                                <option value="swipe">SWIPE</option>
+                                <option value="press_back">BACK</option>
+                                <option value="press_home">HOME</option>
+                            </select>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[10px] text-zinc-500 uppercase font-bold">Alvo (Target)</label>
+                            <input
+                                value={editingData.target || ''}
+                                onChange={e => setEditingData({ ...editingData, target: e.target.value })}
+                                placeholder="Ex: Botão de Login"
+                                className="bg-black/40 border border-white/10 rounded px-2 py-1.5 text-xs text-white"
+                            />
+                        </div>
+                    </div>
+                    <div className="flex flex-col gap-1 mt-1">
+                        <label className="text-[10px] text-zinc-500 uppercase font-bold">Valor (Value)</label>
+                        <input
+                            value={editingData.value || ''}
+                            onChange={e => setEditingData({ ...editingData, value: e.target.value })}
+                            placeholder="Ex: isaias@gmail.com"
+                            className="bg-black/40 border border-white/10 rounded px-2 py-1.5 text-xs text-white"
+                        />
+                    </div>
+                    <div className="flex gap-2 justify-end mt-2">
+                        <button onClick={onCancelEdit} className="px-3 py-1 text-xs text-zinc-400 hover:text-white transition-colors">Cancelar</button>
+                        <button onClick={onSaveEdit} className="px-3 py-1 bg-green-500/20 text-green-400 border border-green-500/50 text-xs rounded shadow-sm flex items-center gap-1 hover:bg-green-500/30 transition-colors">
+                            <Check className="w-3.5 h-3.5" /> Salvar
+                        </button>
+                    </div>
+                </div>
+            ) : (
+                <div className="flex flex-col gap-2">
+                    <div className="flex items-start gap-3">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${step.status === 'error' ? 'bg-red-500/20 text-red-400 border border-red-500/50' : 'bg-slate-800 text-slate-400'}`}>
+                            {index + 1}
+                        </div>
+                        <div className="flex-1 pr-8">
+                            <div className="flex items-center justify-between">
+                                <span className={`font-bold text-sm flex items-center gap-1.5 ${step.status === 'error' ? 'text-red-400' : 'text-brandLight'}`}>
+                                    {step.action === 'tap' && <MousePointerClick className="w-3.5 h-3.5" />}
+                                    {step.action === 'type' && <Keyboard className="w-3.5 h-3.5" />}
+                                    {step.action === 'open_app' && <Smartphone className="w-3.5 h-3.5" />}
+                                    {(step.action === 'assert_visible' || step.action === 'assert_text') && <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />}
+                                    {step.action.toUpperCase()}
+                                </span>
+                                {step.status === 'success' && <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>}
+                                {step.status === 'running' && <Loader2 className="w-3 h-3 text-brand animate-spin" />}
+                                {step.status === 'error' && <div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"></div>}
+                            </div>
+                            <div className={`text-xs mt-1 font-mono px-2 py-1 rounded border truncate ${step.status === 'running' ? 'bg-brand/10 border-brand/50 text-brandLight' : step.status === 'error' ? 'bg-red-500/10 border-red-500/50 text-red-400' : 'bg-black/30 border-black/20 text-slate-300'}`}>
+                                {step.target}
+                            </div>
+                            {step.value && (
+                                <div className="text-xs text-slate-400 mt-1 pl-1 truncate">
+                                    Valor: <span className="text-white">&quot;{step.value}&quot;</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    
+                    {step.status === 'error' && (
+                        <div className="mt-2 text-xs border-t border-red-500/20 pt-2">
+                            <div className="flex items-start gap-1.5 text-red-400 font-medium mb-1.5">
+                                <XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                                <span className="break-all leading-tight">{step.error_message || "Passo falhou durante a execução"}</span>
+                            </div>
+                            
+                            {step.suggestion && (
+                                <div className="mt-2 bg-brand/10 border border-brand/20 p-2 rounded flex gap-1.5 text-brandLight">
+                                    <Bot className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                                    <span className="leading-tight">{step.suggestion}</span>
+                                </div>
+                            )}
+
+                            {step.strategies_log && step.strategies_log.length > 0 && (
+                                <div className="mt-2.5">
+                                    <button 
+                                        onClick={() => setIsDetailsOpen(!isDetailsOpen)}
+                                        className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-white transition-colors"
+                                    >
+                                        Estruturas Tentadas ({step.strategies_log.length})
+                                        {isDetailsOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                    </button>
+                                    
+                                    {isDetailsOpen && (
+                                        <div className="mt-2 flex flex-col gap-1 max-h-32 overflow-y-auto custom-scrollbar pr-1 bg-black/20 p-2 rounded">
+                                            {step.strategies_log.map((log, i) => (
+                                                <div key={i} className="flex flex-col gap-0.5 border-b border-white/5 pb-1 last:border-0 last:pb-0">
+                                                    <span className="font-mono text-[9px] text-slate-300 break-all leading-tight">{log.name}</span>
+                                                    <span className={`text-[9px] leading-tight ${log.result.includes('sucesso') || log.result.includes('encontrado') ? 'text-green-400' : 'text-red-400/80'}`}>
+                                                        → {log.result}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function TestEditorPage() {
     const [prompt, setPrompt] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
     const [isExecuting, setIsExecuting] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
+    const [editingStepId, setEditingStepId] = useState<string | null>(null);
+    const [editingData, setEditingData] = useState<Partial<TestStep>>({});
     const [aiFeedbackText, setAiFeedbackText] = useState('');
     const { connectedDevice, setConnectedDevice } = useDeviceStore();
     const [isDeviceModalOpen, setIsDeviceModalOpen] = useState(false);
     const streamFrameSrc = useDeviceStream(connectedDevice?.udid || null);
 
-    useEffect(() => {
-        if (!connectedDevice) return;
-        const checkConnection = async () => {
-            try {
-                const res = await fetch('http://localhost:8000/devices');
-                if (res.ok) {
-                    const data = await res.json();
-                    const devices = data.devices || [];
-                    const isStillConnected = devices.some((d: any) => d.udid === connectedDevice.udid);
-                    if (!isStillConnected) setConnectedDevice(null);
-                }
-            } catch (error) { }
-        };
-        const interval = setInterval(checkConnection, 5000);
-        return () => clearInterval(interval);
-    }, [connectedDevice, setConnectedDevice]);
-
-    interface TestStep {
-        id: number;
-        action: string;
-        target: string;
-        status: string;
-        value?: string;
-    }
-
     const [steps, setSteps] = useState<TestStep[]>([]);
+    
+    // Setup Dnd Sensors
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    );
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+        if (over && active.id !== over.id) {
+            setSteps((items) => {
+                const oldIndex = items.findIndex(i => i.id === active.id);
+                const newIndex = items.findIndex(i => i.id === over.id);
+                return arrayMove(items, oldIndex, newIndex);
+            });
+        }
+    };
+
+    const handleDuplicate = (step: TestStep) => {
+        const idx = steps.findIndex(s => s.id === step.id);
+        const newStep: TestStep = { ...step, id: `step-${Date.now()}`, status: 'idle', strategies_log: undefined, error_message: undefined, suggestion: undefined };
+        const newSteps = [...steps];
+        newSteps.splice(idx + 1, 0, newStep);
+        setSteps(newSteps);
+    };
+
+    const handleCopy = (step: TestStep) => {
+        const stepJSON = JSON.stringify(step, null, 2);
+        navigator.clipboard.writeText(stepJSON);
+        // Optional: show a quick toast
+    };
     const EmptyStepsState = () => (
         <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6 opacity-50">
             <div className="text-4xl">🧪</div>
@@ -101,10 +300,22 @@ export default function TestEditorPage() {
     useEffect(() => {
         if (!runId) return;
         const ws = new WebSocket(`ws://localhost:8000/ws/front-${runId}`);
-        ws.onopen = () => console.log('WS Connected for run', runId);
+        ws.onopen = () => {
+            console.log('WS Connected for run', runId, 'URL:', `ws://localhost:8000/ws/front-${runId}`);
+        };
+        ws.onerror = (error) => {
+            console.error('WS Error for run:', runId, error);
+            setIsExecuting(false);
+        };
+        ws.onclose = (event) => {
+            console.log('WS Closed for run', runId, 'Code:', event.code, 'Reason:', event.reason);
+        };
+
         ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
+                console.log("WS Event Received:", data.type, data.data || data);
+                
                 if (data.type === 'run_started') {
                     setIsExecuting(true);
                 } else if (data.type === 'step_started') {
@@ -112,7 +323,13 @@ export default function TestEditorPage() {
                 } else if (data.type === 'step_completed') {
                     setSteps(prev => prev.map((s, i) => i === data.data.step_num - 1 ? { ...s, status: 'success' } : s));
                 } else if (data.type === 'step_failed') {
-                    setSteps(prev => prev.map((s, i) => i === data.data.step_num - 1 ? { ...s, status: 'error' } : s));
+                    setSteps(prev => prev.map((s, i) => i === data.data.step_num - 1 ? { 
+                        ...s, 
+                        status: 'error',
+                        error_message: data.data.error_message,
+                        strategies_log: data.data.strategies_log,
+                        suggestion: data.data.suggestion
+                    } : s));
                 } else if (data.type === 'run_completed' || data.type === 'run_failed' || data.type === 'run_cancelled') {
                     setIsExecuting(false);
                 }
@@ -173,7 +390,7 @@ export default function TestEditorPage() {
                                     console.log("AI Parsed Data:", data);
 
                                     const newSteps = data.steps.map((s: any, idx: number) => ({
-                                        id: idx + 1,
+                                        id: String(idx + 1),
                                         action: s.action,
                                         target: s.target || '',
                                         value: s.value || '',
@@ -214,21 +431,48 @@ export default function TestEditorPage() {
         setSteps(prev => prev.map(s => ({ ...s, status: 'idle' })));
         setIsExecuting(true);
 
+        const payload = {
+            test_case_id: 'test-1',
+            device_udid: connectedDevice.udid,
+            run_id: runId,
+            steps: steps,
+            platform: 'android'
+        };
+
+        console.log("Executar Teste Payload:", payload);
+        
+        let timeoutId = setTimeout(() => {
+            setIsExecuting(current => {
+                if (current) {
+                    console.error("Execução Timeout: 60s excedidos sem finalização.");
+                    alert("A execução excedeu o tempo limite de 60 segundos.");
+                    return false;
+                }
+                return current;
+            });
+        }, 60000);
+
         try {
-            await fetch('http://localhost:8000/api/runs', {
+            const res = await fetch('http://localhost:8000/api/runs', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    test_case_id: 'test-1',
-                    device_udid: connectedDevice.udid,
-                    run_id: runId,
-                    steps: steps,
-                    platform: 'android'
-                })
+                body: JSON.stringify(payload)
             });
+            
+            if (!res.ok) {
+                const errText = await res.text();
+                console.error("Erro na request POST /api/runs:", res.status, errText);
+                setIsExecuting(false);
+                clearTimeout(timeoutId);
+                alert("Falha ao iniciar execução: " + res.status);
+            } else {
+                const responseData = await res.json();
+                console.log("POST /api/runs Response:", responseData);
+            }
         } catch (error) {
             console.error("Execution failed:", error);
             setIsExecuting(false);
+            clearTimeout(timeoutId);
         }
     };
 
@@ -290,37 +534,32 @@ export default function TestEditorPage() {
                                 </div>
                             </div>
                         )}
-                        {steps.length === 0 && !isGenerating ? <EmptyStepsState /> : steps.map((step, index) => (
-                            <div key={step.id} className="bg-white/5 border border-white/10 rounded-lg p-3 hover:bg-white/10 transition-colors group cursor-pointer">
-                                <div className="flex items-start gap-3">
-                                    <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-400 shrink-0">
-                                        {index + 1}
-                                    </div>
-                                    <div className="flex-1">
-                                        <div className="flex items-center justify-between">
-                                            <span className="font-bold text-sm text-brandLight flex items-center gap-1.5">
-                                                {step.action === 'tap' && <MousePointerClick className="w-3.5 h-3.5" />}
-                                                {step.action === 'type' && <Keyboard className="w-3.5 h-3.5" />}
-                                                {step.action === 'open_app' && <Smartphone className="w-3.5 h-3.5" />}
-                                                {step.action === 'assert_visible' && <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />}
-                                                {step.action.toUpperCase()}
-                                            </span>
-                                            {step.status === 'success' && <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>}
-                                            {step.status === 'running' && <Loader2 className="w-3 h-3 text-brand animate-spin" />}
-                                            {step.status === 'error' && <div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"></div>}
-                                        </div>
-                                        <div className={`text-xs mt-1 font-mono px-2 py-1 rounded border truncate ${step.status === 'running' ? 'bg-brand/10 border-brand/50 text-brandLight' : step.status === 'error' ? 'bg-red-500/10 border-red-500/50 text-red-400' : 'bg-black/30 border-black/20 text-slate-300'}`}>
-                                            {step.target}
-                                        </div>
-                                        {step.value && (
-                                            <div className="text-xs text-slate-400 mt-1 pl-1">
-                                                Valor: <span className="text-white">&quot;{step.value}&quot;</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
+                        {steps.length === 0 && !isGenerating ? <EmptyStepsState /> : (
+                            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                                <SortableContext items={steps.map(s => s.id)} strategy={verticalListSortingStrategy}>
+                                    {steps.map((step, index) => (
+                                        <SortableStepItem
+                                            key={step.id}
+                                            step={step}
+                                            index={index}
+                                            isEditing={editingStepId === step.id}
+                                            isExecuting={isExecuting}
+                                            onEdit={(s) => { setEditingStepId(step.id); setEditingData(s); }}
+                                            onDelete={() => setSteps(prev => prev.filter(s => s.id !== step.id))}
+                                            onDuplicate={handleDuplicate}
+                                            onCopy={handleCopy}
+                                            editingData={editingData}
+                                            setEditingData={setEditingData}
+                                            onSaveEdit={() => {
+                                                setSteps(prev => prev.map(s => s.id === step.id ? { ...s, ...editingData } as TestStep : s));
+                                                setEditingStepId(null);
+                                            }}
+                                            onCancelEdit={() => setEditingStepId(null)}
+                                        />
+                                    ))}
+                                </SortableContext>
+                            </DndContext>
+                        )}
                     </div>
 
                     <div className="flex-shrink-0 p-4 border-t border-zinc-800 bg-[#0A0C14]">
