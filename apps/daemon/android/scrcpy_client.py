@@ -6,6 +6,8 @@ import httpx
 import logging
 import secrets
 
+from log_manager import log_manager
+
 logger = logging.getLogger("scrcpy_client")
 
 SCRCPY_SERVER_VERSION = "2.7"
@@ -47,6 +49,7 @@ class ScrcpyClient:
         4. Configurar adb forward
         5. Conectar sockets
         """
+        log_manager.device(f"Scrcpy: iniciando server | max_fps={self.max_fps} | max_width={self.max_width}", udid=self.udid)
         logger.info("[scrcpy_client] 1. _ensure_server_jar()")
         await self._ensure_server_jar()
         logger.info("[scrcpy_client] 2. _push_server_to_device()")
@@ -60,6 +63,10 @@ class ScrcpyClient:
         logger.info("[scrcpy_client] 5. _connect_sockets()")
         await self._connect_sockets()
         logger.info("[scrcpy_client] start() completo")
+        log_manager.device(
+            f"Scrcpy: server iniciado | {self.device_name} | {self.frame_width}x{self.frame_height} | porta={self.local_port}",
+            udid=self.udid
+        )
     
     async def _ensure_server_jar(self):
         """Baixar o scrcpy-server.jar se não existir."""
@@ -67,7 +74,7 @@ class ScrcpyClient:
             return
         
         logger.info(f"Downloading scrcpy-server v{SCRCPY_SERVER_VERSION}...")
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=False) as client:
             response = await client.get(SCRCPY_SERVER_URL, follow_redirects=True)
             with open(SCRCPY_SERVER_PATH, 'wb') as f:
                 f.write(response.content)
@@ -178,12 +185,13 @@ class ScrcpyClient:
             header = await self._video_reader.readexactly(12)
             pts = struct.unpack('>Q', header[:8])[0]
             size = struct.unpack('>I', header[8:12])[0]
-            
+
             # Ler dados do frame
             data = await self._video_reader.readexactly(size)
             return data
         except (asyncio.IncompleteReadError, ConnectionResetError) as e:
             logger.error(f"Error reading video frame: {e}")
+            log_manager.device(f"Scrcpy: erro ao ler frame de vídeo: {e}", udid=self.udid, level="ERROR")
             return None
     
     async def send_touch(self, action: str, x: int, y: int, pressure: float = 1.0):
@@ -193,7 +201,7 @@ class ScrcpyClient:
         """
         action_code = {"down": 0, "up": 1, "move": 2}[action]
         pressure_int = int(pressure * 0xffff)
-        
+
         msg = struct.pack(
             '>BBqIIHHHII',
             0x02,           # type: INJECT_TOUCH_EVENT
@@ -205,8 +213,29 @@ class ScrcpyClient:
             0, 0            # action_button, buttons
         )
         self._control_writer.write(msg)
-        await self._control_writer.drain()
+        # Only drain on down/up to avoid blocking during rapid move events (swipes).
+        # Move events are fire-and-forget: the OS buffer handles the queuing.
+        if action != "move":
+            await self._control_writer.drain()
     
+    async def send_text(self, text: str):
+        """
+        Inject text into the device using adb shell input text.
+        More reliable than scrcpy's INJECT_TEXT for character-by-character input.
+        """
+        # Escape special shell characters
+        escaped = text.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'").replace(' ', '%s').replace('&', '\\&').replace('|', '\\|').replace(';', '\\;').replace('(', '\\(').replace(')', '\\)')
+        proc = await asyncio.create_subprocess_exec(
+            'adb', '-s', self.udid, 'shell', 'input', 'text', escaped,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await proc.wait()
+
+    async def send_backspace(self):
+        """Send backspace key via scrcpy keyevent."""
+        await self.send_keyevent(67)  # KEYCODE_DEL
+
     async def send_keyevent(self, keycode: int, action: str = "down_up"):
         """
         Enviar keyevent (back, home, recents, etc).
@@ -228,6 +257,7 @@ class ScrcpyClient:
     
     async def stop(self):
         """Parar o client e limpar recursos."""
+        log_manager.device(f"Scrcpy: parando server", udid=self.udid)
         if self._process:
             try:
                 self._process.terminate()

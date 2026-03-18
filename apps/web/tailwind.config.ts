@@ -51,6 +51,16 @@ const config: Config = {
         bgSecondary: '#F8FAFC',
         textPrimary: '#1A3A5C',
         textSecondary: '#64748B',
+        brandLight: '#6BB3F0',
+      },
+      keyframes: {
+        progress: {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(400%)' },
+        },
+      },
+      animation: {
+        progress: 'progress 2s ease-in-out infinite',
       },
     },
   },

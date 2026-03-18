@@ -3,6 +3,7 @@ import json
 import logging
 from fastapi import WebSocket, WebSocketDisconnect
 from android.scrcpy_client import ScrcpyClient
+from log_manager import log_manager
 
 logger = logging.getLogger("stream_manager")
 
@@ -23,7 +24,7 @@ class ScreenStreamManager:
         
         # Iniciar scrcpy client se ainda não existir para esse device
         if udid not in self.scrcpy_clients:
-            client = ScrcpyClient(udid, max_fps=60, max_width=1080)
+            client = ScrcpyClient(udid, max_fps=30, max_width=1080)
             try:
                 await client.start()
                 self.scrcpy_clients[udid] = client
@@ -33,7 +34,7 @@ class ScreenStreamManager:
                 return
         
         client = self.scrcpy_clients[udid]
-        
+
         # Enviar metadados iniciais (dimensões e nome do device)
         await websocket.send_text(json.dumps({
             "type": "device_info",
@@ -41,10 +42,11 @@ class ScreenStreamManager:
             "height": client.frame_height,
             "device_name": client.device_name
         }))
-        
+
         # Criar task para relé contínuo de vídeo do scrcpy -> WebSocket
         self.relay_tasks[udid] = asyncio.create_task(self._relay_video(udid, client, websocket))
         logger.info(f"Stream WebSocket connected for device {udid} (Scrcpy)")
+        log_manager.device(f"Stream espelhamento iniciado | WebSocket conectado", udid=udid)
         
         # Loop para receber eventos de input do browser -> scrcpy
         try:
@@ -62,8 +64,15 @@ class ScreenStreamManager:
                         )
                     elif msg_type == "keyevent":
                         await client.send_keyevent(keycode=msg.get("keycode", 0))
-                except json.JSONDecodeError:
-                    pass
+                    elif msg_type == "text":
+                        text = msg.get("text", "")
+                        if text:
+                            await client.send_text(text=text)
+                    elif msg_type == "backspace":
+                        await client.send_backspace()
+                except json.JSONDecodeError as e:
+                    logger.warning(f"JSON inválido recebido do browser para {udid}: {e}")
+                    log_manager.device(f"JSON inválido recebido do browser: {e}", udid=udid, level="WARN")
         except WebSocketDisconnect:
             pass
         finally:
@@ -85,6 +94,7 @@ class ScreenStreamManager:
                 logger.error(f"Error stopping ScrcpyClient for {udid}: {e}")
             
         logger.info(f"Stream WebSocket disconnected and Scrcpy stopped for device {udid}")
+        log_manager.device(f"Stream espelhamento finalizado | WebSocket desconectado", udid=udid)
 
     async def _relay_video(self, udid: str, client: ScrcpyClient, websocket: WebSocket):
         """Lê frames binários NAL H.264 do scrcpy e repassa ao browser."""
@@ -92,19 +102,20 @@ class ScreenStreamManager:
             while udid in self.active_streams:
                 frame_data = await client.read_video_frame()
                 if frame_data is None:
-                    # Stream terminou ou desconectou
                     logger.warning(f"Video stream ended for {udid}")
                     break
-                
-                # Enviar frame H.264 cru (bytes binários)
+
                 try:
                     await websocket.send_bytes(frame_data)
-                except RuntimeError:
+                except RuntimeError as e:
+                    logger.warning(f"WebSocket runtime error ao enviar frame para {udid}: {e}")
+                    log_manager.device(f"WebSocket runtime error no envio de frame: {e}", udid=udid, level="WARN")
                     break
         except asyncio.CancelledError:
             pass
         except Exception as e:
             logger.error(f"Relay video error for {udid}: {e}")
+            log_manager.device(f"Erro no relay de vídeo: {e}", udid=udid, level="ERROR")
         finally:
             await self.disconnect(udid)
 

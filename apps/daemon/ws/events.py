@@ -30,6 +30,14 @@ class EventType(str, Enum):
     AI_ANALYSIS_STARTED = "ai_analysis_started"
     AI_ANALYSIS_COMPLETED = "ai_analysis_completed"
     AI_AUTOCORRECT = "ai_autocorrect"
-    
+
+    # Vision-First
+    STEP_ANALYZING = "step_analyzing"
+    STEP_LOCATED = "step_located"
+    STEP_CONFIRMING = "step_confirming"
+    STEP_FALLBACK = "step_fallback"
+    AMBIGUITY_DETECTED = "ambiguity_detected"
+    AMBIGUITY_RESOLVED = "ambiguity_resolved"
+
     # Erros
     ERROR = "error"

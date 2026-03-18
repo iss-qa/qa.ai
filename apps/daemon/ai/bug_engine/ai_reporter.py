@@ -2,8 +2,12 @@ import anthropic
 import json
 import base64
 import os
+import logging
 import aiohttp
+import httpx
 from ai.bug_engine.models import RunEvidence, BugReportContent
+
+logger = logging.getLogger("ai_reporter")
 
 BUG_REPORT_SYSTEM_PROMPT = """
 Você é um QA Engineer sênior especialista em escrever bug reports claros e acionáveis.
@@ -50,7 +54,10 @@ RETORNE SOMENTE JSON VÁLIDO e certifique-se de que NÃO HÁ TEXTO ALÉM DO JSON
 class AIReporter:
     
     def __init__(self, api_key: str):
-        self.client = anthropic.AsyncAnthropic(api_key=api_key)
+        self.client = anthropic.AsyncAnthropic(
+            api_key=api_key,
+            http_client=httpx.AsyncClient(verify=False)
+        )
         
     async def _url_to_base64(self, url: str) -> str:
         """Download remote url or passthrough B64 data uri"""
@@ -61,13 +68,15 @@ class AIReporter:
             return url.split(",")[1]
             
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
                 async with session.get(url) as resp:
                     resp.raise_for_status()
                     data = await resp.read()
                     return base64.b64encode(data).decode('utf-8')
         except Exception as e:
-            print(f"Failed to fetch image {url}: {e}")
+            logger.error(f"Failed to fetch image {url}: {e}")
+            from log_manager import log_manager
+            log_manager.error(f"Falha ao baixar imagem {url}: {e}", context="BUG_ENGINE", exc=e)
             return ""
 
     async def generate_bug_report(self, evidence: RunEvidence) -> BugReportContent:
@@ -132,7 +141,9 @@ Tentativas de auto-correção: {', '.join(evidence.autocorrect_attempts) if evid
                 suggested_investigation=data.get("suggested_investigation", "")
             )
         except json.JSONDecodeError as e:
-            print(f"Failed to decode Claude JSON: {response_text}")
+            logger.error(f"Failed to decode Claude JSON: {response_text}")
+            from log_manager import log_manager
+            log_manager.error(f"Falha ao decodificar JSON do Claude: {e}", context="BUG_ENGINE", exc=e)
             raise e
             
     def _format_steps_for_prompt(self, evidence: RunEvidence) -> str:

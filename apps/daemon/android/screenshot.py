@@ -54,7 +54,8 @@ class ScreenshotHandler:
     ) -> str:
         try:
             # 1. Capture image (returns PIL Image)
-            img = device.screenshot()
+            # Run in thread to avoid blocking the event loop / scrcpy relay
+            img = await asyncio.to_thread(device.screenshot)
             
             # 2. Resize if necessary
             if img.width > self.MAX_WIDTH:
@@ -83,7 +84,7 @@ class ScreenshotHandler:
                 "Content-Type": "image/jpeg"
             }
             
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(verify=False) as client:
                 res = await client.post(upload_url, headers=headers, content=img_byte_arr.read())
                 res.raise_for_status()
                 

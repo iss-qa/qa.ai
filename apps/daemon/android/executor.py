@@ -5,6 +5,7 @@ import time
 from models.step import TestStep, StepAction, StepResult
 from models.run_event import RunEvent
 from ws.events import EventType
+from log_manager import log_manager
 
 logger = logging.getLogger("executor")
 
@@ -13,6 +14,23 @@ class StepExecutor:
         self.d = device
         self.screenshot_handler = screenshot_handler
         self.ws_broadcaster = ws_broadcaster
+        # Session-level cache: strategy that succeeded → reuse next time same target appears
+        self._strategy_cache: dict[str, str] = {}
+
+    async def _wait_ui_stable(self, timeout: float = 2.0, interval: float = 0.3):
+        """Wait until the UI hierarchy stops changing (debounce)."""
+        prev = ""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            await asyncio.sleep(interval)
+            try:
+                current = self.d.dump_hierarchy()
+                if current == prev:
+                    return
+                prev = current
+            except Exception as e:
+                log_manager.error(f"_wait_ui_stable: dump_hierarchy falhou: {e}", context="EXECUTOR", exc=e)
+                return
     
     async def execute_step(self, run_id: str, step_num: int, step: TestStep) -> StepResult:
         try:
@@ -46,6 +64,7 @@ class StepExecutor:
                 element_found = False
                 logger.error(f"[EXECUTOR] Step {step_num} failed with exception: {e}")
                 traceback.print_exc()
+                log_manager.error(f"Step {step_num} falhou: {e}", context="EXECUTOR", run_id=str(run_id), exc=e)
 
             duration_ms = int((time.time() - start_time) * 1000)
             logger.info(f"[EXECUTOR] Resultado Step {step_num}: status={status}, duration_ms={duration_ms}")
@@ -84,6 +103,7 @@ class StepExecutor:
         except Exception as e:
             logger.error(f"[EXECUTOR] Critical error executing step: {e}")
             traceback.print_exc()
+            log_manager.error(f"Erro crítico no executor step {step_num}: {e}", context="EXECUTOR", run_id=str(run_id), exc=e)
             return StepResult(
                 step_num=step_num,
                 status="failed",
@@ -106,54 +126,124 @@ class StepExecutor:
         return False, []
 
     async def _tap(self, step: TestStep) -> tuple[bool, list]:
-        strategies = step.target_strategies or []
+        strategies = list(step.target_strategies or [])
         target = step.target or ""
-        if target and not strategies:
-            strategies = [f"text:{target}"]
-            
+
+        # Se não houver estratégias da IA, cria fallback inteligente
+        if not strategies and target:
+            strategies = [
+                f"text:{target}",
+                f"resource-id:{target}",
+                f"descriptionContains:{target}",
+                f"textContains:{target}",
+                f"textMatches:(?i).*{target}.*",
+                f"hint:{target}",
+            ]
+
+        # Aplica cache de sessão: se essa estratégia já funcionou antes, coloca na frente
+        cache_key = target.lower().strip() if target else ""
+        if cache_key and cache_key in self._strategy_cache:
+            cached = self._strategy_cache[cache_key]
+            if cached in strategies:
+                strategies.remove(cached)
+            strategies.insert(0, cached)
+            logger.info(f"[CACHE] Usando estratégia cacheada para '{cache_key}': {cached}")
+
         logs = []
         for strategy in strategies:
             try:
                 logs.append({"name": strategy, "result": "verificando..."})
-                if strategy.startswith("text:"):
-                    el = self.d(text=strategy[5:])
-                elif strategy.startswith("resource-id:"):
-                    el = self.d(resourceId=strategy[12:])
-                elif strategy.startswith("hint:") or strategy.startswith("placeholder:"):
-                    val = strategy.split(":", 1)[1]
-                    el = self.d(description=val)
-                elif strategy.startswith("xpath:"):
-                    el = self.d.xpath(strategy[6:])
-                elif strategy.startswith("textContains:"):
-                    el = self.d(textContains=strategy[13:])
-                else:
-                    el = self.d(textContains=strategy)
-                
-                if el.exists(timeout=6):
-                    logs[-1]["result"] = "encontrado com sucesso"
+                el = self._resolve_element(strategy)
+
+                if el and el.exists(timeout=3):
+                    logs[-1]["result"] = "encontrado"
                     el.click()
                     await asyncio.sleep(0.5)
+                    # Salva no cache de sessão
+                    if cache_key:
+                        self._strategy_cache[cache_key] = strategy
                     return True, logs
                 else:
-                    logs[-1]["result"] = "não encontrado após 6s"
+                    logs[-1]["result"] = "ausente"
             except Exception as e:
-                logs[-1]["result"] = f"erro ao tentar: {str(e)}"
+                logs[-1]["result"] = f"erro: {str(e)}"
+                log_manager.error(f"Tap strategy '{strategy}' erro: {e}", context="EXECUTOR", exc=e)
                 continue
-                
-        # Fallback to old basic
-        if target:
-            if ',' in target and target.replace(',', '').replace('.', '').isdigit():
-                logs.append({"name": f"coordinates:{target}", "result": "clique cego"})
-                x, y = map(float, target.split(','))
-                self.d.click(x, y)
-                return True, logs
-                
+
+        # Fallback por coordenadas
+        if target and ',' in target:
+            try:
+                parts = target.split(',')
+                if len(parts) == 2:
+                    x, y = map(float, parts)
+                    logs.append({"name": f"coordinates:{target}", "result": "clique cego"})
+                    self.d.click(x, y)
+                    return True, logs
+            except Exception as e:
+                log_manager.error(f"Fallback coordenadas '{target}' falhou: {e}", context="EXECUTOR", exc=e)
+
         return False, logs
+
+    def _resolve_element(self, strategy: str):
+        """Resolve a strategy string to a UIAutomator2 element selector."""
+        if strategy.startswith("text:"):
+            return self.d(text=strategy[5:])
+        elif strategy.startswith("resource-id:"):
+            return self.d(resourceId=strategy[12:])
+        elif strategy.startswith("description:"):
+            return self.d(description=strategy[12:])
+        elif strategy.startswith("descriptionContains:"):
+            return self.d(descriptionContains=strategy[20:])
+        elif strategy.startswith("descriptionMatches:"):
+            return self.d(descriptionMatches=strategy[19:])
+        elif strategy.startswith("hint:") or strategy.startswith("placeholder:"):
+            hint_value = strategy.split(":", 1)[1]
+            # Try description first (accessibility label), then text (some frameworks expose hint as text)
+            el = self.d(descriptionContains=hint_value)
+            if el.exists(timeout=1):
+                return el
+            el = self.d(textContains=hint_value)
+            if el.exists(timeout=1):
+                return el
+            # Try matching by className + index for common input fields
+            return self.d(descriptionContains=hint_value)
+        elif strategy.startswith("xpath:"):
+            return self.d.xpath(strategy[6:])
+        elif strategy.startswith("textContains:"):
+            return self.d(textContains=strategy[13:])
+        elif strategy.startswith("textMatches:"):
+            return self.d(textMatches=strategy[12:])
+        else:
+            el = self.d(textContains=strategy)
+            if el.exists(timeout=1):
+                return el
+            return self.d(descriptionContains=strategy)
+
+    def get_device_dimensions(self) -> tuple[int, int]:
+        """Return (width, height) of the device screen in pixels."""
+        return self.d.window_size()
+
+    async def tap_coordinates(self, x: int, y: int) -> tuple[bool, list]:
+        """Direct coordinate tap for vision-first flow."""
+        try:
+            self.d.click(x, y)
+            await asyncio.sleep(0.5)
+            logs = [{"name": f"vision_tap:{x},{y}", "result": "sucesso"}]
+            return True, logs
+        except Exception as e:
+            logs = [{"name": f"vision_tap:{x},{y}", "result": f"falha: {str(e)}"}]
+            return False, logs
 
     async def _type_text(self, step: TestStep) -> tuple[bool, list]:
         value = step.value or ""
         self.d.send_keys(value, clear=True)
         await asyncio.sleep(0.4)
+        # Hide keyboard and wait for UI to stabilize
+        try:
+            self.d.hide_keyboard()
+        except Exception as e:
+            log_manager.error(f"hide_keyboard falhou: {e}", context="EXECUTOR", exc=e)
+        await self._wait_ui_stable(timeout=1.5)
         return True, [{"name": "input_text", "result": f"digitou '{value}'"}]
 
     async def _swipe(self, step: TestStep) -> tuple[bool, list]:
@@ -218,16 +308,31 @@ class StepExecutor:
         return True, []
 
     async def _assert_text(self, step: TestStep) -> tuple[bool, list]:
-        value = step.value or ""
-        alternatives = [v.strip() for v in value.split("|")]
+        value = step.value or step.target or ""
+        alternatives = [v.strip() for v in value.split("|") if v.strip()]
         logs = []
         for text in alternatives:
             logs.append({"name": f"text:{text}", "result": "procurando..."})
-            if self.d(textContains=text).exists(timeout=4):
-                logs[-1]["result"] = "texto encontrado"
-                return True, logs
-            else:
-                logs[-1]["result"] = "ausente na tela"
+            try:
+                # 1. Busca ignorando maiúsculas/minúsculas na propriedade 'text'
+                if self.d(textMatches=f"(?i).*{text}.*").exists(timeout=2):
+                    logs[-1]["result"] = "encontrado (text regex)"
+                    return True, logs
+                    
+                # 2. Busca na propriedade de acessibilidade 'description'
+                if self.d(descriptionMatches=f"(?i).*{text}.*").exists(timeout=2):
+                    logs[-1]["result"] = "encontrado (description regex)"
+                    return True, logs
+                    
+                # 3. Fallback tradicional
+                if self.d(textContains=text).exists(timeout=1) or self.d(descriptionContains=text).exists(timeout=1):
+                    logs[-1]["result"] = "encontrado (contains exato)"
+                    return True, logs
+            except Exception as e:
+                logs[-1]["result"] = f"erro na avaliação: {str(e)}"
+                log_manager.error(f"assert_text erro: {e}", context="EXECUTOR", exc=e)
+                
+            logs[-1]["result"] = "ausente na tela"
         return False, logs
 
     async def _assert_element(self, step: TestStep) -> tuple[bool, list]:
@@ -235,11 +340,24 @@ class StepExecutor:
         logs = []
         for s in strategies:
             logs.append({"name": s, "result": "procurando..."})
-            if self.d(text=s).exists(timeout=4) or self.d(resourceId=s).exists(timeout=1):
-                logs[-1]["result"] = "elemento presente"
-                return True, logs
-            else:
+            try:
+                el = self._resolve_element(s)
+                if el and el.exists(timeout=4):
+                    logs[-1]["result"] = "elemento presente"
+                    return True, logs
                 logs[-1]["result"] = "ausente"
+            except Exception as e:
+                logs[-1]["result"] = f"erro: {str(e)}"
+                log_manager.error(f"assert_element strategy '{s}' erro: {e}", context="EXECUTOR", exc=e)
+
+        # Fallback raw target search
+        if step.target and step.target not in strategies:
+            logs.append({"name": f"fallback:{step.target}", "result": "verificando fallback"})
+            if self.d(textContains=step.target).exists(timeout=2) or self.d(descriptionContains=step.target).exists(timeout=2):
+                logs[-1]["result"] = "encontrado pelo fallback"
+                return True, logs
+            logs[-1]["result"] = "ausente"
+
         return False, logs
 
     async def _open_app(self, step: TestStep) -> tuple[bool, list]:
@@ -259,6 +377,7 @@ class StepExecutor:
                     return True, logs
                 except Exception as e:
                     logs[-1]["result"] = f"falha: {str(e)}"
+                    log_manager.error(f"open_app package '{pkg}' falhou: {e}", context="EXECUTOR", exc=e)
                     continue
                     
         # Try discover package by list
@@ -288,8 +407,8 @@ class StepExecutor:
                 await asyncio.sleep(2.0)
                 logs[-1]["result"] = "ícone de app clicado"
                 return True, logs
-        except:
-            pass
+        except Exception as e:
+            log_manager.error(f"open_app launcher fallback '{app_name}' falhou: {e}", context="EXECUTOR", exc=e)
             
         logs[-1]["result"] = "ícone ausente"
         return False, logs

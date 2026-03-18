@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X, Smartphone, Loader2, Usb } from 'lucide-react';
 import { useDeviceStore, Device } from '@/store/deviceStore';
+import { DAEMON_URL } from '@/lib/constants';
 
 interface ConnectDeviceModalProps {
     isOpen: boolean;
@@ -17,7 +18,7 @@ export function ConnectDeviceModal({ isOpen, onClose }: ConnectDeviceModalProps)
         setIsScanning(true);
         setScanResult('idle');
         try {
-            const res = await fetch('http://localhost:8000/devices/scan');
+            const res = await fetch(`${DAEMON_URL}/devices/scan`);
             if (res.ok) {
                 const data = await res.json();
                 const fetchedDevices = data.devices || [];

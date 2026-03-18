@@ -27,32 +27,55 @@ export function useScrcpyStream(udid: string | null) {
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d')!;
 
-        // Inicializar VideoDecoder (WebCodecs API)
-        // Decodifica H.264 em hardware — GPU do computador
-        const decoder = new VideoDecoder({
-            output: (frame) => {
-                // Renderizar frame decodificado no canvas
-                if (canvas) {
-                    ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-                }
-                frame.close(); // liberar memória imediatamente
-            },
-            error: (e) => console.error('Decoder error:', e),
-        });
+        let configBuffer: Uint8Array | null = null;
+        let codecString = '';
+        let waitingForKeyframe = false;
 
+        function createDecoder(): VideoDecoder {
+            return new VideoDecoder({
+                output: (frame) => {
+                    if (canvas) {
+                        ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+                    }
+                    frame.close();
+                },
+                error: (e) => {
+                    console.warn('[Scrcpy] Decoder error, will reset on next keyframe:', e);
+                    waitingForKeyframe = true;
+                },
+            });
+        }
+
+        let decoder = createDecoder();
         decoderRef.current = decoder;
 
-        // Conectar WebSocket
-        const baseUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
-        const wsUrl = `${baseUrl}/stream/${udid}`;
-        const ws = new WebSocket(wsUrl);
+        function resetAndReconfigure() {
+            try {
+                if (decoder.state !== 'closed') {
+                    decoder.close();
+                }
+            } catch { /* ignore */ }
+
+            decoder = createDecoder();
+            decoderRef.current = decoder;
+            waitingForKeyframe = false;
+
+            if (codecString) {
+                try {
+                    decoder.configure({ codec: codecString, optimizeForLatency: true });
+                } catch (e) {
+                    console.error('[Scrcpy] Re-configure failed:', e);
+                }
+            }
+        }
+
+        // Connect WebSocket
+        const baseUrl = process.env.NEXT_PUBLIC_DAEMON_URL?.replace('http', 'ws') || 'ws://localhost:8001';
+        const ws = new WebSocket(`${baseUrl}/stream/${udid}`);
         ws.binaryType = 'arraybuffer';
         wsRef.current = ws;
 
-        let configBuffer: Uint8Array | null = null;
-
-        ws.onmessage = async (event) => {
-            // Mensagem JSON = metadados (device_info)
+        ws.onmessage = (event) => {
             if (typeof event.data === 'string') {
                 try {
                     const msg = JSON.parse(event.data);
@@ -61,41 +84,61 @@ export function useScrcpyStream(udid: string | null) {
                         canvas.width = msg.width;
                         canvas.height = msg.height;
                     }
-                } catch (e) { /* ignore */ }
+                } catch { /* ignore */ }
                 return;
             }
 
-            // Dados binários = frame H.264
             const frameData = new Uint8Array(event.data);
-
             const isKey = isKeyframe(frameData);
-            
-            // Check se é o pacote de configuração (SPS/PPS)
+
+            // SPS/PPS config packet
             if (frameData.length > 7 && (frameData[4] & 0x1F) === 7) {
                 configBuffer = frameData;
-                
                 if (decoder.state === 'unconfigured') {
                     const profile = frameData[5].toString(16).padStart(2, '0').toUpperCase();
                     const compat = frameData[6].toString(16).padStart(2, '0').toUpperCase();
                     const level = frameData[7].toString(16).padStart(2, '0').toUpperCase();
-                    const codecString = `avc1.${profile}${compat}${level}`;
-                    
+                    codecString = `avc1.${profile}${compat}${level}`;
                     try {
-                        decoder.configure({
-                            codec: codecString,
-                            optimizeForLatency: true,
-                        });
-                        console.log("[Scrcpy] Decoder configured:", codecString);
+                        decoder.configure({ codec: codecString, optimizeForLatency: true });
+                        console.log('[Scrcpy] Decoder configured:', codecString);
                     } catch (e) {
-                        console.error("[Scrcpy] Configure failed:", e);
+                        console.error('[Scrcpy] Configure failed:', e);
                     }
                 }
-                return; // Guardamos o SPSP/PPS, não alimentamos o decoder com isso isoladamente
+                return;
+            }
+
+            // Recovery: if decoder is broken, reset on next keyframe
+            if (decoder.state === 'closed' || waitingForKeyframe) {
+                if (isKey && configBuffer) {
+                    resetAndReconfigure();
+                } else {
+                    return; // skip until keyframe
+                }
+            }
+
+            // If decode queue is growing too large, reset decoder instead of
+            // dropping individual frames (which causes H.264 corruption).
+            // reset() discards all pending work cleanly, then we wait for
+            // the next keyframe to resume.
+            if (decoder.state === 'configured' && decoder.decodeQueueSize > 10) {
+                console.warn('[Scrcpy] Decode queue overflow, resetting decoder');
+                try {
+                    decoder.reset();
+                    // Re-configure immediately
+                    if (codecString) {
+                        decoder.configure({ codec: codecString, optimizeForLatency: true });
+                    }
+                } catch {
+                    // If reset fails, full recreation
+                    resetAndReconfigure();
+                }
+                waitingForKeyframe = true;
+                return;
             }
 
             let chunkData = frameData;
-            
-            // Sempre prepender o configBuffer antes de um keyframe (IDR) para garantir estabilidade do decodificador
             if (isKey && configBuffer) {
                 chunkData = new Uint8Array(configBuffer.length + frameData.length);
                 chunkData.set(configBuffer, 0);
@@ -111,7 +154,8 @@ export function useScrcpyStream(udid: string | null) {
                     }));
                 }
             } catch (e) {
-                // Ignore
+                console.warn('[Scrcpy] Decode error:', e);
+                waitingForKeyframe = true;
             }
         };
 
@@ -119,17 +163,27 @@ export function useScrcpyStream(udid: string | null) {
             if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
                 ws.close();
             }
-            if (decoder.state !== 'closed') {
-                decoder.close();
-            }
+            try {
+                if (decoder.state !== 'closed') {
+                    decoder.close();
+                }
+            } catch { /* ignore */ }
         };
     }, [udid]);
 
-    // Funções de input: enviar eventos para o device
+    // Throttle move events to ~30fps
+    const lastMoveRef = useRef<number>(0);
+
     const sendTouch = useCallback((action: 'down' | 'up' | 'move', x: number, y: number, pressure: number = 1.0) => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({ type: 'touch', action, x, y, pressure }));
+        if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+        if (action === 'move') {
+            const now = performance.now();
+            if (now - lastMoveRef.current < 33) return;
+            lastMoveRef.current = now;
         }
+
+        wsRef.current.send(JSON.stringify({ type: 'touch', action, x, y, pressure }));
     }, []);
 
     const sendKeyevent = useCallback((keycode: number) => {
@@ -138,5 +192,17 @@ export function useScrcpyStream(udid: string | null) {
         }
     }, []);
 
-    return { canvasRef, deviceDimensions, sendTouch, sendKeyevent };
+    const sendText = useCallback((text: string) => {
+        if (wsRef.current?.readyState === WebSocket.OPEN && text) {
+            wsRef.current.send(JSON.stringify({ type: 'text', text }));
+        }
+    }, []);
+
+    const sendBackspace = useCallback(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'backspace' }));
+        }
+    }, []);
+
+    return { canvasRef, deviceDimensions, sendTouch, sendKeyevent, sendText, sendBackspace };
 }

@@ -2,6 +2,7 @@
 
 import { Smartphone, Monitor, Cpu, Plus, Wifi, X, Loader2, CheckCircle2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { DAEMON_URL } from '@/lib/constants';
 
 // API Interface
 interface Device {
@@ -21,7 +22,7 @@ export default function DevicesPage() {
     // Fetch devices on mount and periodically
     const fetchDevices = async () => {
         try {
-            const res = await fetch('http://localhost:8000/devices');
+            const res = await fetch(`${DAEMON_URL}/devices`);
             if (res.ok) {
                 const data = await res.json();
                 setDevices(data.devices || []);
@@ -48,7 +49,7 @@ export default function DevicesPage() {
 
         try {
             // Trigger a manual fetch to see if ADB sees it now
-            const res = await fetch('http://localhost:8000/devices/scan');
+            const res = await fetch(`${DAEMON_URL}/devices/scan`);
             if (res.ok) {
                 const data = await res.json();
                 setDevices(data.devices || []);

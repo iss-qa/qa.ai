@@ -2,10 +2,31 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Folder, FlaskConical, Smartphone, Bug } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { LayoutDashboard, Folder, FlaskConical, Smartphone, Bug, BookOpen, ScrollText } from 'lucide-react';
+import { DAEMON_URL } from '@/lib/constants';
 
 export function Sidebar() {
     const pathname = usePathname();
+    const [errorCount, setErrorCount] = useState(0);
+
+    // Poll error count for badge
+    useEffect(() => {
+        const fetchErrorCount = async () => {
+            try {
+                const res = await fetch(`${DAEMON_URL}/api/logs/error-count`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setErrorCount(data.count || 0);
+                }
+            } catch {
+                // Daemon not reachable, ignore
+            }
+        };
+        fetchErrorCount();
+        const interval = setInterval(fetchErrorCount, 30000); // every 30s
+        return () => clearInterval(interval);
+    }, []);
 
     const links = [
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -13,6 +34,8 @@ export function Sidebar() {
         { href: '/dashboard/tests', label: 'Testes', icon: FlaskConical },
         { href: '/dashboard/devices', label: 'Dispositivos', icon: Smartphone },
         { href: '/dashboard/bugs', label: 'Relatórios', icon: Bug },
+        { href: '/dashboard/logs', label: 'Logs', icon: ScrollText, badge: errorCount > 0 ? errorCount : undefined },
+        { href: '/docs', label: 'Docs', icon: BookOpen },
     ];
 
     return (
@@ -26,18 +49,23 @@ export function Sidebar() {
                     const isActive = pathname === link.href || (link.href !== '/dashboard' && pathname?.startsWith(link.href));
                     const Icon = link.icon;
                     return (
-                        <Link 
+                        <Link
                             key={link.href}
-                            href={link.href} 
-                            prefetch={true} 
+                            href={link.href}
+                            prefetch={true}
                             className={`px-3 py-2.5 rounded-lg flex items-center gap-3 transition-colors text-sm font-medium ${
-                                isActive 
-                                ? 'bg-brand/10 text-brand' 
+                                isActive
+                                ? 'bg-brand/10 text-brand'
                                 : 'text-slate-400 hover:bg-white/5 hover:text-white'
                             }`}
                         >
                             <Icon className="w-4 h-4" />
                             {link.label}
+                            {'badge' in link && link.badge !== undefined && (
+                                <span className="ml-auto bg-red-500/20 text-red-400 text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                                    {link.badge > 99 ? '99+' : link.badge}
+                                </span>
+                            )}
                         </Link>
                     )
                 })}

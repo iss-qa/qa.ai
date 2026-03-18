@@ -3,8 +3,11 @@ from playwright.async_api import async_playwright
 import tempfile
 import os
 import base64
+import logging
 import aiohttp
 from ai.bug_engine.models import RunEvidence, BugReportContent
+
+logger = logging.getLogger("pdf_generator")
 
 class PDFGenerator:
     
@@ -58,7 +61,9 @@ class PDFGenerator:
                          data = await resp.read()
                          result[str(s.step_num)] = base64.b64encode(data).decode('utf-8')
                  except Exception as e:
-                     print(f"Failed to fetch screenshot for step {s.step_num}: {e}")
+                     logger.error(f"Failed to fetch screenshot for step {s.step_num}: {e}")
+                     from log_manager import log_manager
+                     log_manager.error(f"Falha ao baixar screenshot do step {s.step_num}: {e}", context="BUG_ENGINE", exc=e)
         return result
     
     def _render_html(
@@ -80,5 +85,8 @@ class PDFGenerator:
                  evidence=evidence,
                  screenshots=screenshots_b64
              )
-        except Exception:
+        except Exception as e:
+             logger.error(f"Falha ao renderizar template HTML do bug report: {e}")
+             from log_manager import log_manager
+             log_manager.error(f"Falha ao renderizar template HTML: {e}", context="BUG_ENGINE", exc=e)
              return f"<html><body><h1>{bug_report.title}</h1><p>{bug_report.summary}</p></body></html>"

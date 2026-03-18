@@ -1,15 +1,23 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { Bot, Play, Save, Smartphone, Loader2, ArrowLeft, MousePointerClick, Keyboard, CheckCircle2, Wifi, UploadCloud, ChevronLeft, Circle, Copy, Camera, Trash2, Edit2, Check, GripVertical, CopyPlus, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Bot, Play, Save, Smartphone, Loader2, ArrowLeft, MousePointerClick, Keyboard, CheckCircle2, Wifi, UploadCloud, ChevronLeft, Circle, Copy, Camera, Trash2, Edit2, Check, GripVertical, CopyPlus, XCircle, ChevronDown, ChevronUp, Search, Crosshair, RefreshCw, AlertTriangle, Square, MoveHorizontal } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { DAEMON_URL } from '@/lib/constants';
 import { useDeviceStore } from '@/store/deviceStore';
+import { useVisionStore } from '@/store/visionStore';
+import { useRecordingStore, type RecordedStep } from '@/store/recordingStore';
 import { ConnectDeviceModal } from '@/components/ConnectDeviceModal';
-import { DevicePreview } from '@/components/DevicePreview';
+import { DevicePreview, type RecordedInteraction } from '@/components/DevicePreview';
 import { DeviceToolbar } from '@/components/DeviceToolbar';
+import { VisualGuide } from '@/components/VisualGuide';
+import { ExecutionToast } from '@/components/ExecutionToast';
+import { AmbiguityDialog } from '@/components/AmbiguityDialog';
+import { SaveRecordingModal } from '@/components/SaveRecordingModal';
 
 export interface TestStep {
     id: string;
@@ -22,49 +30,7 @@ export interface TestStep {
     suggestion?: string;
 }
 
-function useDeviceStream(udid: string | null) {
-    const [frameSrc, setFrameSrc] = useState<string | null>(null);
-    const wsRef = useRef<WebSocket | null>(null);
-    const pendingRef = useRef<string | null>(null);
-    const rafRef = useRef<number | null>(null);
 
-    useEffect(() => {
-        if (!udid) {
-            setFrameSrc(null);
-            return;
-        }
-
-        const ws = new WebSocket(`ws://localhost:8000/stream/${udid}`);
-        ws.binaryType = 'arraybuffer';
-        wsRef.current = ws;
-
-        ws.onmessage = (event) => {
-            const blob = new Blob([event.data], { type: 'image/jpeg' });
-            const url = URL.createObjectURL(blob);
-
-            if (pendingRef.current) URL.revokeObjectURL(pendingRef.current);
-            pendingRef.current = url;
-
-            if (rafRef.current) cancelAnimationFrame(rafRef.current);
-            rafRef.current = requestAnimationFrame(() => {
-                setFrameSrc(url);
-                pendingRef.current = null;
-            });
-        };
-
-        ws.onerror = (error) => {
-            console.error("Device stream WebSocket error:", error);
-        }
-
-        return () => {
-            ws.close();
-            if (rafRef.current) cancelAnimationFrame(rafRef.current);
-            if (pendingRef.current) URL.revokeObjectURL(pendingRef.current);
-        };
-    }, [udid]);
-
-    return frameSrc;
-}
 
 function SortableStepItem({
     step, index, isEditing, isExecuting,
@@ -182,9 +148,13 @@ function SortableStepItem({
                                     {(step.action === 'assert_visible' || step.action === 'assert_text') && <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />}
                                     {step.action.toUpperCase()}
                                 </span>
-                                {step.status === 'success' && <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>}
-                                {step.status === 'running' && <Loader2 className="w-3 h-3 text-brand animate-spin" />}
-                                {step.status === 'error' && <div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"></div>}
+                                {step.status === 'success' && <div className="flex items-center gap-1 text-green-400"><CheckCircle2 className="w-3.5 h-3.5" /><span className="text-[9px] font-bold uppercase">Passou</span></div>}
+                                {step.status === 'running' && <Loader2 className="w-4 h-4 text-brand animate-spin flex-shrink-0" />}
+                                {step.status === 'error' && <div className="flex items-center gap-1 text-red-400"><XCircle className="w-3.5 h-3.5" /><span className="text-[9px] font-bold uppercase">Falhou</span></div>}
+                                {step.status === 'analyzing' && <div className="flex items-center gap-1 text-blue-400"><Search className="w-3.5 h-3.5 animate-pulse" /><span className="text-[9px] font-bold uppercase">Analisando</span></div>}
+                                {step.status === 'located' && <div className="flex items-center gap-1 text-teal-400"><Crosshair className="w-3.5 h-3.5" /><span className="text-[9px] font-bold uppercase">Localizado</span></div>}
+                                {step.status === 'confirming' && <div className="flex items-center gap-1 text-blue-400"><RefreshCw className="w-3.5 h-3.5 animate-spin" /><span className="text-[9px] font-bold uppercase">Confirmando</span></div>}
+                                {step.status === 'fallback' && <div className="flex items-center gap-1 text-yellow-400"><AlertTriangle className="w-3.5 h-3.5" /><span className="text-[9px] font-bold uppercase">Fallback</span></div>}
                             </div>
                             <div className={`text-xs mt-1 font-mono px-2 py-1 rounded border truncate ${step.status === 'running' ? 'bg-brand/10 border-brand/50 text-brandLight' : step.status === 'error' ? 'bg-red-500/10 border-red-500/50 text-red-400' : 'bg-black/30 border-black/20 text-slate-300'}`}>
                                 {step.target}
@@ -197,6 +167,13 @@ function SortableStepItem({
                         </div>
                     </div>
                     
+                    {/* Vision analyzing progress bar */}
+                    {step.status === 'analyzing' && (
+                        <div className="mt-2 h-0.5 bg-blue-500/20 rounded-full overflow-hidden">
+                            <div className="h-full bg-blue-500 w-1/3 animate-[progress_2s_ease-in-out_infinite] rounded-full" />
+                        </div>
+                    )}
+
                     {step.status === 'error' && (
                         <div className="mt-2 text-xs border-t border-red-500/20 pt-2">
                             <div className="flex items-start gap-1.5 text-red-400 font-medium mb-1.5">
@@ -244,6 +221,8 @@ function SortableStepItem({
 }
 
 export default function TestEditorPage() {
+    const searchParams = useSearchParams();
+    const currentProjectId = searchParams.get('projectId');
     const [prompt, setPrompt] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
     const [isExecuting, setIsExecuting] = useState(false);
@@ -253,7 +232,172 @@ export default function TestEditorPage() {
     const [aiFeedbackText, setAiFeedbackText] = useState('');
     const { connectedDevice, setConnectedDevice } = useDeviceStore();
     const [isDeviceModalOpen, setIsDeviceModalOpen] = useState(false);
-    const streamFrameSrc = useDeviceStream(connectedDevice?.udid || null);
+    const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
+
+    // Recording state
+    const {
+        isRecording: isRecordingActive,
+        recordedSteps,
+        startTime: recordingStartTime,
+        elapsedSeconds,
+        showSaveModal,
+        startRecording: startRecordingStore,
+        stopRecording: stopRecordingStore,
+        addInteraction,
+        addKeyevent: addRecordingKeyevent,
+        addTextInput,
+        updateStepElement,
+        setElapsedSeconds,
+        setShowSaveModal,
+        clearRecording,
+    } = useRecordingStore();
+
+    // Recording timer
+    useEffect(() => {
+        if (!isRecordingActive || !recordingStartTime) return;
+        const interval = setInterval(() => {
+            setElapsedSeconds(Math.floor((Date.now() - recordingStartTime) / 1000));
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [isRecordingActive, recordingStartTime, setElapsedSeconds]);
+
+    const handleRecordingInteraction = useCallback(async (interaction: RecordedInteraction) => {
+        if (!isRecordingActive || !connectedDevice) return;
+
+        const step = addInteraction(interaction);
+
+        // Enrich step with element info from daemon (async, non-blocking)
+        try {
+            const res = await fetch(`${DAEMON_URL}/recordings/enrich-step`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    udid: connectedDevice.udid,
+                    x: interaction.startX,
+                    y: interaction.startY,
+                    action: interaction.type,
+                }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.element_info) {
+                    updateStepElement(step.id, data.element_info);
+                }
+            }
+        } catch (e) {
+            // Enrichment is best-effort, don't block recording
+        }
+    }, [isRecordingActive, connectedDevice, addInteraction, updateStepElement]);
+
+    const handleRecordingTextInput = useCallback((text: string) => {
+        if (!isRecordingActive) return;
+        addTextInput(text);
+    }, [isRecordingActive, addTextInput]);
+
+    const handleStartRecording = async () => {
+        if (!connectedDevice) {
+            alert('Conecte um dispositivo primeiro!');
+            return;
+        }
+        startRecordingStore();
+        setIsRecording(true);
+
+        // Notify daemon
+        try {
+            await fetch(`${DAEMON_URL}/recordings/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ udid: connectedDevice.udid }),
+            });
+        } catch (e) {
+            console.error('Failed to notify daemon about recording start:', e);
+        }
+    };
+
+    const handleStopRecording = async () => {
+        stopRecordingStore();
+        setIsRecording(false);
+
+        // Notify daemon
+        if (connectedDevice) {
+            try {
+                await fetch(`${DAEMON_URL}/recordings/stop`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ udid: connectedDevice.udid }),
+                });
+            } catch (e) {
+                console.error('Failed to notify daemon about recording stop:', e);
+            }
+        }
+    };
+
+    const handleSaveRecording = async (testName: string, projectId: string) => {
+        // Convert recorded steps to TestStep format and load into editor
+        const newSteps: TestStep[] = recordedSteps.map((rs, idx) => ({
+            id: rs.id,
+            action: rs.action === 'back' ? 'press_back' : rs.action === 'home' ? 'press_home' : rs.action,
+            target: rs.elementInfo?.text || rs.elementInfo?.resource_id || rs.target,
+            value: rs.value || '',
+            status: 'idle',
+        }));
+
+        // Persist to Supabase
+        const stepsForDb = recordedSteps.map((rs, idx) => ({
+            id: rs.id,
+            num: idx + 1,
+            action: rs.action === 'back' ? 'press_back' : rs.action === 'home' ? 'press_home' : rs.action,
+            target: rs.elementInfo?.text || rs.elementInfo?.resource_id || rs.target || '',
+            value: rs.value || '',
+            description: rs.description || '',
+        }));
+
+        try {
+            const savePayload: Record<string, unknown> = {
+                name: testName,
+                description: `Teste gravado com ${recordedSteps.length} passos`,
+                steps: stepsForDb,
+                tags: ['recorded'],
+            };
+            if (projectId && projectId !== 'default') {
+                savePayload.project_id = projectId;
+            }
+
+            const res = await fetch(`${DAEMON_URL}/api/tests/save`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(savePayload),
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({ detail: res.statusText }));
+                console.error('Failed to save test:', errData);
+                alert('Erro ao salvar teste: ' + (errData.detail || res.statusText));
+            }
+        } catch (e) {
+            console.error('Failed to save test:', e);
+            alert('Erro ao salvar teste. Verifique se o daemon esta rodando.');
+        }
+
+        setSteps(newSteps);
+        const newRunId = `run-rec-${Date.now()}`;
+        setRunId(newRunId);
+        setShowSaveModal(false);
+        clearRecording();
+    };
+
+    const formatRecordingTime = (seconds: number) => {
+        const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+        const s = (seconds % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    };
+
+    const LLM_MODELS = [
+        { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Alias)' },
+        { value: 'claude-3-7-sonnet-20250219', label: 'Claude 3.7 Sonnet' },
+        { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
+        { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
+    ];
 
     const [steps, setSteps] = useState<TestStep[]>([]);
     
@@ -299,7 +443,7 @@ export default function TestEditorPage() {
 
     useEffect(() => {
         if (!runId) return;
-        const ws = new WebSocket(`ws://localhost:8000/ws/front-${runId}`);
+        const ws = new WebSocket(`${DAEMON_URL.replace('http', 'ws')}/ws/front-${runId}`);
         ws.onopen = () => {
             console.log('WS Connected for run', runId, 'URL:', `ws://localhost:8000/ws/front-${runId}`);
         };
@@ -330,8 +474,28 @@ export default function TestEditorPage() {
                         strategies_log: data.data.strategies_log,
                         suggestion: data.data.suggestion
                     } : s));
+                } else if (data.type === 'step_analyzing') {
+                    setSteps(prev => prev.map((s, i) => i === data.data.step_num - 1 ? { ...s, status: 'analyzing' } : s));
+                    useVisionStore.getState().setExecutionProgress({ current: data.data.step_num, total: steps.length, description: 'Analisando tela...' });
+                } else if (data.type === 'step_located') {
+                    setSteps(prev => prev.map((s, i) => i === data.data.step_num - 1 ? { ...s, status: 'located' } : s));
+                    useVisionStore.getState().setExecutionProgress({ current: data.data.step_num, total: steps.length, description: `Elemento localizado (${Math.round((data.data.confidence || 0) * 100)}%)` });
+                } else if (data.type === 'step_confirming') {
+                    setSteps(prev => prev.map((s, i) => i === data.data.step_num - 1 ? { ...s, status: 'confirming' } : s));
+                    useVisionStore.getState().setExecutionProgress({ current: data.data.step_num, total: steps.length, description: 'Confirmando resultado...' });
+                } else if (data.type === 'step_fallback') {
+                    setSteps(prev => prev.map((s, i) => i === data.data.step_num - 1 ? { ...s, status: 'fallback' } : s));
+                    useVisionStore.getState().setExecutionProgress({ current: data.data.step_num, total: steps.length, description: 'Fallback XML...' });
+                } else if (data.type === 'ambiguity_detected') {
+                    useVisionStore.getState().setAmbiguityEvent({
+                        stepNum: data.data.step_num,
+                        screenshotBase64: data.data.screenshot,
+                        candidates: data.data.candidates,
+                        reason: data.data.reason,
+                    });
                 } else if (data.type === 'run_completed' || data.type === 'run_failed' || data.type === 'run_cancelled') {
                     setIsExecuting(false);
+                    useVisionStore.getState().setExecutionProgress(null);
                 }
             } catch (error) {
                 console.error('WS parse error', error);
@@ -350,10 +514,16 @@ export default function TestEditorPage() {
         setSteps([]);
         setAiFeedbackText('');
         try {
-            const response = await fetch('http://localhost:8000/api/tests/parse-prompt-stream', {
+            const response = await fetch(`${DAEMON_URL}/api/tests/parse-prompt-stream`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: prompt, platform: 'android', project_id: 'default' })
+                body: JSON.stringify({ 
+                    prompt: prompt, 
+                    platform: 'android', 
+                    project_id: 'default', 
+                    model: selectedModel,
+                    device_udid: connectedDevice?.udid || undefined
+                })
             });
 
             if (!response.ok) {
@@ -424,6 +594,27 @@ export default function TestEditorPage() {
         }
     };
 
+    const handleMockGenerate = () => {
+        const mockSteps = [
+            { id: '1', action: 'open_app', target: 'Foxbit', value: '', status: 'idle' },
+            { id: '2', action: 'wait', target: '', value: '500', status: 'idle' },
+            { id: '3', action: 'assert_text', target: '', value: 'Entrar', status: 'idle' },
+            { id: '4', action: 'tap', target: 'Entrar', value: '', status: 'idle' },
+            { id: '5', action: 'wait', target: '', value: '500', status: 'idle' },
+            { id: '6', action: 'tap', target: 'Digite seu e-mail', value: '', status: 'idle' },
+            { id: '7', action: 'type', target: '', value: 'isaias@gmail.com', status: 'idle' },
+            { id: '8', action: 'tap', target: 'Digite sua senha', value: '', status: 'idle' },
+            { id: '9', action: 'type', target: '', value: '123456', status: 'idle' },
+            { id: '10', action: 'tap', target: 'Entrar', value: '', status: 'idle' },
+        ];
+        // @ts-ignore mapping
+        setSteps(mockSteps);
+        
+        // Generate a new Run ID so WebSocket connects, but DO NOT execute yet.
+        const newRunId = `run-mock-${Date.now()}`;
+        setRunId(newRunId);
+    };
+
     const handleExecuteTest = async () => {
         if (!connectedDevice || steps.length === 0 || !runId) return;
 
@@ -431,43 +622,77 @@ export default function TestEditorPage() {
         setSteps(prev => prev.map(s => ({ ...s, status: 'idle' })));
         setIsExecuting(true);
 
-        const payload = {
-            test_case_id: 'test-1',
-            device_udid: connectedDevice.udid,
-            run_id: runId,
-            steps: steps,
-            platform: 'android'
-        };
+        const { referenceImages, imageStepMapping, autoMapImages } = useVisionStore.getState();
 
-        console.log("Executar Teste Payload:", payload);
-        
+        // Auto-map images if they exist and mapping is empty
+        if (referenceImages.length > 0 && Object.keys(imageStepMapping).length === 0) {
+            autoMapImages(steps.length);
+        }
+
+        console.log("Executar Teste: images=", referenceImages.length, "mapping=", imageStepMapping);
+
         let timeoutId = setTimeout(() => {
             setIsExecuting(current => {
                 if (current) {
-                    console.error("Execução Timeout: 60s excedidos sem finalização.");
-                    alert("A execução excedeu o tempo limite de 60 segundos.");
+                    console.error("Execução Timeout: 5min excedidos sem finalização.");
+                    alert("A execução excedeu o tempo limite de 5 minutos.");
                     return false;
                 }
                 return current;
             });
-        }, 60000);
+        }, 300000);
 
         try {
-            const res = await fetch('http://localhost:8000/api/runs', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            
+            let res: Response;
+
+            if (referenceImages.length > 0) {
+                // Vision-first path: use FormData
+                const formData = new FormData();
+                formData.append('run_id', runId);
+                formData.append('steps', JSON.stringify(steps));
+                formData.append('device_udid', connectedDevice.udid);
+                formData.append('platform', 'android');
+
+                const currentMapping = useVisionStore.getState().imageStepMapping;
+                if (Object.keys(currentMapping).length > 0) {
+                    formData.append('image_step_mapping', JSON.stringify(currentMapping));
+                }
+
+                for (const img of referenceImages) {
+                    const blob = img.jpegBlob || img.file;
+                    formData.append('reference_images', blob, `ref-${img.order}.jpg`);
+                }
+
+                res = await fetch(`${DAEMON_URL}/api/runs/vision`, {
+                    method: 'POST',
+                    body: formData,
+                });
+            } else {
+                // Standard path: JSON
+                const payload = {
+                    test_case_id: 'test-1',
+                    device_udid: connectedDevice.udid,
+                    run_id: runId,
+                    steps: steps,
+                    platform: 'android'
+                };
+
+                res = await fetch(`${DAEMON_URL}/api/runs`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            }
+
             if (!res.ok) {
                 const errText = await res.text();
-                console.error("Erro na request POST /api/runs:", res.status, errText);
+                console.error("Erro na request de execução:", res.status, errText);
                 setIsExecuting(false);
                 clearTimeout(timeoutId);
                 alert("Falha ao iniciar execução: " + res.status);
             } else {
                 const responseData = await res.json();
-                console.log("POST /api/runs Response:", responseData);
+                console.log("Execução Response:", responseData);
             }
         } catch (error) {
             console.error("Execution failed:", error);
@@ -510,7 +735,7 @@ export default function TestEditorPage() {
             </header>
 
             <div className="flex flex-1 overflow-hidden">
-                <div className="w-[450px] border-r border-white/10 bg-[#0C0F1A] flex flex-col shrink-0 h-full">
+                <div className="w-[550px] border-r border-white/10 bg-[#0C0F1A] flex flex-col shrink-0 h-full">
                     <div className="flex-shrink-0 px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
                         <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                             Passos do Teste ({steps.length})
@@ -518,6 +743,48 @@ export default function TestEditorPage() {
                     </div>
 
                     <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0 flex flex-col gap-3 custom-scrollbar">
+                        {/* Recording steps list */}
+                        {isRecordingActive && recordedSteps.length > 0 && (
+                            <div className="flex flex-col gap-2 mb-3">
+                                <div className="flex items-center gap-2 text-xs font-bold text-red-400 uppercase tracking-wider px-1">
+                                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                                    Gravando — {recordedSteps.length} passos
+                                </div>
+                                {recordedSteps.map((rs, idx) => (
+                                    <div key={rs.id} className="bg-white/5 border border-red-500/20 rounded-lg p-3 flex items-start gap-3 animate-[fadeIn_0.3s_ease-out]">
+                                        <div className="w-6 h-6 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center text-xs font-bold shrink-0 border border-red-500/30">
+                                            {idx + 1}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5 text-sm font-bold text-brandLight">
+                                                {rs.action === 'tap' && <MousePointerClick className="w-3.5 h-3.5" />}
+                                                {rs.action === 'type' && <Keyboard className="w-3.5 h-3.5" />}
+                                                {rs.action === 'swipe' && <MoveHorizontal className="w-3.5 h-3.5" />}
+                                                {rs.action === 'back' && <ChevronLeft className="w-3.5 h-3.5" />}
+                                                {rs.action === 'home' && <Circle className="w-3.5 h-3.5" />}
+                                                {rs.action.toUpperCase()}
+                                            </div>
+                                            <div className="text-xs text-slate-300 mt-1 truncate">
+                                                {rs.isPassword ? rs.description.replace(/"[^"]*"/, `"${'*'.repeat(8)}"`) : rs.description}
+                                            </div>
+                                            {rs.elementInfo?.text && (
+                                                <div className="text-[10px] text-slate-500 mt-0.5 font-mono truncate">
+                                                    {rs.elementInfo.text}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0 mt-1" />
+                                    </div>
+                                ))}
+                                <div className="bg-white/5 border border-dashed border-red-500/20 rounded-lg p-3 flex items-center gap-3 text-slate-500 text-xs">
+                                    <div className="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center shrink-0">
+                                        <div className="w-2 h-2 rounded-full bg-red-500/50 animate-pulse" />
+                                    </div>
+                                    Aguardando proxima interacao...
+                                </div>
+                            </div>
+                        )}
+
                         {isGenerating && aiFeedbackText && (
                             <div className="bg-black/40 border border-brand/20 p-4 rounded-xl flex flex-col gap-3 relative overflow-hidden shrink-0 shadow-lg shadow-black/20">
                                 <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-brand to-transparent opacity-50 animate-[pulse_2s_ease-in-out_infinite]" />
@@ -563,12 +830,13 @@ export default function TestEditorPage() {
                     </div>
 
                     <div className="flex-shrink-0 p-4 border-t border-zinc-800 bg-[#0A0C14]">
+                        <VisualGuide />
                         <div className="flex flex-col gap-2">
                             <textarea
                                 value={prompt}
                                 onChange={(e) => setPrompt(e.target.value)}
                                 placeholder="Ex: No aplicativo WasteZero, clique para abri-lo, na tela de login informe isaias@gmail.com..."
-                                className="w-full resize-none bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-500 min-h-[72px]"
+                                className="w-full resize-none bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-3 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-500 min-h-[140px]"
                                 disabled={isGenerating}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -578,6 +846,16 @@ export default function TestEditorPage() {
                                 }}
                             />
                             <div className="flex gap-2">
+                                <select
+                                    value={selectedModel}
+                                    onChange={(e) => setSelectedModel(e.target.value)}
+                                    className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500 min-w-[140px]"
+                                    disabled={isGenerating}
+                                >
+                                    {LLM_MODELS.map((m) => (
+                                        <option key={m.value} value={m.value}>{m.label}</option>
+                                    ))}
+                                </select>
                                 <button
                                     onClick={handleGenerate}
                                     disabled={isGenerating || !prompt.trim()}
@@ -589,21 +867,32 @@ export default function TestEditorPage() {
                                             Gerando...
                                         </>
                                     ) : (
-                                        <>✨ Gerar com IA</>
+                                        <>🧪 Gerar Tests</>
                                     )}
                                 </button>
                                 <button
-                                    onClick={() => setIsRecording(!isRecording)}
-                                    className="px-3 py-2 text-sm border border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded-lg transition-colors"
+                                    onClick={handleMockGenerate}
+                                    className="px-3 py-2 text-sm bg-blue-600/20 hover:bg-blue-600 border border-blue-500/50 text-blue-400 hover:text-white rounded-lg transition-colors font-medium"
+                                    title="Inserir Teste Mock Pronta"
                                 >
-                                    📱 Gravar
+                                    🧪 MOCK
+                                </button>
+                                <button
+                                    onClick={isRecordingActive ? handleStopRecording : handleStartRecording}
+                                    className={`px-3 py-2 text-sm border rounded-lg transition-colors flex items-center gap-1.5 ${isRecordingActive ? 'border-red-500/50 text-red-400 bg-red-500/10 hover:bg-red-500/20' : 'border-zinc-700 text-zinc-400 hover:text-zinc-200'}`}
+                                >
+                                    {isRecordingActive ? (
+                                        <><Square className="w-3 h-3 fill-red-400" /> Parar</>
+                                    ) : (
+                                        <><div className="w-2 h-2 rounded-full bg-red-500" /> Gravar Testes</>
+                                    )}
                                 </button>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div className="flex-1 bg-black/40 flex flex-col items-center justify-center p-8 overflow-y-auto custom-scrollbar">
+                <div className="flex-1 bg-black/40 flex flex-col items-center justify-center p-8 overflow-hidden">
                     <div className="relative w-[306px] h-[648px] shrink-0 bg-black rounded-[40px] border-[8px] border-[#1E2330] shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col">
                         <div className="flex-1 w-full bg-[#0A0C14] relative">
                             <div className="absolute top-0 w-full h-6 bg-black/20 flex justify-between items-center px-4 z-10">
@@ -616,14 +905,17 @@ export default function TestEditorPage() {
 
                             <DevicePreview
                                 udid={connectedDevice?.udid || ''}
-                                frameSrc={streamFrameSrc}
+                                onInteraction={isRecordingActive ? handleRecordingInteraction : undefined}
+                                onTextInput={isRecordingActive ? handleRecordingTextInput : undefined}
                             />
 
-                            {isRecording && (
-                                <div className="absolute inset-0 bg-brand/5 border-2 border-brand/50 rounded-[32px] cursor-crosshair group pointer-events-none">
-                                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <div className="bg-black/80 text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap backdrop-blur-sm pointer-events-none">
-                                            Modo Gravação Ativo
+                            {isRecordingActive && (
+                                <div className="absolute inset-0 border-2 border-red-500/60 rounded-[32px] pointer-events-none">
+                                    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20">
+                                        <div className="bg-black/80 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-2 border border-red-500/50 shadow-lg">
+                                            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+                                            <span className="font-bold text-red-400 text-[10px] uppercase tracking-wider">REC</span>
+                                            <span className="text-white/70 font-mono text-[10px]">{formatRecordingTime(elapsedSeconds)}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -664,16 +956,20 @@ export default function TestEditorPage() {
                             </button>
                             <div className="w-px h-8 bg-white/10"></div>
                             <button
-                                onClick={() => setIsRecording(!isRecording)}
-                                className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-all ${isRecording ? 'bg-red-500/10 text-red-500' : 'text-slate-300 hover:bg-white/5'}`}
+                                onClick={isRecordingActive ? handleStopRecording : handleStartRecording}
+                                className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-all ${isRecordingActive ? 'bg-red-500/10 text-red-500' : 'text-slate-300 hover:bg-white/5'}`}
                             >
-                                <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse' : 'bg-slate-500'}`}></div>
+                                {isRecordingActive ? (
+                                    <Square className="w-3 h-3 text-red-500 fill-red-500" />
+                                ) : (
+                                    <div className="w-2 h-2 rounded-full bg-slate-500" />
+                                )}
                                 <div className="flex flex-col items-start">
-                                    <span className={`text-xs font-bold ${isRecording ? 'text-red-400' : 'text-white'}`}>
-                                        REPEATO
+                                    <span className={`text-xs font-bold ${isRecordingActive ? 'text-red-400' : 'text-white'}`}>
+                                        {isRecordingActive ? 'Parar' : 'Gravar'}
                                     </span>
                                     <span className="text-[10px] text-slate-400">
-                                        Gravador
+                                        {isRecordingActive ? formatRecordingTime(elapsedSeconds) : 'Testes'}
                                     </span>
                                 </div>
                             </button>
@@ -685,6 +981,17 @@ export default function TestEditorPage() {
             <ConnectDeviceModal
                 isOpen={isDeviceModalOpen}
                 onClose={() => setIsDeviceModalOpen(false)}
+            />
+
+            <ExecutionToast />
+            <AmbiguityDialog runId={runId} />
+            <SaveRecordingModal
+                isOpen={showSaveModal}
+                stepCount={recordedSteps.length}
+                durationSeconds={elapsedSeconds}
+                currentProjectId={currentProjectId}
+                onSave={handleSaveRecording}
+                onCancel={() => { setShowSaveModal(false); clearRecording(); }}
             />
         </div>
     );

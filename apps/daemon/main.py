@@ -9,16 +9,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 import subprocess
+import ssl
+import httpx
+
+# Global bypass for SSL certificate verification
+# Necessary for environments behind VPNs or Proxies with self-signed certs
+ssl._create_default_https_context = ssl._create_unverified_context
 
 from android.device_manager import device_manager_instance
 from android.executor import StepExecutor
 from android.screenshot import screenshot_handler, capture_screenshot_fast
-from android.recorder import InteractionRecorder
+from android.recorder import InteractionRecorder, active_recorders
 from ws.server import ws_server
 from ws.stream_manager import screen_stream_manager
 from models.step import TestStep, StepResult
 from web_driver.executor import WebDriverExecutor
 from routes.device_input import router as device_input_router
+from log_manager import log_manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("main")
@@ -40,6 +47,12 @@ app.include_router(device_input_router)
 async def startup_event():
     asyncio.create_task(device_manager_instance.poll_devices())
     logger.info("Started device polling background task.")
+    # Run log rotation on startup
+    try:
+        log_manager.rotate_logs()
+        logger.info("Log rotation completed.")
+    except Exception as e:
+        logger.warning(f"Log rotation failed: {e}")
 
 # --- REST Endpoints ---
 
@@ -148,11 +161,12 @@ class ParseRequest(BaseModel):
     platform: str = "android"
     project_id: str = "default_project"
     device_udid: Optional[str] = None
+    model: str = "claude-sonnet-4-6"
 
 @app.post("/api/tests/parse-prompt")
 async def parse_prompt(req: ParseRequest):
     try:
-        result = await prompt_parser.parse(req.prompt, req.platform)
+        result = await prompt_parser.parse(req.prompt, req.platform, model=req.model)
         return {
             "steps": [s.model_dump() for s in result.steps],
             "test_name": result.test_name,
@@ -174,7 +188,7 @@ async def parse_prompt_stream(req: ParseRequest):
             logger.warning(f"Failed to get UI context for {req.device_udid}: {e}")
             
     return StreamingResponse(
-        prompt_parser.parse_stream(req.prompt, req.platform, ui_context=ui_context),
+        prompt_parser.parse_stream(req.prompt, req.platform, ui_context=ui_context, model=req.model),
         media_type="text/event-stream"
     )
 
@@ -225,6 +239,84 @@ async def start_run(request: RunAIRequest):
         logger.error(f"[EXECUTOR] Exception in start_run: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/runs/vision")
+async def start_vision_run(
+    run_id: str = Form(...),
+    steps: str = Form(...),
+    device_udid: str = Form(...),
+    platform: str = Form("android"),
+    image_step_mapping: Optional[str] = Form(None),
+    reference_images: List[UploadFile] = File(...)
+):
+    """Start a test run with vision-first flow using reference images."""
+    import traceback
+    import json as json_mod
+    logger.info(f"[VISION] Recebida requisição POST /api/runs/vision: run_id={run_id}, udid={device_udid}, images={len(reference_images)}")
+    try:
+        # Parse steps JSON
+        steps_data = json_mod.loads(steps)
+        parsed_steps = [TestStep(**s) for s in steps_data]
+
+        # Read reference images into memory
+        image_bytes_list: List[bytes] = []
+        for img_file in reference_images:
+            img_data = await img_file.read()
+            image_bytes_list.append(img_data)
+
+        # Parse optional mapping
+        mapping = None
+        if image_step_mapping:
+            mapping = json_mod.loads(image_step_mapping)
+
+        # Create executor
+        if platform == "web":
+            executor = WebDriverExecutor(ws_server)
+        else:
+            if not device_udid:
+                raise HTTPException(status_code=400, detail="device_udid is required for android runs")
+            d = device_manager_instance.connect(device_udid)
+            executor = StepExecutor(d, screenshot_handler, ws_server)
+
+        orchestrator = RunOrchestrator(
+            executor=executor,
+            vision_analyzer=vision_analyzer,
+            auto_corrector=auto_corrector,
+            screenshot_handler=screenshot_handler,
+            ws_broadcaster=ws_server,
+            supabase_url=supabase_url,
+            supabase_key=supabase_key
+        )
+
+        # Set vision-first state
+        orchestrator._reference_images = image_bytes_list
+        orchestrator._image_step_mapping = mapping
+
+        active_runs[run_id] = orchestrator
+
+        test_case = TestCase(steps=parsed_steps)
+        asyncio.create_task(orchestrator.run(test_case, run_id, device_udid, platform=platform))
+
+        return {"status": "started", "run_id": run_id}
+
+    except Exception as e:
+        traceback.print_exc()
+        logger.error(f"[VISION] Exception in start_vision_run: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class AmbiguityResolution(BaseModel):
+    step_num: int
+    x: int
+    y: int
+
+@app.post("/api/runs/{run_id}/resolve-ambiguity")
+async def resolve_ambiguity(run_id: str, resolution: AmbiguityResolution):
+    """Resolve an ambiguous element during vision-first execution."""
+    if run_id not in active_runs:
+        raise HTTPException(status_code=404, detail="Run not found")
+    orchestrator = active_runs[run_id]
+    await orchestrator.resolve_ambiguity(resolution.step_num, resolution.x, resolution.y)
+    return {"status": "resolved"}
+
 @app.post("/api/runs/{run_id}/cancel")
 async def cancel_run(run_id: str):
     if run_id in active_runs:
@@ -232,17 +324,105 @@ async def cancel_run(run_id: str):
         return {"status": "cancelling"}
     return {"status": "not_found"}
 
+class RecordingStartRequest(BaseModel):
+    udid: str
+
 @app.post("/recordings/start")
-async def start_recording(udid: str):
+async def start_recording(req: RecordingStartRequest):
     try:
-        d = device_manager_instance.connect(udid)
-        # Note: InteractionRecorder is currently a prototype holding state.
-        # In a real daemon with concurrent recordings, we'd map udids to instances.
+        d = device_manager_instance.connect(req.udid)
         recorder = InteractionRecorder(ws_server, screenshot_handler)
-        await recorder.start_recording(udid, d)
-        return {"status": "recording_started", "udid": udid}
+        await recorder.start_recording(req.udid, d)
+        active_recorders[req.udid] = recorder
+        return {"status": "recording_started", "udid": req.udid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+class RecordingStopRequest(BaseModel):
+    udid: str
+
+@app.post("/recordings/stop")
+async def stop_recording(req: RecordingStopRequest):
+    recorder = active_recorders.get(req.udid)
+    if not recorder:
+        raise HTTPException(status_code=404, detail="No active recording for this device")
+    steps = await recorder.stop_recording()
+    active_recorders.pop(req.udid, None)
+    return {"status": "recording_stopped", "steps": steps}
+
+class EnrichStepRequest(BaseModel):
+    udid: str
+    x: int
+    y: int
+    action: str = "tap"
+
+@app.post("/recordings/enrich-step")
+async def enrich_step(req: EnrichStepRequest):
+    """Inspect UI hierarchy at coordinates and return element info + screenshot."""
+    recorder = active_recorders.get(req.udid)
+    if not recorder:
+        # Create a temporary recorder for enrichment even without active recording
+        try:
+            d = device_manager_instance.connect(req.udid)
+            recorder = InteractionRecorder(ws_server, screenshot_handler)
+            recorder.d = d
+            recorder.udid = req.udid
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    try:
+        result = await recorder.enrich_step(req.x, req.y, req.action)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class SaveTestRequest(BaseModel):
+    name: str
+    description: str = ""
+    steps: list = []
+    project_id: Optional[str] = None
+    tags: list = ["recorded"]
+
+@app.post("/api/tests/save")
+async def save_test(req: SaveTestRequest):
+    """Save a recorded test to Supabase, bypassing frontend RLS restrictions."""
+    if not supabase_url or not supabase_key:
+        raise HTTPException(status_code=500, detail="Supabase not configured")
+
+    import json as json_mod
+    headers = {
+        "apikey": supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+
+    body: dict = {
+        "name": req.name,
+        "description": req.description,
+        "steps": req.steps,
+        "tags": req.tags,
+        "is_active": True,
+        "version": 1,
+    }
+    if req.project_id:
+        body["project_id"] = req.project_id
+
+    async with httpx.AsyncClient(verify=False) as client:
+        resp = await client.post(
+            f"{supabase_url}/rest/v1/test_cases",
+            headers=headers,
+            json=body,
+            timeout=10,
+        )
+
+    if resp.status_code in (200, 201):
+        data = resp.json()
+        return {"status": "saved", "test": data[0] if isinstance(data, list) and data else data}
+    else:
+        error_body = resp.text
+        logger.error(f"Supabase insert failed: {resp.status_code} - {error_body}")
+        raise HTTPException(status_code=resp.status_code, detail=f"Supabase error: {error_body}")
 
 @app.post("/screenshot/{udid}")
 async def capture_screenshot(udid: str):
@@ -266,6 +446,64 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
     except WebSocketDisconnect:
         ws_server.disconnect(client_id)
 
+# --- Log Endpoints ---
+
+@app.get("/api/logs")
+async def list_logs(category: Optional[str] = None):
+    """List all log files, optionally filtered by category."""
+    return {"logs": log_manager.list_logs(category)}
+
+@app.get("/api/logs/read")
+async def read_log(path: str, offset: int = 0, limit: int = 1000):
+    """Read log file contents with pagination."""
+    return log_manager.read_log(path, offset, limit)
+
+@app.get("/api/logs/download")
+async def download_log(path: str):
+    """Download a log file."""
+    from log_manager import LOGS_BASE
+    filepath = LOGS_BASE / path
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        filepath.resolve().relative_to(LOGS_BASE.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+    media_type = "application/gzip" if filepath.suffix == ".gz" else "text/plain"
+    return Response(
+        content=filepath.read_bytes(),
+        media_type=media_type,
+        headers={"Content-Disposition": f"attachment; filename={filepath.name}"}
+    )
+
+@app.get("/api/logs/error-count")
+async def error_count():
+    """Get today's error count for the sidebar badge."""
+    return {"count": log_manager.get_error_count_today()}
+
+class SessionLogEntry(BaseModel):
+    level: str = "INFO"
+    message: str
+    session_id: str = "default"
+
+@app.post("/api/logs/session")
+async def receive_session_log(entry: SessionLogEntry):
+    """Receive session log entries from the frontend."""
+    log_manager.session(entry.message, session_id=entry.session_id, level=entry.level)
+    return {"status": "ok"}
+
+class SessionLogBatch(BaseModel):
+    entries: List[SessionLogEntry]
+
+@app.post("/api/logs/session/batch")
+async def receive_session_log_batch(batch: SessionLogBatch):
+    """Receive multiple session log entries from the frontend."""
+    for entry in batch.entries:
+        log_manager.session(entry.message, session_id=entry.session_id, level=entry.level)
+    return {"status": "ok", "count": len(batch.entries)}
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    daemon_port = int(os.environ.get("DAEMON_PORT", "8001"))
+    uvicorn.run(app, host="0.0.0.0", port=daemon_port)
