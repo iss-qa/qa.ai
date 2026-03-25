@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect } from 'react';
+import React, { useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Smartphone } from 'lucide-react';
 import { useScrcpyStream } from '../hooks/useScrcpyStream';
 
@@ -21,9 +21,26 @@ interface DevicePreviewProps {
     onTextInput?: (text: string) => void;
 }
 
-export function DevicePreview({ udid, frameSrc, onInteraction, onTextInput }: DevicePreviewProps) {
-    const { canvasRef, deviceDimensions, sendTouch, sendKeyevent, sendText } = useScrcpyStream(udid);
+export interface DevicePreviewHandle {
+    sendKeyevent: (keycode: number) => void;
+}
+
+export const DevicePreview = forwardRef<DevicePreviewHandle, DevicePreviewProps>(function DevicePreview({ udid, frameSrc, onInteraction, onTextInput }, ref) {
+    const { canvasRef, deviceDimensions, sendTouch, sendKeyevent, sendText, sendBackspace } = useScrcpyStream(udid);
+
+    useImperativeHandle(ref, () => ({ sendKeyevent }), [sendKeyevent]);
+
     const containerRef = useRef<HTMLDivElement>(null);
+
+    // Refs for keyboard handler (avoids stale closures in native listener)
+    const sendTextRef = useRef(sendText);
+    sendTextRef.current = sendText;
+    const sendBackspaceRef = useRef(sendBackspace);
+    sendBackspaceRef.current = sendBackspace;
+    const sendKeyeventRef = useRef(sendKeyevent);
+    sendKeyeventRef.current = sendKeyevent;
+    const onTextInputRef = useRef(onTextInput);
+    onTextInputRef.current = onTextInput;
     const pointerDown = useRef<{ x: number; y: number; devX: number; devY: number; time: number } | null>(null);
     const onInteractionRef = useRef(onInteraction);
     onInteractionRef.current = onInteraction;
@@ -107,10 +124,48 @@ export function DevicePreview({ udid, frameSrc, onInteraction, onTextInput }: De
         };
     }, []);
 
+    // Capture physical keyboard input and send to device
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const onKeyDown = (e: KeyboardEvent) => {
+            // Ignore modifier-only keys and browser shortcuts
+            if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (e.key === 'Backspace') {
+                sendBackspaceRef.current();
+            } else if (e.key === 'Enter') {
+                sendKeyeventRef.current(66); // KEYCODE_ENTER
+            } else if (e.key === 'Escape') {
+                sendKeyeventRef.current(4); // KEYCODE_BACK
+            } else if (e.key.length === 1) {
+                // Single printable character
+                sendTextRef.current(e.key);
+                if (onTextInputRef.current) onTextInputRef.current(e.key);
+            }
+        };
+
+        canvas.addEventListener('keydown', onKeyDown);
+        // Make canvas focusable
+        if (!canvas.getAttribute('tabindex')) {
+            canvas.setAttribute('tabindex', '0');
+        }
+
+        return () => {
+            canvas.removeEventListener('keydown', onKeyDown);
+        };
+    }, [canvasRef]);
+
     const handlePointerDown = (e: React.PointerEvent) => {
         e.preventDefault();
         e.stopPropagation();
         e.currentTarget.setPointerCapture(e.pointerId);
+        // Focus canvas so keyboard events are captured
+        (e.currentTarget as HTMLElement).focus();
         const { x, y } = toDeviceCoords(e.clientX, e.clientY);
         pointerDown.current = { x: e.clientX, y: e.clientY, devX: x, devY: y, time: Date.now() };
         sendTouch('down', x, y);
@@ -193,4 +248,4 @@ export function DevicePreview({ udid, frameSrc, onInteraction, onTextInput }: De
             )}
         </div>
     );
-}
+});

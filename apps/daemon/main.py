@@ -10,6 +10,7 @@ from pydantic import BaseModel
 import os
 import subprocess
 import ssl
+from pathlib import Path
 import httpx
 
 # Global bypass for SSL certificate verification
@@ -25,6 +26,9 @@ from ws.stream_manager import screen_stream_manager
 from models.step import TestStep, StepResult
 from web_driver.executor import WebDriverExecutor
 from routes.device_input import router as device_input_router
+from routes.engines import router as engines_router
+from engines.maestro_runner import run_with_maestro, save_yaml_flow
+from engines.maestro_validator import validate_maestro_yaml
 from log_manager import log_manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -41,6 +45,7 @@ app.add_middleware(
 )
 
 app.include_router(device_input_router)
+app.include_router(engines_router)
 
 # Startup background tasks
 @app.on_event("startup")
@@ -151,6 +156,8 @@ load_dotenv()
 anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
 supabase_url = os.environ.get("SUPABASE_URL", "")
 supabase_key = os.environ.get("SUPABASE_KEY", "")
+# Service role key bypasses RLS — use this for server-side inserts
+supabase_service_key = os.environ.get("SUPABASE_SERVICE_KEY", "") or supabase_key
 
 prompt_parser = PromptParser(anthropic_api_key)
 vision_analyzer = VisionAnalyzer(anthropic_api_key)
@@ -162,6 +169,7 @@ class ParseRequest(BaseModel):
     project_id: str = "default_project"
     device_udid: Optional[str] = None
     model: str = "claude-sonnet-4-6"
+    engine: str = "uiautomator2"
 
 @app.post("/api/tests/parse-prompt")
 async def parse_prompt(req: ParseRequest):
@@ -188,7 +196,7 @@ async def parse_prompt_stream(req: ParseRequest):
             logger.warning(f"Failed to get UI context for {req.device_udid}: {e}")
             
     return StreamingResponse(
-        prompt_parser.parse_stream(req.prompt, req.platform, ui_context=ui_context, model=req.model),
+        prompt_parser.parse_stream(req.prompt, req.platform, ui_context=ui_context, model=req.model, engine=req.engine),
         media_type="text/event-stream"
     )
 
@@ -196,17 +204,233 @@ class RunAIRequest(BaseModel):
     test_case_id: str
     device_udid: Optional[str] = None
     run_id: str
-    steps: List[TestStep]
+    steps: list  # List[TestStep] for u2, list[dict] for maestro
     platform: str = "android"
+    engine: str = "uiautomator2"
+    yaml_path: Optional[str] = None
+    env_vars: Optional[dict] = None
 
 # Dictionary to keep track of active run orchestrators for cancellation
 active_runs = {}
 
+# Known app package mappings (cache)
+_APP_PACKAGE_CACHE: dict[str, str] = {
+    "foxbit": "br.com.foxbit.foxbitandroid",
+    "wastezero": "com.app.wastezero_app",
+    "settings": "com.android.settings",
+    "configuracoes": "com.android.settings",
+}
+
+
+def _resolve_app_package(app_name: str, udid: str = "") -> str:
+    """
+    Resolve an app name to its Android package ID.
+    1. Check known cache
+    2. Search installed packages on device via ADB
+    3. Return best match or the name as-is
+    """
+    name_lower = app_name.lower().strip()
+
+    # 1. Check cache
+    for key, pkg in _APP_PACKAGE_CACHE.items():
+        if key in name_lower or name_lower in key:
+            return pkg
+
+    # 2. Search on device via ADB
+    if udid:
+        try:
+            result = subprocess.run(
+                ['adb', '-s', udid, 'shell', 'pm', 'list', 'packages', '-3'],
+                capture_output=True, text=True, timeout=5,
+            )
+            packages = [line.replace('package:', '').strip()
+                       for line in result.stdout.strip().split('\n') if line.strip()]
+
+            # Search by name similarity
+            for pkg in packages:
+                pkg_lower = pkg.lower()
+                # Direct name match in package
+                if name_lower.replace(' ', '') in pkg_lower.replace('.', '').replace('_', ''):
+                    _APP_PACKAGE_CACHE[name_lower] = pkg
+                    logger.info(f"[APP_RESOLVE] Found '{app_name}' -> {pkg}")
+                    return pkg
+
+            # Fuzzy: check each word of app name
+            words = name_lower.split()
+            for pkg in packages:
+                pkg_lower = pkg.lower()
+                if all(w in pkg_lower for w in words if len(w) > 2):
+                    _APP_PACKAGE_CACHE[name_lower] = pkg
+                    logger.info(f"[APP_RESOLVE] Fuzzy matched '{app_name}' -> {pkg}")
+                    return pkg
+        except Exception as e:
+            logger.warning(f"[APP_RESOLVE] ADB search failed: {e}")
+
+    return app_name
+
+
+@app.get("/api/devices/{udid}/resolve-app")
+async def resolve_app(udid: str, name: str):
+    """Resolve an app name to its package ID on the device."""
+    pkg = _resolve_app_package(name, udid)
+    return {"app_name": name, "package_id": pkg, "resolved": pkg != name}
+
+
+def _action_to_maestro_command(action: str, target: str, value: str) -> str:
+    """Convert a step action/target/value into a Maestro YAML command."""
+    a = action.lower().strip()
+    if a == 'launchapp':
+        return '- launchApp'
+    elif a == 'clearstate':
+        return '- clearState'
+    elif a == 'tapon':
+        # target is a description like "Clica em Busque seu produto"
+        # Extract the actual UI text: remove action verbs (order matters - longest first)
+        label = target
+        for prefix in ['Clica no botao ', 'Clica em ', 'Clica no ', 'Clica na ', 'Toca no campo de ', 'Toca no campo ', 'Toca em ', 'Toca no ', 'Toca na ', 'Pressiona o ', 'Pressiona ', 'Abre o ', 'Abre ']:
+            if label.startswith(prefix):
+                label = label[len(prefix):]
+                break
+        # Remove trailing description like "para garantir que..."
+        for suffix in [' para garantir', ' para confirmar', ' para acessar', ' para fazer', ' para iniciar']:
+            idx = label.find(suffix)
+            if idx > 0:
+                label = label[:idx]
+        return f'- tapOn: "{label.strip()}"' if label.strip() else ''
+    elif a == 'inputtext':
+        return f'- inputText: "{value}"' if value else ''
+    elif a == 'assertvisible':
+        # Extract the element name from description
+        label = target or value
+        for prefix in ['Verifica que ', 'Verifica se ', 'Valida que ', 'Valida se ', 'Confirma que ', 'Verifica ']:
+            if label.startswith(prefix):
+                label = label[len(prefix):]
+                break
+        # Remove verbose descriptions
+        for suffix in [' esta visivel', ' e exibido', ' aparece', ' existe', ' na tela', ' na aba de produtos', ' nos resultados']:
+            idx = label.find(suffix)
+            if idx > 0:
+                label = label[:idx]
+        # Try to find a quoted element or short key phrase
+        import re as re_mod
+        quoted = re_mod.findall(r'"([^"]+)"', label)
+        if quoted:
+            label = quoted[0]
+        return f'- assertVisible: "{label.strip()}"'
+    elif a == 'assertnotvisible':
+        return f'- assertNotVisible: "{target or value}"'
+    elif a == 'waitforanimationtoend':
+        return '- waitForAnimationToEnd'
+    elif a == 'extendedwaituntil':
+        timeout = value or '5000'
+        # Extract meaningful element name from target description
+        # e.g. "Aguarda o elemento Busque seu produto aparecer na tela inicial" -> "Busque seu produto"
+        elem = target
+        # Try to find quoted text or a noun phrase after key words
+        import re as re_mod
+        quoted = re_mod.findall(r'"([^"]+)"', target)
+        if quoted:
+            elem = quoted[0]
+        else:
+            # Remove common prefix/suffix words
+            for prefix in ['Aguarda o elemento ', 'Aguarda que ', 'Aguarda ', 'Espera que ', 'Espera ']:
+                if elem.startswith(prefix):
+                    elem = elem[len(prefix):]
+            for suffix in [' aparecer na tela inicial', ' aparecer na tela', ' aparecer', ' apareca', ' na tela inicial', ' na tela', ' carregar', ' ficar visivel']:
+                if elem.endswith(suffix):
+                    elem = elem[:-len(suffix)]
+            elem = elem.strip()
+        if not elem:
+            elem = "element"
+        return f'- extendedWaitUntil:\n    visible: "{elem}"\n    timeout: {timeout}'
+    elif a == 'back':
+        return '- back'
+    elif a == 'hidekeyboard':
+        return '- hideKeyboard'
+    elif a == 'scroll':
+        return '- scroll'
+    elif a in ('swipe',):
+        direction = value.upper() if value else 'UP'
+        return f'- swipe:\n    direction: {direction}'
+    elif a in ('wait', 'sleep'):
+        return f'- extendedWaitUntil:\n    visible: ".*"\n    timeout: {value or "2000"}'
+    return ''
+
+
 @app.post("/api/runs")
 async def start_run(request: RunAIRequest):
     import traceback
-    logger.info(f"[EXECUTOR] Recebida a requisição POST /api/runs: run_id={request.run_id}, udid={request.device_udid}, steps={len(request.steps)}")
+    logger.info(f"[EXECUTOR] Recebida a requisição POST /api/runs: run_id={request.run_id}, udid={request.device_udid}, steps={len(request.steps)}, engine={request.engine}")
     try:
+        # --- Maestro engine branch ---
+        if request.engine == "maestro":
+            if not request.device_udid:
+                raise HTTPException(status_code=400, detail="device_udid is required for maestro runs")
+
+            yaml_path = request.yaml_path
+            # If no yaml_path, generate YAML from steps
+            if not yaml_path:
+                commands = []
+                app_id = "com.app.unknown"
+
+                # First pass: find app name from launchApp step
+                for s in request.steps:
+                    raw = s if isinstance(s, dict) else dict(s)
+                    action = raw.get("action", "").lower()
+                    if action == "launchapp":
+                        # target contains the app name (e.g., "Abre o app WasteZero")
+                        app_hint = raw.get("target", "") or raw.get("value", "")
+                        if app_hint:
+                            resolved = _resolve_app_package(app_hint, request.device_udid)
+                            if resolved != app_hint:
+                                app_id = resolved
+                            else:
+                                # Try extracting app name from description
+                                words = app_hint.split()
+                                for w in words:
+                                    if len(w) > 3 and w[0].isupper():
+                                        resolved2 = _resolve_app_package(w, request.device_udid)
+                                        if resolved2 != w:
+                                            app_id = resolved2
+                                            break
+                        break
+
+                # Second pass: generate commands
+                for s in request.steps:
+                    raw = s if isinstance(s, dict) else dict(s)
+                    cmd = raw.get("maestro_command", "")
+                    if cmd:
+                        commands.append(cmd)
+                    else:
+                        action = raw.get("action", "")
+                        target = raw.get("target", "")
+                        value = raw.get("value", "")
+                        generated = _action_to_maestro_command(action, target, value)
+                        if generated:
+                            commands.append(generated)
+
+                logger.info(f"[MAESTRO] Resolved appId: {app_id}")
+
+                if commands:
+                    yaml_content = f"appId: {app_id}\n---\n" + "\n".join(commands)
+                    yaml_path = save_yaml_flow("runs", request.run_id, yaml_content)
+                    logger.info(f"[MAESTRO] Auto-generated YAML: {yaml_path}")
+                else:
+                    raise HTTPException(status_code=400, detail="No yaml_path and steps could not be converted to Maestro commands")
+
+            asyncio.create_task(run_with_maestro(
+                yaml_path=yaml_path,
+                udid=request.device_udid,
+                run_id=request.run_id,
+                env_vars=request.env_vars or {},
+                ws_broadcaster=ws_server,
+                total_steps=len(request.steps),
+                max_retries=3,
+                anthropic_client=prompt_parser.client if anthropic_api_key else None,
+            ))
+            return {"status": "started", "run_id": request.run_id, "engine": "maestro"}
+
+        # --- UIAutomator2 engine (unchanged) ---
         if request.platform == "web":
             executor = WebDriverExecutor(ws_server)
         else:
@@ -214,8 +438,8 @@ async def start_run(request: RunAIRequest):
                 raise HTTPException(status_code=400, detail="device_udid is required for android runs")
             d = device_manager_instance.connect(request.device_udid)
             executor = StepExecutor(d, screenshot_handler, ws_server)
-        
-        
+
+
         orchestrator = RunOrchestrator(
             executor=executor,
             vision_analyzer=vision_analyzer,
@@ -225,18 +449,28 @@ async def start_run(request: RunAIRequest):
             supabase_url=supabase_url,
             supabase_key=supabase_key
         )
-        
+
         active_runs[request.run_id] = orchestrator
-        
-        test_case = TestCase(steps=request.steps)
+
+        # Convert raw dicts to TestStep objects for UIAutomator2
+        parsed_steps = []
+        for s in request.steps:
+            raw = s if isinstance(s, dict) else s.model_dump() if hasattr(s, 'model_dump') else dict(s)
+            try:
+                parsed_steps.append(TestStep(**raw))
+            except Exception as step_err:
+                logger.warning(f"Skipping invalid step: {step_err}")
+
+        test_case = TestCase(steps=parsed_steps)
         # Execute asynchronously so endpoint returns immediately
         asyncio.create_task(orchestrator.run(test_case, request.run_id, request.device_udid, platform=request.platform))
-        
+
         return {"status": "started", "run_id": request.run_id}
-        
+
     except Exception as e:
         traceback.print_exc()
         logger.error(f"[EXECUTOR] Exception in start_run: {e}")
+        log_manager.error(f"start_run failed: {e}", context="EXECUTOR", run_id=request.run_id)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/runs/vision")
@@ -383,46 +617,160 @@ class SaveTestRequest(BaseModel):
     project_id: Optional[str] = None
     tags: list = ["recorded"]
 
+LOCAL_TESTS_DIR = Path(__file__).parent.parent.parent / "data" / "test_cases"
+LOCAL_TESTS_DIR.mkdir(parents=True, exist_ok=True)
+
 @app.post("/api/tests/save")
 async def save_test(req: SaveTestRequest):
-    """Save a recorded test to Supabase, bypassing frontend RLS restrictions."""
-    if not supabase_url or not supabase_key:
-        raise HTTPException(status_code=500, detail="Supabase not configured")
-
+    """Save test — always saves locally, tries Supabase as bonus."""
     import json as json_mod
-    headers = {
-        "apikey": supabase_key,
-        "Authorization": f"Bearer {supabase_key}",
-        "Content-Type": "application/json",
-        "Prefer": "return=representation",
-    }
+    import uuid as uuid_mod
+    from datetime import datetime
 
+    test_id = str(uuid_mod.uuid4())
     body: dict = {
+        "id": test_id,
         "name": req.name,
         "description": req.description,
         "steps": req.steps,
         "tags": req.tags,
+        "project_id": req.project_id,
         "is_active": True,
         "version": 1,
+        "created_at": datetime.utcnow().isoformat(),
     }
-    if req.project_id:
-        body["project_id"] = req.project_id
 
-    async with httpx.AsyncClient(verify=False) as client:
-        resp = await client.post(
-            f"{supabase_url}/rest/v1/test_cases",
-            headers=headers,
-            json=body,
-            timeout=10,
+    # Always save locally (guaranteed to work)
+    local_file = LOCAL_TESTS_DIR / f"{test_id}.json"
+    local_file.write_text(json_mod.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+    logger.info(f"Test saved locally: {local_file}")
+
+    # Try Supabase (priority)
+    supabase_ok = False
+    if supabase_url and supabase_service_key:
+        try:
+            headers = {
+                "apikey": supabase_service_key,
+                "Authorization": f"Bearer {supabase_service_key}",
+                "Content-Type": "application/json",
+                "Prefer": "return=representation",
+            }
+            # Send full body to Supabase
+            supabase_body = {
+                "name": req.name,
+                "description": req.description,
+                "steps": req.steps,
+                "tags": req.tags,
+                "is_active": True,
+                "version": 1,
+            }
+            if req.project_id:
+                supabase_body["project_id"] = req.project_id
+
+            async with httpx.AsyncClient(verify=False) as client:
+                resp = await client.post(
+                    f"{supabase_url}/rest/v1/test_cases",
+                    headers=headers,
+                    json=supabase_body,
+                    timeout=10,
+                )
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                supabase_ok = True
+                saved = data[0] if isinstance(data, list) and data else data
+                body["id"] = saved.get("id", test_id)
+                logger.info(f"Test saved to Supabase: {body['id']}")
+            else:
+                logger.warning(f"Supabase insert failed ({resp.status_code}): {resp.text[:200]}")
+        except Exception as e:
+            logger.warning(f"Supabase save failed: {e}")
+
+    log_manager.execution(f"Test saved: {req.name} (project={req.project_id}, supabase={supabase_ok})", run_id="save")
+    return {"status": "saved", "test": body}
+
+
+@app.get("/api/tests")
+async def list_tests(project_id: Optional[str] = None):
+    """List saved tests — from Supabase + local fallback."""
+    import json as json_mod
+
+    tests = []
+
+    # Try Supabase first
+    if supabase_url and supabase_service_key:
+        try:
+            headers = {
+                "apikey": supabase_service_key,
+                "Authorization": f"Bearer {supabase_service_key}",
+            }
+            url = f"{supabase_url}/rest/v1/test_cases?select=*&order=created_at.desc"
+            if project_id:
+                url += f"&project_id=eq.{project_id}"
+
+            async with httpx.AsyncClient(verify=False) as client:
+                resp = await client.get(url, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                tests = resp.json()
+        except Exception as e:
+            logger.warning(f"Supabase list failed: {e}")
+
+    # Merge with local tests
+    local_ids = {t["id"] for t in tests}
+    for f in LOCAL_TESTS_DIR.glob("*.json"):
+        try:
+            data = json_mod.loads(f.read_text(encoding="utf-8"))
+            if data.get("id") not in local_ids:
+                if project_id and data.get("project_id") != project_id:
+                    continue
+                tests.append(data)
+        except Exception:
+            pass
+
+    # Sort by created_at desc
+    tests.sort(key=lambda t: t.get("created_at", ""), reverse=True)
+    return {"tests": tests}
+
+
+class MaestroYamlRequest(BaseModel):
+    yaml_content: str
+    project_id: str = "default"
+    test_name: str = "flow"
+
+class ConvertRecordingRequest(BaseModel):
+    recorded_events: list
+    width: int = 1080
+    height: int = 2400
+    model: str = "claude-sonnet-4-6"
+
+@app.post("/api/maestro/convert-recording")
+async def convert_recording_to_maestro(req: ConvertRecordingRequest):
+    """Convert recorded interactions to Maestro YAML via Claude."""
+    try:
+        result = await prompt_parser.convert_recording_to_maestro(
+            recorded_events=req.recorded_events,
+            width=req.width,
+            height=req.height,
+            model=req.model,
         )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    if resp.status_code in (200, 201):
-        data = resp.json()
-        return {"status": "saved", "test": data[0] if isinstance(data, list) and data else data}
-    else:
-        error_body = resp.text
-        logger.error(f"Supabase insert failed: {resp.status_code} - {error_body}")
-        raise HTTPException(status_code=resp.status_code, detail=f"Supabase error: {error_body}")
+@app.post("/api/maestro/validate-yaml")
+async def validate_yaml(req: MaestroYamlRequest):
+    """Validate Maestro YAML syntax."""
+    valid, message = validate_maestro_yaml(req.yaml_content)
+    return {"valid": valid, "message": message}
+
+@app.post("/api/maestro/save-yaml")
+async def save_maestro_yaml(req: MaestroYamlRequest):
+    """Validate and save a Maestro YAML flow to disk."""
+    valid, message = validate_maestro_yaml(req.yaml_content)
+    if not valid:
+        raise HTTPException(status_code=400, detail=f"YAML invalido: {message}")
+
+    file_path = save_yaml_flow(req.project_id, req.test_name, req.yaml_content)
+    return {"status": "saved", "path": file_path}
 
 @app.post("/screenshot/{udid}")
 async def capture_screenshot(udid: str):

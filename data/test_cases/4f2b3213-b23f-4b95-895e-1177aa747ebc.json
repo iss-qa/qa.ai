@@ -1,0 +1,118 @@
+{
+  "id": "4f2b3213-b23f-4b95-895e-1177aa747ebc",
+  "name": "WasteZero - busca feijao",
+  "description": "Teste com 13 passos",
+  "steps": [
+    {
+      "id": "1",
+      "num": 1,
+      "action": "launchApp",
+      "target": "Abre o app WasteZero",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "2",
+      "num": 2,
+      "action": "extendedWaitUntil",
+      "target": "Aguarda o elemento Busque seu produto aparecer na tela inicial",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "3",
+      "num": 3,
+      "action": "tapOn",
+      "target": "Clica em Busque seu produto",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "4",
+      "num": 4,
+      "action": "waitForAnimationToEnd",
+      "target": "Aguarda transicao de tela apos tap",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "5",
+      "num": 5,
+      "action": "extendedWaitUntil",
+      "target": "Aguarda campo de busca aparecer",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "6",
+      "num": 6,
+      "action": "tapOn",
+      "target": "Toca no campo de busca",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "7",
+      "num": 7,
+      "action": "inputText",
+      "target": "Digita feijao no campo de busca",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "8",
+      "num": 8,
+      "action": "hideKeyboard",
+      "target": "Esconde o teclado apos digitar",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "9",
+      "num": 9,
+      "action": "waitForAnimationToEnd",
+      "target": "Aguarda resultados da busca carregarem",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "10",
+      "num": 10,
+      "action": "extendedWaitUntil",
+      "target": "Aguarda aba Produtos aparecer nos resultados",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "11",
+      "num": 11,
+      "action": "tapOn",
+      "target": "Clica na aba Produtos para garantir que esta selecionada",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "12",
+      "num": 12,
+      "action": "waitForAnimationToEnd",
+      "target": "Aguarda conteudo da aba Produtos carregar",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "13",
+      "num": 13,
+      "action": "assertVisible",
+      "target": "Valida que houve resultado e feijao e exibido na aba de produtos",
+      "value": "",
+      "engine": "maestro"
+    }
+  ],
+  "tags": [
+    "maestro"
+  ],
+  "project_id": "725ab449-b77a-4f52-bbf2-3ee77f15dab2",
+  "is_active": true,
+  "version": 1,
+  "created_at": "2026-03-25T13:50:21.496587"
+}

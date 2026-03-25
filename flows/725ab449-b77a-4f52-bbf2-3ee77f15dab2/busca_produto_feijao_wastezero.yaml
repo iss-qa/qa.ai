@@ -1,0 +1,21 @@
+appId: com.wastezero.app
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Busque seu produto"
+    timeout: 10000
+- tapOn: "Busque seu produto"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Pesquise por produtos ou parceiros"
+    timeout: 8000
+- tapOn: "Pesquise por produtos ou parceiros"
+- inputText: "feijao"
+- hideKeyboard
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Produtos"
+    timeout: 8000
+- tapOn: "Produtos"
+- waitForAnimationToEnd
+- assertVisible: "feijao"

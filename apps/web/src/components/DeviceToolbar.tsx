@@ -1,25 +1,20 @@
 import React, { useState } from 'react';
 import { Camera, ChevronLeft, Circle, Copy, UploadCloud } from 'lucide-react';
 import { InstallAPKModal } from './InstallAPKModal';
+import { DAEMON_URL } from '@/lib/constants';
 
 interface DeviceToolbarProps {
     udid: string;
     deviceName: string;
+    sendKeyevent?: (keycode: number) => void;
 }
 
-export function DeviceToolbar({ udid, deviceName }: DeviceToolbarProps) {
+export function DeviceToolbar({ udid, deviceName, sendKeyevent }: DeviceToolbarProps) {
     const [isUploadOpen, setIsUploadOpen] = useState(false);
-
-    const sendKey = (keycode: number) =>
-        fetch(`http://localhost:8000/api/devices/${udid}/input/keyevent`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ keycode }),
-        });
 
     const handleScreenshot = async () => {
         try {
-            const res = await fetch(`http://localhost:8000/api/devices/${udid}/screenshot`);
+            const res = await fetch(`${DAEMON_URL}/api/devices/${udid}/screenshot`);
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -43,19 +38,19 @@ export function DeviceToolbar({ udid, deviceName }: DeviceToolbarProps) {
             id: 'back',
             label: 'Voltar',
             icon: <ChevronLeft className="w-5 h-5" />,
-            onClick: () => sendKey(4),   // KEYCODE_BACK
+            onClick: () => sendKeyevent?.(4),   // KEYCODE_BACK
         },
         {
             id: 'home',
             label: 'Tela Inicial',
             icon: <Circle className="w-5 h-5" />,
-            onClick: () => sendKey(3),   // KEYCODE_HOME
+            onClick: () => sendKeyevent?.(3),   // KEYCODE_HOME
         },
         {
             id: 'recents',
             label: 'Trocar Aplicativo',
             icon: <Copy className="w-5 h-5" />,
-            onClick: () => sendKey(187), // KEYCODE_APP_SWITCH
+            onClick: () => sendKeyevent?.(187), // KEYCODE_APP_SWITCH
         },
         {
             id: 'screenshot',

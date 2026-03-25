@@ -1,0 +1,20 @@
+appId: com.app.wastezero_app
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "inicial"
+    timeout: 5000
+- tapOn: "Clica em Busque seu produto"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "aparecer"
+    timeout: 5000
+- tapOn: "Toca no campo de busca"
+- hideKeyboard
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "resultados"
+    timeout: 5000
+- tapOn: "Clica na aba Produtos para garantir que esta selecionada"
+- waitForAnimationToEnd
+- assertVisible: "Valida que houve resultado e feijao e exibido na aba de produtos"

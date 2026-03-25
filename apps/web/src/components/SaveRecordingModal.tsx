@@ -14,8 +14,11 @@ interface SaveRecordingModalProps {
     stepCount: number;
     durationSeconds: number;
     currentProjectId?: string | null;
-    onSave: (testName: string, projectId: string) => void;
+    onSave: (testName: string, projectId: string, yamlContent?: string) => void;
     onCancel: () => void;
+    engine?: 'uiautomator2' | 'maestro';
+    maestroYaml?: string;
+    yamlValidationError?: string;
 }
 
 export function SaveRecordingModal({
@@ -25,11 +28,20 @@ export function SaveRecordingModal({
     currentProjectId,
     onSave,
     onCancel,
+    engine = 'uiautomator2',
+    maestroYaml = '',
+    yamlValidationError = '',
 }: SaveRecordingModalProps) {
     const [testName, setTestName] = useState('');
     const [projectId, setProjectId] = useState('');
     const [projects, setProjects] = useState<Project[]>([]);
     const [loadingProjects, setLoadingProjects] = useState(false);
+    const [editableYaml, setEditableYaml] = useState('');
+    const [isEditingYaml, setIsEditingYaml] = useState(false);
+
+    useEffect(() => {
+        if (maestroYaml) setEditableYaml(maestroYaml);
+    }, [maestroYaml]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -123,8 +135,44 @@ export function SaveRecordingModal({
                             <span className="font-bold text-white">{stepCount}</span> passos gravados
                             <span className="mx-2 text-white/20">|</span>
                             <span className="font-bold text-white">{formatDuration(durationSeconds)}</span> de duracao
+                            {engine === 'maestro' && (
+                                <span className="ml-2 px-1.5 py-0.5 bg-purple-500/20 text-purple-400 text-[9px] font-bold rounded">maestro</span>
+                            )}
                         </div>
                     </div>
+
+                    {engine === 'maestro' && editableYaml && (
+                        <div className="flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between">
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                    YAML Maestro
+                                </label>
+                                <button
+                                    onClick={() => setIsEditingYaml(!isEditingYaml)}
+                                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                                >
+                                    {isEditingYaml ? 'Visualizar' : 'Editar YAML'}
+                                </button>
+                            </div>
+                            {isEditingYaml ? (
+                                <textarea
+                                    value={editableYaml}
+                                    onChange={(e) => setEditableYaml(e.target.value)}
+                                    className="bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-xs text-green-300 font-mono focus:outline-none focus:border-brand/50 min-h-[200px] resize-y"
+                                    spellCheck={false}
+                                />
+                            ) : (
+                                <pre className="bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-xs text-green-300 font-mono max-h-[200px] overflow-y-auto">
+                                    {editableYaml}
+                                </pre>
+                            )}
+                            {yamlValidationError && (
+                                <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded px-2 py-1">
+                                    {yamlValidationError}
+                                </p>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/10">
@@ -140,7 +188,7 @@ export function SaveRecordingModal({
                                 alert('Informe o nome do teste');
                                 return;
                             }
-                            onSave(testName.trim(), projectId);
+                            onSave(testName.trim(), projectId, engine === 'maestro' ? editableYaml : undefined);
                         }}
                         className="flex items-center gap-2 px-5 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-bold rounded-lg transition-colors shadow-sm shadow-green-500/20"
                     >

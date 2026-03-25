@@ -1,6 +1,6 @@
 'use client';
 
-import { Plus, LayoutGrid, Trash2, Edit2, X, Loader2, FolderOpen } from 'lucide-react';
+import { Plus, LayoutGrid, Trash2, Edit2, X, Loader2, FolderOpen, FlaskConical } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
@@ -34,7 +34,7 @@ export default function ProjectsPage() {
 
             if (error) throw error;
 
-            // Count tests per project
+            // Count tests per project from Supabase
             const projectsWithCounts = await Promise.all(
                 (data || []).map(async (project: Project) => {
                     const { count } = await supabase
@@ -156,45 +156,65 @@ export default function ProjectsPage() {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {projects.map((project) => (
-                        <div key={project.id} className="bg-white rounded-2xl p-6 shadow-sm border border-black/5 group hover:border-brand/20 transition-all relative">
-                            {/* Action buttons on hover */}
-                            <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity z-10">
-                                <button
-                                    onClick={() => handleOpenEdit(project)}
-                                    className="p-1.5 hover:bg-brand/10 text-slate-400 hover:text-brand rounded-md transition-colors"
-                                    title="Editar"
-                                >
-                                    <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                    onClick={() => setDeleteConfirm(project.id)}
-                                    className="p-1.5 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-md transition-colors"
-                                    title="Excluir"
-                                >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                            </div>
+                        <Link
+                            key={project.id}
+                            href={`/dashboard/projects/${project.id}`}
+                            className="group relative bg-gradient-to-br from-[#111827] to-[#0d1117] rounded-2xl border border-white/[0.06] hover:border-brand/30 transition-all duration-300 overflow-hidden hover:shadow-[0_0_30px_rgba(74,144,217,0.08)]"
+                        >
+                            {/* Subtle gradient accent on hover */}
+                            <div className="absolute inset-0 bg-gradient-to-br from-brand/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
-                            <div className="flex items-start justify-between mb-4">
-                                <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-brand/10 group-hover:text-brand transition-colors">
-                                    <LayoutGrid className="w-5 h-5" />
+                            <div className="relative p-6">
+                                {/* Top row: icon + status + actions */}
+                                <div className="flex items-center justify-between mb-5">
+                                    <div className="w-11 h-11 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-slate-500 group-hover:bg-brand/10 group-hover:text-brand group-hover:border-brand/20 transition-all duration-300">
+                                        <LayoutGrid className="w-5 h-5" />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-full tracking-wider ${!project.is_archived ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-500 border border-slate-500/20'}`}>
+                                            {project.is_archived ? 'Arquivado' : 'Ativo'}
+                                        </span>
+                                        <div className="flex opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                            <button
+                                                onClick={(e) => { e.preventDefault(); handleOpenEdit(project); }}
+                                                className="p-1.5 text-slate-500 hover:text-brand hover:bg-brand/10 rounded-lg transition-colors"
+                                                title="Editar"
+                                            >
+                                                <Edit2 className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                onClick={(e) => { e.preventDefault(); setDeleteConfirm(project.id); }}
+                                                className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                title="Excluir"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <span className={`text-[10px] font-black uppercase px-2 py-1 rounded ${!project.is_archived ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                                    {project.is_archived ? 'Arquivado' : 'Ativo'}
-                                </span>
+
+                                {/* Name + description */}
+                                <h3 className="text-base font-bold text-white mb-1 group-hover:text-brand transition-colors duration-300">{project.name}</h3>
+                                <p className="text-slate-500 text-xs leading-relaxed line-clamp-2 mb-6">{project.description}</p>
+
+                                {/* Bottom stats */}
+                                <div className="flex items-center justify-between pt-4 border-t border-white/[0.04]">
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex items-center gap-1.5">
+                                            <FlaskConical className="w-3 h-3 text-slate-500" />
+                                            <span className="text-[11px] text-slate-400 font-semibold">{project.test_count || 0} testes</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
+                                            <span className="text-[11px] text-slate-500 capitalize">{project.platform}</span>
+                                        </div>
+                                    </div>
+                                    <span className="text-[11px] text-brand font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                                        Abrir →
+                                    </span>
+                                </div>
                             </div>
-                            <h3 className="text-lg font-bold text-slate-900 mb-1">{project.name}</h3>
-                            <p className="text-slate-500 text-xs mb-6 line-clamp-2">{project.description}</p>
-                            <div className="flex items-center justify-between pt-4 border-t border-black/[0.03]">
-                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{project.test_count || 0} Testes</span>
-                                <Link
-                                    href={`/dashboard/projects/${project.id}`}
-                                    className="text-brand text-xs font-bold hover:underline"
-                                >
-                                    Gerenciar →
-                                </Link>
-                            </div>
-                        </div>
+                        </Link>
                     ))}
                 </div>
             )}

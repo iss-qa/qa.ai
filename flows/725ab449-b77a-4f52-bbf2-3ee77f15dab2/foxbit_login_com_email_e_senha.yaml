@@ -1,0 +1,14 @@
+appId: com.foxbit.exchange
+---
+- clearState
+- launchApp
+- wait:
+    minDuration: 2000
+- tapOn: "Entrar"
+- waitForAnimationToEnd
+- assertVisible: "Email"
+- tapOn: "Email"
+- inputText: "isaias@gmail.com"
+- tapOn: "Senha"
+- inputText: "${SENHA}"
+- assertVisible: "isaias@gmail.com"

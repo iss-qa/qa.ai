@@ -81,28 +81,31 @@ export function ConnectDeviceModal({ isOpen, onClose }: ConnectDeviceModalProps)
                     ) : scanResult === 'found' && devices.length > 0 ? (
                         <div className="flex flex-col gap-3">
                             {devices.map((device) => (
-                                <div key={device.udid} className="bg-white/5 border border-white/10 rounded-xl p-4 flex items-center justify-between hover:bg-white/10 transition-colors">
+                                <div key={device.udid} className="bg-white/5 border border-white/10 rounded-xl p-4 hover:bg-white/[0.07] hover:border-brand/20 transition-all">
                                     <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-full bg-brand/10 text-brand flex items-center justify-center shrink-0">
+                                        <div className="w-11 h-11 rounded-xl bg-brand/10 text-brand flex items-center justify-center shrink-0 border border-brand/20">
                                             <Smartphone className="w-5 h-5" />
                                         </div>
-                                        <div>
-                                            <h4 className="font-bold text-white leading-none">{device.model || 'Unknown Android'}</h4>
-                                            <div className="flex items-center gap-2 mt-2 text-xs text-slate-400 font-mono">
-                                                <span>UDID: {device.udid.substring(0, 12)}</span>
-                                                <span>•</span>
-                                                <span className="flex items-center gap-1"><Usb className="w-3 h-3" /> USB</span>
-                                                <span>•</span>
-                                                <span>Android {device.os_version}</span>
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className="font-bold text-white text-sm">{device.model || 'Android Device'}</h4>
+                                            <div className="flex flex-col gap-0.5 mt-1.5">
+                                                <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                                                    <span className="font-mono text-slate-500">{device.udid}</span>
+                                                </div>
+                                                <div className="flex items-center gap-3 text-[11px] text-slate-400">
+                                                    <span className="flex items-center gap-1"><Usb className="w-3 h-3 text-green-400" /> USB</span>
+                                                    <span className="text-slate-600">|</span>
+                                                    <span>Android {device.os_version}</span>
+                                                </div>
                                             </div>
                                         </div>
+                                        <button
+                                            onClick={() => handleConnect(device)}
+                                            className="bg-brand text-black font-bold text-xs px-4 py-2.5 rounded-lg hover:bg-brand/90 transition-colors shrink-0"
+                                        >
+                                            Conectar
+                                        </button>
                                     </div>
-                                    <button
-                                        onClick={() => handleConnect(device)}
-                                        className="bg-brand text-black font-bold text-xs px-4 py-2 rounded-lg hover:bg-brand/90 transition-colors"
-                                    >
-                                        Conectar
-                                    </button>
                                 </div>
                             ))}
                         </div>

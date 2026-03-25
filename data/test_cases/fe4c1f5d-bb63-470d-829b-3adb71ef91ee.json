@@ -1,0 +1,109 @@
+{
+  "name": "Teste2",
+  "description": "Teste com 12 passos",
+  "steps": [
+    {
+      "id": "1",
+      "num": 1,
+      "action": "clearState",
+      "target": "Limpa o estado do app para garantir sessao limpa antes do login",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "2",
+      "num": 2,
+      "action": "launchApp",
+      "target": "Abre o aplicativo da Foxbit",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "3",
+      "num": 3,
+      "action": "extendedWaitUntil",
+      "target": "Aguarda a tela inicial carregar completamente (timeout 5s)",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "4",
+      "num": 4,
+      "action": "tapOn",
+      "target": "Clica no botao 'Entrar' na tela inicial",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "5",
+      "num": 5,
+      "action": "waitForAnimationToEnd",
+      "target": "Aguarda a transicao de tela para a tela de login",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "6",
+      "num": 6,
+      "action": "assertVisible",
+      "target": "Valida que o campo de e-mail esta visivel na tela de login",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "7",
+      "num": 7,
+      "action": "tapOn",
+      "target": "Clica no campo de e-mail",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "8",
+      "num": 8,
+      "action": "inputText",
+      "target": "Digita o e-mail do usuario",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "9",
+      "num": 9,
+      "action": "tapOn",
+      "target": "Clica no campo de senha",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "10",
+      "num": 10,
+      "action": "inputText",
+      "target": "Digita a senha usando variavel de ambiente para proteger dado sensivel",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "11",
+      "num": 11,
+      "action": "waitForAnimationToEnd",
+      "target": "Aguarda qualquer animacao ou validacao de campo apos preenchimento",
+      "value": "",
+      "engine": "maestro"
+    },
+    {
+      "id": "12",
+      "num": 12,
+      "action": "assertVisible",
+      "target": "CRITERIO DE ACEITE — Valida que o botao Entrar esta habilitado (enabled=true). Se o elemento nao for encontrado com enabled=true, o teste falha automaticamente",
+      "value": "",
+      "engine": "maestro"
+    }
+  ],
+  "tags": [
+    "maestro"
+  ],
+  "is_active": true,
+  "version": 1,
+  "project_id": "725ab449-b77a-4f52-bbf2-3ee77f15dab2",
+  "id": "fe4c1f5d-bb63-470d-829b-3adb71ef91ee"
+}

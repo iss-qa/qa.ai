@@ -1,0 +1,18 @@
+appId: br.com.foxbit.exchange
+---
+- clearState
+- launchApp
+- extendedWaitUntil:
+    visible: "Entrar"
+    timeout: 5000
+- tapOn: "Entrar"
+- waitForAnimationToEnd
+- assertVisible: "E-mail"
+- tapOn: "E-mail"
+- inputText: "isaias@gmail.com"
+- tapOn: "Senha"
+- inputText: "${SENHA}"
+- waitForAnimationToEnd
+- assertVisible:
+    id: "btn_login"
+    enabled: true

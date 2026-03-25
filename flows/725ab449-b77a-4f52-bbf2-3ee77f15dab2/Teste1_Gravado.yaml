@@ -1,0 +1,14 @@
+appId: com.foxbit.exchange
+---
+- clearState
+- launchApp
+- wait:
+    minDuration: 2000
+- tapOn: "Entrar"
+- waitForAnimationToEnd
+- tapOn: "Digite seu e-mail"
+- inputText: "isaias@gmail.com"
+- tapOn: "Digite sua senha"
+- inputText: "123456"
+- tapOn: "Entrar"
+- waitForAnimationToEnd
