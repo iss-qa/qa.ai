@@ -866,7 +866,10 @@ export default function TestEditorPage() {
     };
 
     const handleExecuteTest = async () => {
-        if (!connectedDevice || steps.length === 0 || !runId) return;
+        if (!connectedDevice || steps.length === 0) {
+            if (!connectedDevice) alert('Conecte um dispositivo primeiro.');
+            return;
+        }
 
         const stepsEngine = steps[0]?.engine || selectedEngine;
 
@@ -876,10 +879,17 @@ export default function TestEditorPage() {
             return;
         }
 
+        // Generate fresh runId for this execution
+        const execRunId = `run-${Date.now()}`;
+        setRunId(execRunId);
+
         // Reset all step statuses
         setSteps(prev => prev.map(s => ({ ...s, status: 'idle' })));
         setShowExecutionOverlay(true);
         setIsExecuting(true);
+
+        // Small delay to let WebSocket connect before sending the request
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         const { referenceImages, imageStepMapping, autoMapImages } = useVisionStore.getState();
 
@@ -888,13 +898,13 @@ export default function TestEditorPage() {
             autoMapImages(steps.length);
         }
 
-        console.log("Executar Teste: images=", referenceImages.length, "mapping=", imageStepMapping);
+        console.log("Executar Teste:", { execRunId, engine: stepsEngine, steps: steps.length });
 
-        let timeoutId = setTimeout(() => {
+        const timeoutId = setTimeout(() => {
             setIsExecuting(current => {
                 if (current) {
-                    console.error("Execução Timeout: 5min excedidos sem finalização.");
-                    alert("A execução excedeu o tempo limite de 5 minutos.");
+                    console.error("Execucao Timeout: 5min excedidos.");
+                    alert("A execucao excedeu o tempo limite de 5 minutos.");
                     return false;
                 }
                 return current;
@@ -907,7 +917,7 @@ export default function TestEditorPage() {
             if (referenceImages.length > 0) {
                 // Vision-first path: use FormData
                 const formData = new FormData();
-                formData.append('run_id', runId);
+                formData.append('run_id', execRunId);
                 formData.append('steps', JSON.stringify(steps));
                 formData.append('device_udid', connectedDevice.udid);
                 formData.append('platform', 'android');
@@ -930,9 +940,9 @@ export default function TestEditorPage() {
                 // Standard / Maestro path: JSON
                 const currentEngine = stepsEngine;
                 const payload: Record<string, any> = {
-                    test_case_id: 'test-1',
+                    test_case_id: testIdParam || 'test-1',
                     device_udid: connectedDevice.udid,
-                    run_id: runId,
+                    run_id: execRunId,
                     steps: steps,
                     platform: 'android',
                     engine: currentEngine,
@@ -952,10 +962,11 @@ export default function TestEditorPage() {
 
             if (!res.ok) {
                 const errText = await res.text();
-                console.error("Erro na request de execução:", res.status, errText);
+                console.error("Erro na request de execucao:", res.status, errText);
                 setIsExecuting(false);
+                setShowExecutionOverlay(false);
                 clearTimeout(timeoutId);
-                alert("Falha ao iniciar execução: " + res.status);
+                alert("Falha ao iniciar execucao: " + res.status);
             } else {
                 const responseData = await res.json();
                 console.log("Execução Response:", responseData);
@@ -963,6 +974,7 @@ export default function TestEditorPage() {
         } catch (error) {
             console.error("Execution failed:", error);
             setIsExecuting(false);
+            setShowExecutionOverlay(false);
             clearTimeout(timeoutId);
         }
     };

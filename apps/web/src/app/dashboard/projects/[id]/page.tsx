@@ -5,6 +5,7 @@ import { ArrowLeft, Play, Plus, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { useDeviceStore } from '@/store/deviceStore';
 
 interface Project {
     id: string;
@@ -36,44 +37,115 @@ export default function ProjectDetailPage() {
     const [formData, setFormData] = useState({ name: '', description: '', platform: 'android', status: 'Ativo' });
     const [saving, setSaving] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState(false);
+    const { connectedDevice } = useDeviceStore();
     const [showImportModal, setShowImportModal] = useState(false);
     const [importDragActive, setImportDragActive] = useState(false);
     const [importStatus, setImportStatus] = useState<{ type: 'idle' | 'error' | 'success'; message: string }>({ type: 'idle', message: '' });
     const [importing, setImporting] = useState(false);
 
-    // Export test as .yaml file
-    const handleExportYaml = (e: React.MouseEvent, test: TestCase) => {
-        e.preventDefault(); // Don't navigate to editor
+    /**
+     * Extract the UI element name from a user description.
+     * Removes action verbs and keeps only the element identifier.
+     *
+     * "Clica em Busque seu produto" -> "Busque seu produto"
+     * "Aguarda o elemento Busque seu produto aparecer na tela" -> "Busque seu produto"
+     * "Digita o email isaias@gmail.com" -> "isaias@gmail.com"
+     * "Valida que feijao e exibido" -> "feijao"
+     */
+    const extractElementName = (text: string): string => {
+        let label = text;
+
+        // 1. If there's quoted text, use it directly
+        const quoted = label.match(/"([^"]+)"/);
+        if (quoted) return quoted[1];
+
+        // 2. Remove action verb prefixes (order: longest first)
+        const actionPrefixes = [
+            'Aguarda o elemento ', 'Aguarda que o elemento ', 'Aguarda que ',
+            'Aguarda a transicao de tela apos ', 'Aguarda transicao de tela',
+            'Aguarda campo de ', 'Aguarda aba ', 'Aguarda ',
+            'Clica no botao ', 'Clica em ', 'Clica no ', 'Clica na ',
+            'Toca no campo de ', 'Toca no campo ', 'Toca em ', 'Toca no ', 'Toca na ',
+            'Abre o app ', 'Abre o aplicativo ', 'Abre ',
+            'Digita o email ', 'Digita a senha ', 'Digita o ', 'Digita a ', 'Digita ',
+            'Valida que houve resultado e ', 'Valida que ', 'Valida se ',
+            'Verifica que ', 'Verifica se ', 'Confirma que ',
+            'Pressiona o ', 'Pressiona ', 'Esconde ',
+        ];
+        for (const p of actionPrefixes) {
+            if (label.startsWith(p)) { label = label.substring(p.length); break; }
+        }
+
+        // 3. Remove trailing context phrases
+        const contextSuffixes = [
+            ' aparecer na tela inicial', ' aparecer na tela', ' aparecer nos resultados',
+            ' aparecer', ' apareca', ' na tela inicial', ' na tela',
+            ' para garantir que esta selecionada', ' para garantir', ' para confirmar',
+            ' para acessar', ' para fazer', ' para iniciar',
+            ' e exibido na aba de produtos', ' e exibido', ' esta visivel',
+            ' nos resultados', ' na aba de produtos', ' no campo de busca',
+            ' carregar', ' ficar visivel',
+        ];
+        for (const s of contextSuffixes) {
+            const idx = label.indexOf(s);
+            if (idx > 0) { label = label.substring(0, idx); break; }
+        }
+
+        return label.trim();
+    };
+
+    // Export test as .yaml file — calls daemon to resolve appId
+    const handleExportYaml = async (e: React.MouseEvent, test: TestCase) => {
+        e.preventDefault();
         e.stopPropagation();
 
         const steps = test.steps || [];
-        // Build YAML content
-        let appId = 'com.app.unknown';
         const commands: string[] = [];
+
+        // Resolve appId via daemon
+        const DAEMON = process.env.NEXT_PUBLIC_DAEMON_URL || 'http://localhost:8001';
+        let appId = 'com.app.unknown';
+        const launchStep = steps.find((s: any) => (s.action || '').toLowerCase() === 'launchapp');
+        if (launchStep) {
+            try {
+                const udid = connectedDevice?.udid || '';
+                const appHint = extractElementName((launchStep as any).target || test.name);
+                if (udid) {
+                    const res = await fetch(`${DAEMON}/api/devices/${udid}/resolve-app?name=${encodeURIComponent(appHint)}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.resolved) appId = data.package_id;
+                    }
+                }
+            } catch { /* use unknown */ }
+        }
 
         for (const s of steps) {
             const cmd = (s as any).maestro_command;
             if (cmd) {
                 commands.push(cmd);
-            } else {
-                // Generate from action
-                const action = (s.action || '').toLowerCase();
-                if (action === 'launchapp') commands.push('- launchApp');
-                else if (action === 'tapon') commands.push(`- tapOn: "${s.target || ''}"`);
-                else if (action === 'inputtext') commands.push(`- inputText: "${s.value || ''}"`);
-                else if (action === 'assertvisible') commands.push(`- assertVisible: "${s.target || s.value || ''}"`);
-                else if (action === 'waitforanimationtoend') commands.push('- waitForAnimationToEnd');
-                else if (action === 'extendedwaituntil') commands.push(`- extendedWaitUntil:\n    visible: "${s.target || ''}"\n    timeout: ${s.value || '5000'}`);
-                else if (action === 'back') commands.push('- back');
-                else if (action === 'hidekeyboard') commands.push('- hideKeyboard');
-                else if (action === 'clearstate') commands.push('- clearState');
-                else commands.push(`# ${action}: ${s.target || ''}`);
+                continue;
             }
+
+            const action = ((s as any).action || '').toLowerCase();
+            const target = (s as any).target || '';
+            const value = (s as any).value || '';
+            const elem = extractElementName(target);
+
+            if (action === 'launchapp') commands.push('- launchApp');
+            else if (action === 'clearstate') commands.push('- clearState');
+            else if (action === 'tapon') commands.push(`- tapOn: "${elem}"`);
+            else if (action === 'inputtext') commands.push(`- inputText: "${value}"`);
+            else if (action === 'assertvisible') commands.push(`- assertVisible: "${elem}"`);
+            else if (action === 'waitforanimationtoend') commands.push('- waitForAnimationToEnd');
+            else if (action === 'extendedwaituntil') commands.push(`- extendedWaitUntil:\n    visible: "${elem}"\n    timeout: ${value || '5000'}`);
+            else if (action === 'back') commands.push('- back');
+            else if (action === 'hidekeyboard') commands.push('- hideKeyboard');
+            else if (action === 'scroll') commands.push('- scroll');
+            else commands.push(`# ${action}: ${target}`);
         }
 
         const yamlContent = `appId: ${appId}\n---\n${commands.join('\n')}\n`;
-
-        // Download file
         const blob = new Blob([yamlContent], { type: 'text/yaml' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -175,7 +247,7 @@ export default function ProjectDetailPage() {
 
             // Save to Supabase
             const testName = file.name.replace('.yaml', '').replace('.yml', '').replace(/_/g, ' ');
-            const { data, error } = await supabase.from('test_cases').insert({
+            const { error } = await supabase.from('test_cases').insert({
                 name: testName,
                 description: `Importado de ${file.name} (${steps.length} passos)`,
                 steps,
@@ -364,9 +436,9 @@ export default function ProjectDetailPage() {
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => setShowImportModal(true)}
-                            className="px-3 py-1.5 rounded-lg text-xs font-bold border border-white/10 text-slate-300 hover:bg-white/5 hover:text-white transition-all flex items-center gap-1.5"
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold border border-amber-500/30 text-amber-400 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500/50 transition-all flex items-center gap-1.5"
                         >
-                            <Upload className="w-3 h-3" /> Importar YAML
+                            <Upload className="w-3.5 h-3.5" /> Importar YAML
                         </button>
                         <Link
                             href={`/dashboard/tests/editor?projectId=${projectId}`}
@@ -397,19 +469,20 @@ export default function ProjectDetailPage() {
                                         {Array.isArray(test.steps) ? `${test.steps.length} passos` : ''} • {test.last_run_at ? `Ultima exec: ${new Date(test.last_run_at).toLocaleDateString('pt-BR')}` : 'Nunca executado'}
                                     </p>
                                 </div>
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-2">
                                     <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${test.status === 'passed' ? 'bg-green-500/20 text-green-400' : test.status === 'failed' ? 'bg-red-500/20 text-red-400' : 'bg-slate-500/20 text-slate-400'}`}>
                                         {test.status === 'passed' ? 'Sucesso' : test.status === 'failed' ? 'Falha' : 'Pendente'}
                                     </span>
                                     <button
                                         onClick={(e) => handleExportYaml(e, test)}
-                                        className="p-1.5 hover:bg-white/10 text-slate-400 hover:text-white rounded transition-colors"
+                                        className="p-2 hover:bg-white/10 text-slate-400 hover:text-amber-400 rounded-lg transition-colors border border-transparent hover:border-white/10"
                                         title="Exportar YAML"
                                     >
-                                        <Download className="w-3.5 h-3.5" />
+                                        <Download className="w-4 h-4" />
                                     </button>
-                                    <div className="p-1.5 hover:bg-brand/10 text-brand rounded transition-colors" title="Abrir no editor">
+                                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-brand/10 hover:bg-brand/20 text-brand rounded-lg transition-colors border border-brand/20" title="Abrir no editor">
                                         <Play className="w-3.5 h-3.5 fill-current" />
+                                        <span className="text-[11px] font-bold">Abrir</span>
                                     </div>
                                 </div>
                             </Link>
@@ -459,20 +532,23 @@ export default function ProjectDetailPage() {
                                 onDrop={(e) => {
                                     e.preventDefault();
                                     setImportDragActive(false);
-                                    const file = e.dataTransfer.files[0];
-                                    if (file && (file.name.endsWith('.yaml') || file.name.endsWith('.yml'))) {
-                                        handleImportFile(file);
-                                    } else {
+                                    const files = Array.from(e.dataTransfer.files).filter(
+                                        f => f.name.endsWith('.yaml') || f.name.endsWith('.yml')
+                                    );
+                                    if (files.length === 0) {
                                         setImportStatus({ type: 'error', message: 'Apenas arquivos .yaml ou .yml sao aceitos.' });
+                                    } else {
+                                        files.forEach(f => handleImportFile(f));
                                     }
                                 }}
                                 onClick={() => {
                                     const input = document.createElement('input');
                                     input.type = 'file';
                                     input.accept = '.yaml,.yml';
+                                    input.multiple = true;
                                     input.onchange = (e) => {
-                                        const file = (e.target as HTMLInputElement).files?.[0];
-                                        if (file) handleImportFile(file);
+                                        const files = Array.from((e.target as HTMLInputElement).files || []);
+                                        files.forEach(f => handleImportFile(f));
                                     };
                                     input.click();
                                 }}
@@ -489,9 +565,9 @@ export default function ProjectDetailPage() {
                                         </div>
                                         <div>
                                             <p className="text-sm font-medium text-white">
-                                                {importDragActive ? 'Solte o arquivo aqui' : 'Arraste e solte um arquivo .yaml'}
+                                                {importDragActive ? 'Solte os arquivos aqui' : 'Arraste e solte arquivos .yaml'}
                                             </p>
-                                            <p className="text-xs text-slate-500 mt-1">ou clique para selecionar</p>
+                                            <p className="text-xs text-slate-500 mt-1">Suporta multiplos arquivos simultaneamente</p>
                                         </div>
                                     </div>
                                 )}

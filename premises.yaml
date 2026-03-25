@@ -1,0 +1,72 @@
+# ============================================================
+# QAMind — Premissas Globais de Teste
+# ============================================================
+# Este arquivo define regras que são aplicadas automaticamente
+# em TODOS os testes gerados, independente do projeto.
+#
+# Edite à vontade. O daemon recarrega na próxima execução.
+# ============================================================
+
+global:
+
+  # Após launchApp, sempre inserir waitForAnimationToEnd
+  # Evita que o próximo passo falhe porque a tela ainda está animando
+  after_launch_wait: true
+
+  # Timeout padrão para extendedWaitUntil (milissegundos)
+  # Apps lentos podem precisar de 15000 ou 20000
+  default_wait_timeout_ms: 10000
+
+  # Máximo de seletores alternativos que o Smart Retry vai tentar
+  # Ordem: semantics_id > resource_id > text > hint > content_desc > coordenadas
+  smart_retry_max_tries: 6
+
+
+# ============================================================
+# Pacotes de apps conhecidos
+# Adicione seus apps aqui para evitar resolução via ADB
+# ============================================================
+app_packages:
+  wastezero: com.app.wastezero_app
+  foxbit: br.com.foxbit.foxbitandroid
+  settings: com.android.settings
+  configuracoes: com.android.settings
+
+
+# ============================================================
+# Referências visuais por projeto
+# Coloque screenshots dos elementos-chave do app para ajudar
+# o Smart Retry a identificar elementos na tela.
+#
+# Formato:
+#   <project_id>:
+#     <nome_do_elemento>:
+#       screenshot: data/visual_refs/<project_id>/<arquivo>.png
+#       descricao: "O que é esse elemento"
+# ============================================================
+visual_refs:
+  foxbit_mobile:
+    campo_busca:
+      screenshot: data/visual_refs/foxbit_mobile/campo_busca.png
+      descricao: "Campo de busca na tela inicial - texto 'Busque seu produto'"
+
+
+# ============================================================
+# Elementos comuns (aliases reutilizáveis)
+# Use para mapear descrições em português para seletores reais
+# ============================================================
+common_elements:
+  busca:
+    text: "Busque seu produto"
+    hint: "Busque seu produto"
+    resource_id: "search_field"
+
+  login_email:
+    text: "E-mail"
+    hint: "Digite seu e-mail"
+    resource_id: "email_input"
+
+  login_senha:
+    text: "Senha"
+    hint: "Digite sua senha"
+    resource_id: "password_input"

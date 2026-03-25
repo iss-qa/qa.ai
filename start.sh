@@ -4,7 +4,12 @@
 set -euo pipefail
 
 # Aumentar limite de arquivos (Previne EMFILE errors no MacOS)
-ulimit -n 65536 2>/dev/null || true
+ulimit -n 65536 2>/dev/null || ulimit -n 10240 2>/dev/null || ulimit -n 4096 2>/dev/null || true
+echo "  [ulimit] open files limit: $(ulimit -n)"
+
+# Force Watchpack to use polling instead of native fsevents watchers.
+# This avoids EMFILE errors when macOS maxfiles limit is low.
+export WATCHPACK_POLLING=true
 
 # ── Cores ──────────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'

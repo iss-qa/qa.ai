@@ -213,6 +213,60 @@ class RunAIRequest(BaseModel):
 # Dictionary to keep track of active run orchestrators for cancellation
 active_runs = {}
 
+def _extract_element_name(text: str) -> str:
+    """
+    Extract the UI element name from a user description.
+    Removes action verbs and context, keeps only the element identifier.
+
+    "Clica em Busque seu produto" -> "Busque seu produto"
+    "Aguarda o elemento Busque seu produto aparecer" -> "Busque seu produto"
+    "Valida que feijao e exibido na aba de produtos" -> "feijao"
+    """
+    import re as _re
+    label = text
+
+    # 1. If quoted text exists, use it
+    quoted = _re.findall(r'"([^"]+)"', label)
+    if quoted:
+        return quoted[0]
+
+    # 2. Remove action verb prefixes (longest first)
+    prefixes = [
+        'Aguarda o elemento ', 'Aguarda que o elemento ', 'Aguarda que ',
+        'Aguarda a transicao de tela apos ', 'Aguarda a transicao',
+        'Aguarda campo de ', 'Aguarda aba ', 'Aguarda ',
+        'Clica no botao ', 'Clica em ', 'Clica no ', 'Clica na ',
+        'Toca no campo de ', 'Toca no campo ', 'Toca em ', 'Toca no ', 'Toca na ',
+        'Abre o app ', 'Abre o aplicativo ', 'Abre ',
+        'Digita o email ', 'Digita a senha ', 'Digita o ', 'Digita a ', 'Digita ',
+        'Valida que houve resultado e ', 'Valida que ', 'Valida se ',
+        'Verifica que ', 'Verifica se ', 'Confirma que ',
+        'Pressiona o ', 'Pressiona ', 'Esconde ',
+    ]
+    for p in prefixes:
+        if label.startswith(p):
+            label = label[len(p):]
+            break
+
+    # 3. Remove trailing context
+    suffixes = [
+        ' aparecer na tela inicial', ' aparecer na tela', ' aparecer nos resultados',
+        ' aparecer', ' apareca', ' na tela inicial', ' na tela',
+        ' para garantir que esta selecionada', ' para garantir', ' para confirmar',
+        ' para acessar', ' para fazer', ' para iniciar',
+        ' e exibido na aba de produtos', ' e exibido', ' esta visivel',
+        ' nos resultados', ' na aba de produtos', ' no campo de busca',
+        ' carregar', ' ficar visivel', ' apos tap', ' apos clicar',
+    ]
+    for s in suffixes:
+        idx = label.find(s)
+        if idx > 0:
+            label = label[:idx]
+            break
+
+    return label.strip()
+
+
 # Known app package mappings (cache)
 _APP_PACKAGE_CACHE: dict[str, str] = {
     "foxbit": "br.com.foxbit.foxbitandroid",
@@ -276,73 +330,65 @@ async def resolve_app(udid: str, name: str):
     return {"app_name": name, "package_id": pkg, "resolved": pkg != name}
 
 
+_PREMISES_PATH = Path(__file__).parent.parent.parent / "premises.yaml"
+_premises_cache: dict = {}
+
+def _load_premises() -> dict:
+    """Carrega as premissas globais do arquivo premises.yaml (com cache em memória)."""
+    global _premises_cache
+    if _premises_cache:
+        return _premises_cache
+    try:
+        import yaml as _yaml
+        if _PREMISES_PATH.exists():
+            with open(_PREMISES_PATH, encoding="utf-8") as f:
+                _premises_cache = _yaml.safe_load(f) or {}
+                logger.info(f"Premissas carregadas: {_PREMISES_PATH}")
+    except Exception as e:
+        logger.warning(f"Falha ao carregar premises.yaml: {e}")
+        _premises_cache = {}
+    return _premises_cache
+
+
 def _action_to_maestro_command(action: str, target: str, value: str) -> str:
-    """Convert a step action/target/value into a Maestro YAML command."""
+    """
+    Convert a step action/target/value into a Maestro YAML command.
+    Uses _extract_element_name to strip action verbs from user descriptions.
+    Applies global rules from premises.yaml automatically.
+    """
     a = action.lower().strip()
+    premises = _load_premises()
     if a == 'launchapp':
-        return '- launchApp'
+        # Premissa global: sempre aguardar animação após lançar o app
+        after_launch = premises.get("global", {}).get("after_launch_wait", True)
+        base = '- launchApp'
+        return base + '\n- waitForAnimationToEnd' if after_launch else base
     elif a == 'clearstate':
         return '- clearState'
     elif a == 'tapon':
-        # target is a description like "Clica em Busque seu produto"
-        # Extract the actual UI text: remove action verbs (order matters - longest first)
-        label = target
-        for prefix in ['Clica no botao ', 'Clica em ', 'Clica no ', 'Clica na ', 'Toca no campo de ', 'Toca no campo ', 'Toca em ', 'Toca no ', 'Toca na ', 'Pressiona o ', 'Pressiona ', 'Abre o ', 'Abre ']:
-            if label.startswith(prefix):
-                label = label[len(prefix):]
-                break
-        # Remove trailing description like "para garantir que..."
-        for suffix in [' para garantir', ' para confirmar', ' para acessar', ' para fazer', ' para iniciar']:
-            idx = label.find(suffix)
-            if idx > 0:
-                label = label[:idx]
-        return f'- tapOn: "{label.strip()}"' if label.strip() else ''
+        elem = _extract_element_name(target)
+        return f'- tapOn: "{elem}"' if elem else ''
     elif a == 'inputtext':
         return f'- inputText: "{value}"' if value else ''
     elif a == 'assertvisible':
-        # Extract the element name from description
-        label = target or value
-        for prefix in ['Verifica que ', 'Verifica se ', 'Valida que ', 'Valida se ', 'Confirma que ', 'Verifica ']:
-            if label.startswith(prefix):
-                label = label[len(prefix):]
-                break
-        # Remove verbose descriptions
-        for suffix in [' esta visivel', ' e exibido', ' aparece', ' existe', ' na tela', ' na aba de produtos', ' nos resultados']:
-            idx = label.find(suffix)
-            if idx > 0:
-                label = label[:idx]
-        # Try to find a quoted element or short key phrase
-        import re as re_mod
-        quoted = re_mod.findall(r'"([^"]+)"', label)
-        if quoted:
-            label = quoted[0]
-        return f'- assertVisible: "{label.strip()}"'
+        elem = _extract_element_name(target or value)
+        return f'- assertVisible:\n    text: "{elem}"'
     elif a == 'assertnotvisible':
-        return f'- assertNotVisible: "{target or value}"'
+        elem = _extract_element_name(target or value)
+        return f'- assertNotVisible:\n    text: "{elem}"'
     elif a == 'waitforanimationtoend':
         return '- waitForAnimationToEnd'
     elif a == 'extendedwaituntil':
-        timeout = value or '5000'
-        # Extract meaningful element name from target description
-        # e.g. "Aguarda o elemento Busque seu produto aparecer na tela inicial" -> "Busque seu produto"
-        elem = target
-        # Try to find quoted text or a noun phrase after key words
-        import re as re_mod
-        quoted = re_mod.findall(r'"([^"]+)"', target)
-        if quoted:
-            elem = quoted[0]
-        else:
-            # Remove common prefix/suffix words
-            for prefix in ['Aguarda o elemento ', 'Aguarda que ', 'Aguarda ', 'Espera que ', 'Espera ']:
-                if elem.startswith(prefix):
-                    elem = elem[len(prefix):]
-            for suffix in [' aparecer na tela inicial', ' aparecer na tela', ' aparecer', ' apareca', ' na tela inicial', ' na tela', ' carregar', ' ficar visivel']:
-                if elem.endswith(suffix):
-                    elem = elem[:-len(suffix)]
-            elem = elem.strip()
+        timeout = value or str(premises.get("global", {}).get("default_wait_timeout_ms", 10000))
+        elem = _extract_element_name(target)
         if not elem:
             elem = "element"
-        return f'- extendedWaitUntil:\n    visible: "{elem}"\n    timeout: {timeout}'
+        return (
+            f'- extendedWaitUntil:\n'
+            f'    visible:\n'
+            f'      text: "{elem}"\n'
+            f'    timeout: {timeout}'
+        )
     elif a == 'back':
         return '- back'
     elif a == 'hidekeyboard':
@@ -425,7 +471,7 @@ async def start_run(request: RunAIRequest):
                 env_vars=request.env_vars or {},
                 ws_broadcaster=ws_server,
                 total_steps=len(request.steps),
-                max_retries=3,
+                max_retries=6,
                 anthropic_client=prompt_parser.client if anthropic_api_key else None,
             ))
             return {"status": "started", "run_id": request.run_id, "engine": "maestro"}
