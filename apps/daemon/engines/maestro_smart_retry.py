@@ -29,6 +29,113 @@ from xml.etree import ElementTree
 
 logger = logging.getLogger("maestro_smart_retry")
 
+# Words that should be ignored when extracting keywords from a failed selector phrase
+_SELECTOR_NOISE_WORDS = {
+    'pelo', 'por', 'com', 'de', 'do', 'da', 'no', 'na', 'em', 'para',
+    'o', 'a', 'um', 'uma', 'the', 'on', 'by', 'via', 'using',
+    'resource', 'id', 'hint', 'campo', 'botao', 'tela', 'aba', 'icone',
+    'elemento', 'texto', 'label', 'input', 'button', 'field',
+}
+
+
+def extract_keywords_from_selector(selector: str) -> list[str]:
+    """
+    Extract significant keywords from a possibly compound failed selector.
+    'email pelo resource-id' → ['email']
+    'senha pelo hint' → ['senha']
+    'Digite seu e-mail' → ['Digite', 'e-mail']
+    """
+    words = re.split(r'[\s\-_]', selector.lower())
+    return [w for w in words if w and w not in _SELECTOR_NOISE_WORDS and len(w) > 2]
+
+
+def find_selector_in_element_map(failed_selector: str, element_map: dict) -> list[dict]:
+    """
+    Search the pre-scanned element_map for selectors related to the failed one.
+    Handles compound phrases like 'email pelo resource-id' by extracting keywords.
+
+    Returns list of {strategy, selector, maestro_command, confidence, screen}
+    in descending confidence order.
+    """
+    results = []
+    if not element_map or not failed_selector:
+        return results
+
+    failed_lower = failed_selector.lower().strip('"').strip("'")
+    keywords = extract_keywords_from_selector(failed_selector)
+
+    for screen_name, screen_data in element_map.get("screens", {}).items():
+        for el in screen_data.get("elements", []):
+            el_id = el.get("id", "")
+            el_text = el.get("text", "")
+            el_hint = el.get("hint", "")
+            el_desc = el.get("content_desc", "")
+
+            score = 0
+
+            # Direct/substring match with full failed selector
+            if el_id and (failed_lower in el_id.lower() or el_id.lower() in failed_lower):
+                score = max(score, 85)
+            if el_text and (failed_lower in el_text.lower() or el_text.lower() in failed_lower):
+                score = max(score, 80)
+            if el_hint and (failed_lower in el_hint.lower() or el_hint.lower() in failed_lower):
+                score = max(score, 78)
+
+            # Keyword match (handles compound selectors)
+            for kw in keywords:
+                if el_id and kw in el_id.lower():
+                    score = max(score, 70)
+                if el_hint and kw in el_hint.lower():
+                    score = max(score, 65)
+                if el_text and kw in el_text.lower():
+                    score = max(score, 60)
+                if el_desc and kw in el_desc.lower():
+                    score = max(score, 45)
+
+            if score == 0:
+                continue
+
+            # Generate selectors in priority order (id > hint > text > desc)
+            if el_id:
+                results.append({
+                    "strategy": "element_map_id",
+                    "selector": el_id,
+                    "maestro_command": f'- tapOn:\n    id: "{el_id}"',
+                    "confidence": score + 30,
+                    "screen": screen_name,
+                })
+            if el_hint:
+                results.append({
+                    "strategy": "element_map_hint",
+                    "selector": el_hint,
+                    "maestro_command": f'- tapOn: "{el_hint}"',
+                    "confidence": score + 20,
+                    "screen": screen_name,
+                })
+            if el_text and el_text != el_hint:
+                results.append({
+                    "strategy": "element_map_text",
+                    "selector": el_text,
+                    "maestro_command": f'- tapOn: "{el_text}"',
+                    "confidence": score + 15,
+                    "screen": screen_name,
+                })
+            if el_desc and el_desc not in (el_text, el_hint):
+                # Only first line of content_desc
+                desc_first = el_desc.split('\n')[0].strip()
+                if desc_first:
+                    results.append({
+                        "strategy": "element_map_desc",
+                        "selector": desc_first,
+                        "maestro_command": f'- tapOn: "{desc_first}"',
+                        "confidence": score + 5,
+                        "screen": screen_name,
+                    })
+
+    results.sort(key=lambda x: x["confidence"], reverse=True)
+    return results
+
+
 # Selector priority order — semantics id first, coordinates last
 SELECTOR_PRIORITY = [
     "semantics_id",      # testTag / accessibility id (Compose/Flutter)

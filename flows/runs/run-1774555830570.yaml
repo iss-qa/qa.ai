@@ -1,0 +1,25 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- launchApp
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Entrar"
+    timeout: 10000
+- tapOn: "Entrar"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Digite seu e-mail"
+    timeout: 10000
+- tapOn: "Digite seu e-mail"
+- tapOn: "Digite sua senha"
+- hideKeyboard
+- assertVisible:
+    text: "Entrar"
+- tapOn: "Entrar"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "opcao Nao"
+    timeout: 10000
+- tapOn: "Nao"
+- waitForAnimationToEnd

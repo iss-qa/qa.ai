@@ -23,6 +23,80 @@ global:
 
 
 # ============================================================
+# REGRAS DE MONTAGEM DOS PASSOS (CRITICAS)
+# ============================================================
+# Estas regras DEVEM ser seguidas na geracao de qualquer teste.
+# Violacao destas regras = teste que vai falhar.
+# ============================================================
+step_generation:
+
+  # REGRA 1: NUNCA interpretar o prompt de forma literal.
+  # O usuario escreve em linguagem natural. Os seletores no YAML
+  # devem conter SOMENTE o texto EXATO visivel na tela do app.
+  #
+  # ERRADO: visible: "botao Entrar"     (a palavra "botao" nao existe na UI)
+  # CERTO:  visible: "Entrar"           (texto real do botao)
+  #
+  # ERRADO: tapOn: "Entrar para realizar o login"
+  # CERTO:  tapOn: "Entrar"
+  #
+  # ERRADO: visible: "botao Entrar ficar habilitado"
+  # CERTO:  visible: "Entrar"
+  #
+  # ERRADO: visible: "email"
+  # CERTO:  visible: "Digite seu e-mail"  (placeholder real do campo)
+  never_use_literal_description: true
+
+  # REGRA 2: Sempre analisar imagens de referencia ANTES de montar steps.
+  # Se o usuario anexou screenshots, a IA DEVE:
+  #   a) Identificar todos os elementos visiveis na imagem
+  #   b) Extrair textos exatos dos botoes, labels, placeholders
+  #   c) Usar esses textos exatos nos seletores
+  #   d) Cruzar com a hierarquia Android (se disponivel) para obter IDs
+  analyze_images_first: true
+
+  # REGRA 3: Hierarquia de seletores para cada passo:
+  #   1. resource-id (se disponivel na hierarquia XML)
+  #   2. Texto EXATO visivel na tela (extraido da imagem ou XML)
+  #   3. Placeholder/hint do campo
+  #   4. content-description
+  #   5. Coordenadas (ULTIMO recurso)
+  selector_priority:
+    - resource_id
+    - text_exact
+    - placeholder
+    - content_description
+    - coordinates
+
+  # REGRA 4: Palavras que NUNCA devem aparecer nos seletores
+  # Estas sao palavras do prompt do usuario, nao da UI real
+  forbidden_selector_words:
+    - botao
+    - campo
+    - tela
+    - aba
+    - menu
+    - icone
+    - link
+    - elemento
+    - ficar
+    - habilitado
+    - visivel
+    - aparecer
+    - para
+    - realizar
+    - fazer
+    - acessar
+    - iniciar
+    - confirmar que
+
+  # REGRA 5: Montar passos UM A UM com validacao
+  # Antes de gerar o proximo passo, confirmar que o seletor
+  # do passo atual existe na imagem ou hierarquia XML.
+  validate_each_step: true
+
+
+# ============================================================
 # Pacotes de apps conhecidos
 # Adicione seus apps aqui para evitar resolução via ADB
 # ============================================================

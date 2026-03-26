@@ -1,0 +1,29 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- launchApp # [OK] appId confirmado nas premissas globais
+
+- extendedWaitUntil: # [OK] desc=Entrar confirmado no element_map
+    visible: "Entrar"
+    timeout: 10000
+
+- tapOn: "Entrar" # [OK] desc=Entrar confirmado no element_map - tela inicial
+
+- waitForAnimationToEnd # [OK] regra obrigatoria apos tap que muda de tela
+
+- tapOn: # [OK] id=email confirmado no element_map
+    id: "email"
+- inputText: "luiz.barbosa+pf@foxbit.com.br" # [OK] valor fornecido pelo usuario
+
+- tapOn: # [OK] id=password confirmado no element_map
+    id: "password"
+- inputText: "bhp6ezg*ETA5acn*xhr" # [OK] valor fornecido pelo usuario
+
+- hideKeyboard # [OK] regra obrigatoria antes de tap apos digitacao
+
+- assertVisible: "Entrar" # [OK] validacao que botao esta visivel/habilitado - desc=Entrar confirmado no element_map
+
+- tapOn: "Entrar" # [OK] desc=Entrar confirmado no element_map - submete login
+
+- waitForAnimationToEnd # [OK] aguarda transicao para tela de biometria
+
+- tapOn: "Não" # [BAIXA] tela de biometria nao presente no element_map; texto inferido por convencao Android

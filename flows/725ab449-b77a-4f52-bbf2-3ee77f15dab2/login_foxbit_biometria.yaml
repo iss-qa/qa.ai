@@ -1,0 +1,59 @@
+appId: br.com.foxbit.foxbitandroid
+---
+# [OK] launchApp
+- launchApp
+
+# [OK] aguarda animacao inicial
+- waitForAnimationToEnd
+
+# [OK] texto confirmado no scanner + element_map -> high
+- extendedWaitUntil:
+    visible: "Entrar"
+    timeout: 10000
+
+# [OK] texto confirmado no scanner + element_map -> high
+- tapOn: "Entrar"
+
+# [OK] aguarda transicao de tela
+- waitForAnimationToEnd
+
+# [OK] texto confirmado no scanner (E-mail label) -> high
+- extendedWaitUntil:
+    visible: "E-mail"
+    timeout: 10000
+
+# [OK] id confirmado no scanner (id=email) -> high
+- tapOn:
+    id: "email"
+
+# [OK] inputText com email real
+- inputText: "luiz.barbosa+pf@foxbit.com.br"
+
+# [OK] hint confirmado no scanner (hint=Digite sua senha) -> high
+- tapOn: "Digite sua senha"
+
+# [OK] inputText com senha real
+- inputText: "bhp6ezg*ETA5acn*xhr"
+
+# [OK] esconde teclado antes de validar botao
+- hideKeyboard
+
+# [OK] valida que botao Entrar esta visivel/habilitado apos preencher credenciais
+- assertVisible: "Entrar"
+
+# [OK] texto confirmado no scanner -> high
+- tapOn: "Entrar"
+
+# [OK] aguarda transicao para tela de biometria
+- waitForAnimationToEnd
+
+# [BAIXA] texto inferido da descricao do fluxo de biometria - aguarda opcao Nao
+- extendedWaitUntil:
+    visible: "Não"
+    timeout: 10000
+
+# [BAIXA] texto inferido do fluxo de biometria
+- tapOn: "Não"
+
+# [OK] aguarda carregamento da home
+- waitForAnimationToEnd

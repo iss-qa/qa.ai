@@ -1,0 +1,33 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- launchApp # [OK] appId confirmado no XML e premissas globais
+
+- extendedWaitUntil: # [OK] content-desc 'Entrar' confirmado no XML + element_map
+    visible: "Entrar"
+    timeout: 10000
+
+- tapOn: "Entrar" # [OK] content-desc 'Entrar' clickable=true confirmado no XML + element_map
+
+- waitForAnimationToEnd # [OK] regra obrigatoria apos tap que muda de tela
+
+- extendedWaitUntil: # [OK] hint confirmado no XML (EditText hint='Digite seu e-mail') + element_map
+    visible: "Digite seu e-mail"
+    timeout: 10000
+
+- tapOn: "Digite seu e-mail" # [OK] hint confirmado no XML bounds=[43,1385][1177,1505]
+- inputText: "luiz.barbosa+pf@foxbit.com.br" # [OK] credencial fornecida pelo usuario
+
+- tapOn: "Digite sua senha" # [OK] hint confirmado no XML bounds=[43,1623][1062,1738] + element_map
+- inputText: "bhp6ezg*ETA5acn*xhr" # [OK] credencial fornecida pelo usuario
+
+- hideKeyboard # [OK] regra obrigatoria antes de tap em botao apos digitacao
+
+- assertVisible: "Entrar" # [OK] content-desc 'Entrar' botao do form confirmado no XML bounds=[38,2426][1182,2541]
+
+- tapOn: # [OK] content-desc 'Entrar' botao do form, index 1 para diferenciar do header
+    text: "Entrar"
+    index: 1
+
+- extendedWaitUntil: # [BAIXA] text='Foxbit Exchange' confirmado no element_map como indicativo da home logada
+    visible: "Foxbit Exchange"
+    timeout: 10000

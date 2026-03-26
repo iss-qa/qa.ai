@@ -34,9 +34,10 @@ RECORDINGS_DIR = LOGS_BASE / "recordings"
 EXECUTIONS_DIR = LOGS_BASE / "executions"
 DEVICE_DIR = LOGS_BASE / "device"
 ERRORS_DIR = LOGS_BASE / "errors"
+BUILDS_DIR = LOGS_BASE / "builds"
 
 # Ensure all directories exist
-for d in [SESSIONS_DIR, RECORDINGS_DIR, EXECUTIONS_DIR, DEVICE_DIR, ERRORS_DIR]:
+for d in [SESSIONS_DIR, RECORDINGS_DIR, EXECUTIONS_DIR, DEVICE_DIR, ERRORS_DIR, BUILDS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # Standard log line format
@@ -101,10 +102,11 @@ class LogManager:
         # Device loggers are per-device per-day (lazily initialized)
         self._device_loggers: dict[str, logging.Logger] = {}
 
-        # Session/recording/execution loggers are per-instance (lazily initialized)
+        # Session/recording/execution/build loggers are per-instance (lazily initialized)
         self._session_loggers: dict[str, logging.Logger] = {}
         self._recording_loggers: dict[str, logging.Logger] = {}
         self._execution_loggers: dict[str, logging.Logger] = {}
+        self._build_loggers: dict[str, logging.Logger] = {}
 
     # --- Error (daily aggregate) ---
 
@@ -187,6 +189,29 @@ class LogManager:
                 handler.close()
             del self._execution_loggers[run_id]
 
+    # --- Build (Montagem de casos de teste) ---
+
+    def start_build_log(self, build_id: str) -> logging.Logger:
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filepath = BUILDS_DIR / f"build_{ts}_{build_id[-8:]}.log"
+        logger = _create_file_logger(
+            f"build.{build_id}", filepath, "BUILD"
+        )
+        self._build_loggers[build_id] = logger
+        return logger
+
+    def build(self, message: str, build_id: str, level: str = "INFO"):
+        if build_id not in self._build_loggers:
+            self.start_build_log(build_id)
+        logger = self._build_loggers[build_id]
+        self._log(logger, level, message)
+
+    def end_build_log(self, build_id: str):
+        if build_id in self._build_loggers:
+            for handler in self._build_loggers[build_id].handlers:
+                handler.close()
+            del self._build_loggers[build_id]
+
     # --- Device ---
 
     def _get_device_logger(self, udid: str) -> logging.Logger:
@@ -253,7 +278,7 @@ class LogManager:
         seven_days_ago = now - timedelta(days=7)
         thirty_days_ago = now - timedelta(days=30)
 
-        for directory in [SESSIONS_DIR, RECORDINGS_DIR, EXECUTIONS_DIR, DEVICE_DIR, ERRORS_DIR]:
+        for directory in [SESSIONS_DIR, RECORDINGS_DIR, EXECUTIONS_DIR, BUILDS_DIR, DEVICE_DIR, ERRORS_DIR]:
             for file in directory.iterdir():
                 if file.suffix == ".log":
                     mtime = datetime.fromtimestamp(file.stat().st_mtime)
@@ -308,6 +333,7 @@ class LogManager:
             "sessions": SESSIONS_DIR,
             "recordings": RECORDINGS_DIR,
             "executions": EXECUTIONS_DIR,
+            "builds": BUILDS_DIR,
             "device": DEVICE_DIR,
             "errors": ERRORS_DIR,
         }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Play, Plus, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, X, Download, Upload, FileUp, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Play, Plus, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, X, Download, Upload, FileUp, AlertTriangle, CheckCircle2, ScanSearch, Monitor, Square } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -42,6 +42,104 @@ export default function ProjectDetailPage() {
     const [importDragActive, setImportDragActive] = useState(false);
     const [importStatus, setImportStatus] = useState<{ type: 'idle' | 'error' | 'success'; message: string }>({ type: 'idle', message: '' });
     const [importing, setImporting] = useState(false);
+    const [deletingTestId, setDeletingTestId] = useState<string | null>(null);
+
+    // Scanner (Scanear Aplicacao) state
+    const [showScannerModal, setShowScannerModal] = useState(false);
+    const [scannerRunning, setScannerRunning] = useState(false);
+    const [scannerStats, setScannerStats] = useState({ screens_found: 0, elements_found: 0, elapsed_seconds: 0, dumps_completed: 0 });
+    const [scannerTimer, setScannerTimer] = useState<ReturnType<typeof setInterval> | null>(null);
+    const [hasElementMap, setHasElementMap] = useState(false);
+    const [availableDeviceUdid, setAvailableDeviceUdid] = useState<string | null>(null);
+
+    const DAEMON = process.env.NEXT_PUBLIC_DAEMON_URL || 'http://localhost:8001';
+
+    // Check if element map exists + detect ADB device on mount
+    useEffect(() => {
+        if (projectId) {
+            fetch(`${DAEMON}/api/projects/${projectId}/element-map`)
+                .then(r => { if (r.ok) setHasElementMap(true); })
+                .catch(() => {});
+        }
+        // Detect device via daemon /devices endpoint (uses ADB directly)
+        fetch(`${DAEMON}/devices`)
+            .then(r => r.json())
+            .then(data => {
+                const devs = data.devices || [];
+                if (devs.length > 0) setAvailableDeviceUdid(devs[0].udid || devs[0].serial);
+            })
+            .catch(() => {});
+    }, [projectId]);
+
+    // Also update from deviceStore if available
+    useEffect(() => {
+        if (connectedDevice?.udid) setAvailableDeviceUdid(connectedDevice.udid);
+    }, [connectedDevice]);
+
+    const handleStartScanner = async () => {
+        if (!availableDeviceUdid) {
+            alert('Nenhum dispositivo Android detectado via ADB. Conecte um dispositivo USB ou inicie um emulador.');
+            return;
+        }
+
+        // 1. Start Maestro Studio (so its device connection is available for hierarchy dumps)
+        try {
+            await fetch(`${DAEMON}/api/maestro/studio`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ udid: availableDeviceUdid }),
+            });
+        } catch (e) {
+            console.warn('Could not start Maestro Studio:', e);
+        }
+
+        // 2. Open Maestro Studio in a new browser tab
+        window.open('http://localhost:9999', '_blank');
+
+        // 3. Wait a moment for Studio to initialize, then start the element scanner
+        await new Promise(r => setTimeout(r, 2000));
+
+        try {
+            const res = await fetch(`${DAEMON}/api/scanner/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ udid: availableDeviceUdid, project_id: projectId }),
+            });
+            if (res.ok) {
+                setScannerRunning(true);
+                setScannerStats({ screens_found: 0, elements_found: 0, elapsed_seconds: 0, dumps_completed: 0 });
+                // Poll stats every 2s
+                const interval = setInterval(async () => {
+                    try {
+                        const statusRes = await fetch(`${DAEMON}/api/scanner/status`);
+                        if (statusRes.ok) {
+                            const stats = await statusRes.json();
+                            setScannerStats(stats);
+                        }
+                    } catch {}
+                }, 2000);
+                setScannerTimer(interval);
+            }
+        } catch (e) {
+            console.error('Failed to start scanner:', e);
+        }
+    };
+
+    const handleStopScanner = async () => {
+        if (scannerTimer) {
+            clearInterval(scannerTimer);
+            setScannerTimer(null);
+        }
+        try {
+            const res = await fetch(`${DAEMON}/api/scanner/stop`, { method: 'POST' });
+            if (res.ok) {
+                setScannerRunning(false);
+                setHasElementMap(true);
+            }
+        } catch (e) {
+            console.error('Failed to stop scanner:', e);
+        }
+    };
 
     /**
      * Extract the UI element name from a user description.
@@ -63,14 +161,17 @@ export default function ProjectDetailPage() {
         const actionPrefixes = [
             'Aguarda o elemento ', 'Aguarda que o elemento ', 'Aguarda que ',
             'Aguarda a transicao de tela apos ', 'Aguarda transicao de tela',
-            'Aguarda campo de ', 'Aguarda aba ', 'Aguarda ',
-            'Clica no botao ', 'Clica em ', 'Clica no ', 'Clica na ',
-            'Toca no campo de ', 'Toca no campo ', 'Toca em ', 'Toca no ', 'Toca na ',
+            'Aguarda botao ', 'Aguarda o botao ', 'Aguarda campo de ',
+            'Aguarda aba ', 'Aguarda o ', 'Aguarda ',
+            'Clica no botao ', 'Clica no campo ', 'Clica em ', 'Clica no ', 'Clica na ',
+            'Toca no campo de ', 'Toca no campo ', 'Toca no botao ',
+            'Toca em ', 'Toca no ', 'Toca na ',
             'Abre o app ', 'Abre o aplicativo ', 'Abre ',
             'Digita o email ', 'Digita a senha ', 'Digita o ', 'Digita a ', 'Digita ',
             'Valida que houve resultado e ', 'Valida que ', 'Valida se ',
             'Verifica que ', 'Verifica se ', 'Confirma que ',
-            'Pressiona o ', 'Pressiona ', 'Esconde ',
+            'Pressiona o botao ', 'Pressiona o ', 'Pressiona ', 'Esconde ',
+            'Seleciona o ', 'Seleciona a ', 'Seleciona ',
         ];
         for (const p of actionPrefixes) {
             if (label.startsWith(p)) { label = label.substring(p.length); break; }
@@ -81,14 +182,29 @@ export default function ProjectDetailPage() {
             ' aparecer na tela inicial', ' aparecer na tela', ' aparecer nos resultados',
             ' aparecer', ' apareca', ' na tela inicial', ' na tela',
             ' para garantir que esta selecionada', ' para garantir', ' para confirmar',
-            ' para acessar', ' para fazer', ' para iniciar',
+            ' para acessar', ' para fazer', ' para iniciar', ' para realizar',
             ' e exibido na aba de produtos', ' e exibido', ' esta visivel',
             ' nos resultados', ' na aba de produtos', ' no campo de busca',
-            ' carregar', ' ficar visivel',
+            ' carregar', ' ficar visivel', ' ficar habilitado', ' ficar',
+            ' apos tap', ' apos clicar', ' apos digitar',
         ];
         for (const s of contextSuffixes) {
             const idx = label.indexOf(s);
             if (idx > 0) { label = label.substring(0, idx); break; }
+        }
+
+        // 4. Remove leftover filler words that are never in UI
+        const fillerPrefixes = [
+            'botao ', 'o botao ', 'campo ', 'campo de ', 'o campo ',
+            'tela ', 'aba ', 'menu ', 'icone ', 'link ',
+            'elemento ', 'o elemento ',
+        ];
+        let labelLower = label.toLowerCase();
+        for (const fw of fillerPrefixes) {
+            if (labelLower.startsWith(fw)) {
+                label = label.substring(fw.length);
+                labelLower = label.toLowerCase();
+            }
         }
 
         return label.trim();
@@ -153,6 +269,33 @@ export default function ProjectDetailPage() {
         a.download = `${test.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.yaml`;
         a.click();
         URL.revokeObjectURL(url);
+    };
+
+    // Delete a test case
+    const handleDeleteTest = async (e: React.MouseEvent, testId: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDeletingTestId(testId);
+    };
+
+    const confirmDeleteTest = async () => {
+        if (!deletingTestId) return;
+        try {
+            const { error } = await supabase.from('test_cases').delete().eq('id', deletingTestId);
+            if (error) throw error;
+            setTests(prev => prev.filter(t => t.id !== deletingTestId));
+
+            // Also delete local file if it exists
+            const DAEMON = process.env.NEXT_PUBLIC_DAEMON_URL || 'http://localhost:8001';
+            try {
+                await fetch(`${DAEMON}/api/tests/${deletingTestId}`, { method: 'DELETE' });
+            } catch { /* local delete is best-effort */ }
+        } catch (error) {
+            console.error('Error deleting test:', error);
+            alert('Erro ao excluir teste.');
+        } finally {
+            setDeletingTestId(null);
+        }
     };
 
     // Import .yaml file
@@ -418,11 +561,26 @@ export default function ProjectDetailPage() {
                 </div>
                 <div className="bg-white/5 border border-white/10 rounded-xl p-4">
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">STATUS</p>
-                    <p className={`text-2xl font-bold mt-1 ${project.status === 'Ativo' ? 'text-green-400' : 'text-slate-400'}`}>{project.status}</p>
+                    <p className={`text-2xl font-bold mt-1 ${
+                        tests.some(t => t.status === 'failed') ? 'text-red-400' :
+                        tests.some(t => t.status === 'passed') ? 'text-green-400' :
+                        'text-slate-400'
+                    }`}>
+                        {tests.some(t => t.status === 'failed') ? 'Falha' :
+                         tests.some(t => t.status === 'passed') ? 'Sucesso' :
+                         tests.length > 0 ? 'Pendente' : '—'}
+                    </p>
                 </div>
                 <div className="bg-white/5 border border-white/10 rounded-xl p-4">
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">ÚLTIMA EXECUÇÃO</p>
-                    <p className="text-2xl font-bold text-slate-400 mt-1">—</p>
+                    <p className="text-2xl font-bold text-slate-400 mt-1">
+                        {(() => {
+                            const lastRun = tests.find(t => t.last_run_at);
+                            return lastRun?.last_run_at
+                                ? new Date(lastRun.last_run_at).toLocaleDateString('pt-BR')
+                                : '—';
+                        })()}
+                    </p>
                 </div>
             </div>
 
@@ -434,6 +592,12 @@ export default function ProjectDetailPage() {
                         Testes do Projeto ({tests.length})
                     </span>
                     <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => { setShowScannerModal(true); }}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 border-cyan-500/30 text-cyan-400 bg-cyan-500/5 hover:bg-cyan-500/10 hover:border-cyan-500/50"
+                        >
+                            <ScanSearch className="w-3.5 h-3.5" /> Scanear Aplicacao
+                        </button>
                         <button
                             onClick={() => setShowImportModal(true)}
                             className="px-3 py-1.5 rounded-lg text-xs font-bold border border-amber-500/30 text-amber-400 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500/50 transition-all flex items-center gap-1.5"
@@ -474,6 +638,13 @@ export default function ProjectDetailPage() {
                                         {test.status === 'passed' ? 'Sucesso' : test.status === 'failed' ? 'Falha' : 'Pendente'}
                                     </span>
                                     <button
+                                        onClick={(e) => handleDeleteTest(e, test.id)}
+                                        className="p-2 hover:bg-red-500/10 text-slate-400 hover:text-red-400 rounded-lg transition-colors border border-transparent hover:border-red-500/20"
+                                        title="Excluir teste"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                    <button
                                         onClick={(e) => handleExportYaml(e, test)}
                                         className="p-2 hover:bg-white/10 text-slate-400 hover:text-amber-400 rounded-lg transition-colors border border-transparent hover:border-white/10"
                                         title="Exportar YAML"
@@ -500,6 +671,22 @@ export default function ProjectDetailPage() {
                         <div className="flex gap-3 justify-end">
                             <button onClick={() => setDeleteConfirm(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancelar</button>
                             <button onClick={handleDelete} className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 transition-colors">Excluir</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Test Confirmation */}
+            {deletingTestId && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+                        <h3 className="text-lg font-bold text-white mb-2">Excluir Teste?</h3>
+                        <p className="text-sm text-slate-400 mb-6">
+                            O teste "{tests.find(t => t.id === deletingTestId)?.name}" sera excluido permanentemente.
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <button onClick={() => setDeletingTestId(null)} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancelar</button>
+                            <button onClick={confirmDeleteTest} className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 transition-colors">Excluir</button>
                         </div>
                     </div>
                 </div>
@@ -597,6 +784,128 @@ export default function ProjectDetailPage() {
 - inputText: "texto"`}
                                 </pre>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Scanner Modal (Scanear Aplicacao) */}
+            {showScannerModal && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl">
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-5 border-b border-white/10">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+                                    <ScanSearch className="w-5 h-5 text-cyan-400" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-bold text-white">Scanear Aplicacao</h2>
+                                    <p className="text-xs text-slate-400">Mapeie os elementos do app navegando por ele</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={async () => {
+                                    if (scannerRunning) await handleStopScanner();
+                                    setShowScannerModal(false);
+                                }}
+                                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6">
+                            {!scannerRunning ? (
+                                /* Pre-start */
+                                <div className="flex flex-col items-center gap-5">
+                                    <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 flex items-center justify-center">
+                                        <Monitor className="w-8 h-8 text-cyan-400" />
+                                    </div>
+                                    <div className="text-center max-w-sm">
+                                        <h3 className="text-lg font-bold text-white mb-3">Como funciona</h3>
+                                        <div className="space-y-2.5 text-sm text-slate-300 text-left">
+                                            <p><span className="text-cyan-400 font-bold">1.</span> Clique em "Iniciar Scan" — o Maestro Studio abrira em outra aba</p>
+                                            <p><span className="text-cyan-400 font-bold">2.</span> Na aba do Maestro Studio, navegue pelo app: abra telas, menus, formularios</p>
+                                            <p><span className="text-cyan-400 font-bold">3.</span> Clique em botoes, preencha campos de login, senha, busca...</p>
+                                            <p><span className="text-cyan-400 font-bold">4.</span> Em background, capturamos todos os IDs, textos e seletores automaticamente</p>
+                                            <p><span className="text-cyan-400 font-bold">5.</span> Volte aqui e clique "Finalizar" — o mapa sera usado pela IA</p>
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-3">Navegue por 2-3 minutos para cobrir todas as telas</p>
+                                    </div>
+
+                                    {!availableDeviceUdid ? (
+                                        <p className="text-sm text-red-400">Nenhum dispositivo detectado via ADB. Conecte um celular USB ou inicie um emulador.</p>
+                                    ) : (
+                                        <div className="flex flex-col items-center gap-2">
+                                            <p className="text-xs text-green-400">Dispositivo detectado: {availableDeviceUdid}</p>
+                                            <button
+                                                onClick={handleStartScanner}
+                                                className="px-6 py-3 bg-cyan-500 text-black font-bold rounded-xl hover:bg-cyan-400 transition-all flex items-center gap-2"
+                                            >
+                                                <Play className="w-4 h-4 fill-current" /> Iniciar Scan
+                                            </button>
+                                        </div>
+                                    )}
+                                    {hasElementMap && (
+                                        <p className="text-xs text-green-400 bg-green-500/10 border border-green-500/20 px-3 py-1.5 rounded-lg">
+                                            Este projeto ja possui um mapa de elementos. Scanear novamente ira substituir.
+                                        </p>
+                                    )}
+                                </div>
+                            ) : (
+                                /* Scanner running */
+                                <div className="flex flex-col items-center gap-6">
+                                    {/* Animated scan indicator */}
+                                    <div className="relative">
+                                        <div className="w-20 h-20 rounded-full border-4 border-cyan-500/20 flex items-center justify-center">
+                                            <div className="w-16 h-16 rounded-full border-4 border-transparent border-t-cyan-400 animate-spin" />
+                                        </div>
+                                        <div className="absolute inset-0 flex items-center justify-center">
+                                            <ScanSearch className="w-6 h-6 text-cyan-400" />
+                                        </div>
+                                    </div>
+
+                                    <div className="text-center">
+                                        <p className="text-lg font-bold text-white">Escaneando...</p>
+                                        <p className="text-sm text-cyan-400 mt-1">Navegue no Maestro Studio (aba aberta)</p>
+                                    </div>
+
+                                    {/* Stats grid */}
+                                    <div className="grid grid-cols-2 gap-3 w-full max-w-xs">
+                                        <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
+                                            <p className="text-2xl font-bold text-white">{scannerStats.screens_found}</p>
+                                            <p className="text-[10px] text-slate-400 uppercase font-bold">Telas</p>
+                                        </div>
+                                        <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
+                                            <p className="text-2xl font-bold text-white">{scannerStats.elements_found}</p>
+                                            <p className="text-[10px] text-slate-400 uppercase font-bold">Elementos</p>
+                                        </div>
+                                        <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
+                                            <p className="text-2xl font-bold text-white">{scannerStats.dumps_completed}</p>
+                                            <p className="text-[10px] text-slate-400 uppercase font-bold">Capturas</p>
+                                        </div>
+                                        <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
+                                            <p className="text-2xl font-bold text-white">{Math.floor(scannerStats.elapsed_seconds / 60)}:{String(scannerStats.elapsed_seconds % 60).padStart(2, '0')}</p>
+                                            <p className="text-[10px] text-slate-400 uppercase font-bold">Tempo</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-lg p-3 w-full">
+                                        <p className="text-xs text-cyan-400 text-center">
+                                            Use o Maestro Studio (aba que abriu no navegador) para navegar pelo app. Abra menus, preencha campos, clique em botoes. Quando terminar, clique abaixo.
+                                        </p>
+                                    </div>
+
+                                    <button
+                                        onClick={handleStopScanner}
+                                        className="px-6 py-3 bg-red-500 text-white font-bold rounded-xl hover:bg-red-600 transition-all flex items-center gap-2"
+                                    >
+                                        <Square className="w-4 h-4 fill-current" /> Finalizar Scan
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
