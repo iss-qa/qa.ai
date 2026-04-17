@@ -8,8 +8,8 @@ import { Mail, Lock, ArrowRight, Activity, ShieldCheck } from 'lucide-react';
 
 export default function LoginPage() {
     // Valores padrão preenchidos para facilitar os testes do usuário Isaias
-    const [email, setEmail] = useState('isaias@qamind.com.br');
-    const [password, setPassword] = useState('123456');
+    const [email, setEmail] = useState('isaias.silva@foxbit.com.br');
+    const [password, setPassword] = useState('Q@mind2026!@#$');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 

@@ -1,12 +1,16 @@
 """
 Element Scanner — Automated UI element discovery via ADB hierarchy dumps.
 
-While the user navigates through the app (via Maestro Studio or manually),
-this scanner periodically dumps the Android UI hierarchy and collects all
-visible elements: resource-ids, text, hints, content-descriptions, classes.
+While the user navigates through the app (via device screen or DevicePreview),
+this scanner dumps the Android UI hierarchy and collects all visible elements:
+resource-ids, text, hints, content-descriptions, classes, bounds.
 
 The result is a structured element map that the AI uses to generate
 accurate test steps with REAL selectors.
+
+Supports two modes:
+  - "auto": periodic dumps every 4s (background scanning)
+  - "on_click": on-demand dumps triggered by user clicks on DevicePreview
 """
 
 import asyncio
@@ -14,11 +18,12 @@ import json
 import logging
 import os
 import re
-import subprocess
+import shutil
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Optional
+from xml.etree import ElementTree
 
 logger = logging.getLogger("element_scanner")
 
@@ -26,6 +31,50 @@ logger = logging.getLogger("element_scanner")
 ELEMENT_MAPS_DIR = Path(__file__).parent.parent.parent.parent / "data" / "element_maps"
 ELEMENT_MAPS_DIR.mkdir(parents=True, exist_ok=True)
 
+# ADB path
+ADB_PATH = shutil.which("adb") or "/opt/homebrew/bin/adb"
+_SUBPROCESS_ENV = {**os.environ, "PATH": os.environ.get("PATH", "") + ":/opt/homebrew/bin:/usr/local/bin"}
+
+# ── Notification / system element filter ──────────────────────────────────
+
+_NOTIFICATION_PATTERNS = re.compile(
+    r'^Notifica[cç][aã]o\s+d[eoa]\s+|'
+    r'^Notification\s+from\s+|'
+    r'^Notifica[cç][aã]o\s+do\s+Sistema',
+    re.IGNORECASE,
+)
+
+_STATUS_BAR_KEYWORDS = {
+    "bluetooth ativado", "bluetooth desativado", "perfil de trabalho",
+    "wi-fi", "wifi", "modo aviao", "modo silencioso", "nao perturbe",
+    "nao perturbar", "alarme", "carregando", "economia de bateria",
+    "tem acesso a localizacao", "has location access",
+    "vpn ativada", "vpn ativo",
+}
+
+_SYSTEM_PACKAGES = {
+    "com.android.systemui", "com.android.launcher",
+    "com.miui.home", "com.sec.android.app.launcher",
+    "com.google.android.apps.nexuslauncher",
+    "android",
+}
+
+
+def _is_notification_element(resource_id: str, text: str, content_desc: str) -> bool:
+    """Return True if this element looks like a notification or status bar item."""
+    if any(resource_id.startswith(pkg) for pkg in _SYSTEM_PACKAGES):
+        return True
+    for val in (text, content_desc):
+        if not val:
+            continue
+        if _NOTIFICATION_PATTERNS.match(val):
+            return True
+        if val.lower().strip() in _STATUS_BAR_KEYWORDS:
+            return True
+    return False
+
+
+# ── UIElement ─────────────────────────────────────────────────────────────
 
 class UIElement:
     """A single UI element extracted from the Android hierarchy."""
@@ -33,7 +82,7 @@ class UIElement:
     def __init__(self, resource_id: str = "", text: str = "", hint: str = "",
                  content_desc: str = "", class_name: str = "", bounds: str = "",
                  clickable: bool = False, focusable: bool = False,
-                 password: bool = False, enabled: bool = True):
+                 password: bool = False, enabled: bool = True, index: int = 0):
         self.resource_id = resource_id
         self.text = text
         self.hint = hint
@@ -44,18 +93,25 @@ class UIElement:
         self.focusable = focusable
         self.password = password
         self.enabled = enabled
+        self.index = index
 
     @property
     def short_id(self) -> str:
-        """Resource ID without package prefix: 'com.app:id/btn_login' -> 'btn_login'"""
         if '/' in self.resource_id:
             return self.resource_id.split('/')[-1]
         return self.resource_id
 
     @property
     def unique_key(self) -> str:
-        """Unique identifier for deduplication."""
         return f"{self.short_id}|{self.text}|{self.hint}|{self.content_desc}|{self.class_name}"
+
+    def center_point(self) -> tuple[int, int] | None:
+        """Parse bounds '[x1,y1][x2,y2]' and return center (cx, cy)."""
+        m = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', self.bounds)
+        if m:
+            x1, y1, x2, y2 = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+            return ((x1 + x2) // 2, (y1 + y2) // 2)
+        return None
 
     def to_dict(self) -> dict:
         d = {}
@@ -72,26 +128,53 @@ class UIElement:
             d["clickable"] = True
         if self.password:
             d["password"] = True
+        if self.bounds:
+            d["bounds"] = self.bounds
         return d
 
-    def maestro_selector(self) -> str:
-        """Generate the best Maestro selector for this element."""
-        if self.short_id:
-            return f'{{ id: "{self.short_id}" }}'
-        if self.text:
-            return f'"{self.text}"'
-        if self.hint:
-            return f'"{self.hint}"'
-        if self.content_desc:
-            return f'"{self.content_desc}"'
-        return ""
+
+# ── Hierarchy parsers ─────────────────────────────────────────────────────
+
+def _parse_uiautomator_xml(xml_content: str) -> list[UIElement]:
+    """Parse standard Android uiautomator dump XML into UIElements."""
+    elements = []
+    if not xml_content or '<hierarchy' not in xml_content:
+        return elements
+    try:
+        root = ElementTree.fromstring(xml_content)
+        for node in root.iter('node'):
+            resource_id = node.get('resource-id', '')
+            text = node.get('text', '')
+            content_desc = node.get('content-desc', '')
+            bounds = node.get('bounds', '')
+            class_name = node.get('class', '')
+            hint = node.get('hint', '') or node.get('hintText', '')
+            clickable = node.get('clickable', 'false') == 'true'
+            focusable = node.get('focusable', 'false') == 'true'
+            password = node.get('password', 'false') == 'true'
+            enabled = node.get('enabled', 'true') == 'true'
+            index = int(node.get('index', '0'))
+
+            if not any([resource_id, text, hint, content_desc]):
+                continue
+            if resource_id == 'android:id/content':
+                continue
+            if _is_notification_element(resource_id, text, content_desc):
+                continue
+
+            elements.append(UIElement(
+                resource_id=resource_id, text=text, hint=hint,
+                content_desc=content_desc, class_name=class_name,
+                bounds=bounds, clickable=clickable, focusable=focusable,
+                password=password, enabled=enabled, index=index,
+            ))
+    except Exception as e:
+        logger.warning(f"[SCANNER] XML parse error: {e}")
+    return elements
 
 
 def _parse_maestro_hierarchy(json_node: dict) -> list[UIElement]:
-    """
-    Parse Maestro hierarchy JSON (from `maestro hierarchy`) and extract elements.
-    This is more reliable than uiautomator dump because it works alongside Maestro Studio.
-    """
+    """Parse Maestro hierarchy JSON and extract elements (legacy support)."""
     elements = []
 
     def _walk(node: dict):
@@ -106,29 +189,19 @@ def _parse_maestro_hierarchy(json_node: dict) -> list[UIElement]:
         password = attrs.get("password", "false") == "true"
         enabled = attrs.get("enabled", "true") == "true"
 
-        # Skip empty elements
         if not any([resource_id, text, hint, content_desc]):
             pass
-        # Skip system UI elements
-        elif resource_id.startswith("com.android.systemui"):
+        elif _is_notification_element(resource_id, text, content_desc):
             pass
-        # Skip android:id/content (root container)
         elif resource_id == "android:id/content":
             pass
         else:
             elements.append(UIElement(
-                resource_id=resource_id,
-                text=text,
-                hint=hint,
-                content_desc=content_desc,
-                class_name="",  # Maestro doesn't expose class in hierarchy
-                bounds=bounds,
-                clickable=clickable,
-                focusable=focusable,
-                password=password,
-                enabled=enabled,
+                resource_id=resource_id, text=text, hint=hint,
+                content_desc=content_desc, class_name="",
+                bounds=bounds, clickable=clickable, focusable=focusable,
+                password=password, enabled=enabled,
             ))
-
         for child in node.get("children", []):
             _walk(child)
 
@@ -136,9 +209,54 @@ def _parse_maestro_hierarchy(json_node: dict) -> list[UIElement]:
     return elements
 
 
+# ── Screen detection ──────────────────────────────────────────────────────
+
+async def _get_foreground_activity(udid: str) -> Optional[str]:
+    """Get the current foreground activity name via ADB."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            ADB_PATH, '-s', udid, 'shell',
+            'dumpsys', 'activity', 'activities',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            env=_SUBPROCESS_ENV,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+        output = stdout.decode('utf-8', errors='replace')
+        # Match patterns: ResumedActivity:, mResumedActivity:, mFocusedApp=
+        m = re.search(r'(?:ResumedActivity|mResumedActivity|mFocusedApp)[=:]\s*ActivityRecord\{.*?\s+(\S+)/([\w.]+)', output)
+        if m:
+            activity = m.group(2).lstrip('.')
+            parts = activity.split('.')
+            return parts[-1] if parts else activity
+    except Exception:
+        pass
+    return None
+
+
+async def _get_foreground_package(udid: str) -> Optional[str]:
+    """Get the current foreground app package via ADB."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            ADB_PATH, '-s', udid, 'shell',
+            'dumpsys', 'activity', 'activities',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            env=_SUBPROCESS_ENV,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+        output = stdout.decode('utf-8', errors='replace')
+        m = re.search(r'(?:ResumedActivity|mResumedActivity|mFocusedApp)[=:]\s*ActivityRecord\{.*?\s+(\S+)/', output)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return None
+
+
 def _detect_screen_name(elements: list[UIElement]) -> str:
     """Try to detect the current screen name from element content."""
-    # Strategy 1: Look for resource-ids with "title", "toolbar", "appbar"
+    # Strategy 1: resource-ids with title/toolbar/header
     for el in elements:
         rid = el.short_id.lower()
         if rid and any(kw in rid for kw in ["title", "toolbar", "appbar", "header"]):
@@ -147,22 +265,24 @@ def _detect_screen_name(elements: list[UIElement]) -> str:
             if el.content_desc and len(el.content_desc) < 40:
                 return el.content_desc.split('\n')[0]
 
-    # Strategy 2: Look for short non-clickable text near the top of the screen
+    # Strategy 2: short non-clickable text near top (skip notifications)
     for el in elements:
         if el.text and not el.clickable and len(el.text) < 30:
+            if _is_notification_element("", el.text, el.content_desc):
+                continue
             m = re.match(r'\[(\d+),(\d+)\]', el.bounds)
             if m and int(m.group(2)) < 250:
                 return el.text
 
-    # Strategy 3: Use first meaningful content_desc
+    # Strategy 3: first meaningful content_desc
     for el in elements:
         if el.content_desc and len(el.content_desc) < 40 and '\n' not in el.content_desc:
-            return el.content_desc
+            if not _is_notification_element("", "", el.content_desc):
+                return el.content_desc
 
-    # Strategy 4: Fingerprint from element IDs
+    # Strategy 4: fingerprint from element IDs
     app_ids = [el.short_id for el in elements if el.short_id and not el.short_id.startswith("com.android")]
     if app_ids:
-        # Use common prefix of IDs to guess screen
         prefixes = set()
         for rid in app_ids[:5]:
             parts = rid.split('_')
@@ -175,46 +295,43 @@ def _detect_screen_name(elements: list[UIElement]) -> str:
 
 
 def _detect_app_package(elements: list[UIElement]) -> Optional[str]:
-    """
-    Auto-detect the target app package from resource-ids.
-    Returns the most frequent non-system package prefix found.
-    e.g. 'com.foxbit.android' from 'com.foxbit.android:id/btn_login'
-    """
-    from collections import Counter
-    # System/ignored packages
+    """Auto-detect the target app package from resource-ids."""
     IGNORE = {"com.android", "android", "com.google.android", "com.miui", "com.samsung",
-               "com.sec", "com.huawei", "com.xiaomi", "com.oneplus", "com.oppo", "com.vivo"}
+              "com.sec", "com.huawei", "com.xiaomi", "com.oneplus", "com.oppo", "com.vivo"}
     packages = []
     for el in elements:
         rid = el.resource_id
         if rid and ':' in rid:
             pkg = rid.split(':')[0]
-            # Skip known system packages
             if not any(pkg == s or pkg.startswith(s + '.') for s in IGNORE):
                 packages.append(pkg)
     if not packages:
         return None
-    most_common = Counter(packages).most_common(1)[0][0]
-    return most_common
+    return Counter(packages).most_common(1)[0][0]
 
 
 def _is_app_screen(elements: list[UIElement], app_package: str) -> bool:
-    """
-    Returns True if the current screen belongs to the target app.
-    A screen belongs to the app if at least 1 element has a resource-id
-    from the target package.
-    """
+    """Check if the current screen belongs to the target app.
+    Handles both prefixed IDs (com.app:id/btn) and unprefixed IDs (btn)."""
     for el in elements:
-        if el.resource_id.startswith(app_package + ":"):
+        rid = el.resource_id
+        if not rid or rid == 'android:id/content':
+            continue
+        # Prefixed: com.foxbit.android:id/btn_login
+        if rid.startswith(app_package + ":"):
+            return True
+        # Unprefixed: btn_login (React Native / Compose / Flutter testTags)
+        if ':' not in rid and not rid.startswith('android:') and not rid.startswith('com.android'):
             return True
     return False
 
 
+# ── Element Scanner ───────────────────────────────────────────────────────
+
 class ElementScanner:
     """
     Accumulates UI elements across multiple hierarchy dumps.
-    Each dump captures what's on screen at that moment.
-    Over 2-3 minutes of user navigation, we build a complete element map.
+    Supports auto mode (periodic 4s) and on_click mode (user-triggered).
     """
 
     def __init__(self):
@@ -222,11 +339,17 @@ class ElementScanner:
         self._task: Optional[asyncio.Task] = None
         self._udid: str = ""
         self._project_id: str = ""
+        self._project_name: str = ""
         self._screens: dict[str, dict[str, dict]] = {}  # screen_name -> {unique_key -> element_dict}
+        self._screen_meta: dict[str, dict] = {}  # screen_name -> {screenshot_b64, activity, element_count}
         self._dump_count = 0
         self._element_count = 0
         self._start_time: float = 0
-        self._app_package: Optional[str] = None  # auto-detected on first dump
+        self._app_package: Optional[str] = None
+        self._screen_width: int = 1080
+        self._screen_height: int = 2400
+        self._mode: str = "auto"
+        self._last_screen_name: str = ""
 
     @property
     def is_running(self) -> bool:
@@ -246,23 +369,28 @@ class ElementScanner:
             "app_package": self._app_package or "",
         }
 
-    async def start(self, udid: str, project_id: str):
-        """Start scanning. Launches background task that dumps hierarchy every 4s."""
+    async def start(self, udid: str, project_id: str, mode: str = "auto", app_package: str = None, project_name: str = ""):
         if self._running:
             return
         self._running = True
         self._udid = udid
         self._project_id = project_id
+        self._project_name = project_name or project_id
         self._screens = {}
         self._dump_count = 0
         self._element_count = 0
         self._start_time = time.time()
-        self._app_package = None
-        self._task = asyncio.create_task(self._scan_loop())
-        logger.info(f"[SCANNER] Started scanning on device {udid} for project {project_id}")
+        self._app_package = app_package  # Pre-locked if provided
+        self._mode = mode
+
+        # Get screen dimensions
+        await self._detect_screen_size()
+
+        if mode == "auto":
+            self._task = asyncio.create_task(self._scan_loop())
+        logger.info(f"[SCANNER] Started (mode={mode}) on device {udid} for project {project_id}")
 
     async def stop(self) -> dict:
-        """Stop scanning and return the accumulated element map."""
         self._running = False
         if self._task:
             self._task.cancel()
@@ -273,92 +401,165 @@ class ElementScanner:
             self._task = None
 
         element_map = self._build_element_map()
-        # Save to disk
         self._save_element_map(element_map)
         logger.info(f"[SCANNER] Stopped. {self.stats}")
         return element_map
 
+    async def dump_now(self) -> dict:
+        """On-demand dump — call from on_click mode or manual trigger."""
+        elements = await self._adb_dump_elements()
+        if elements:
+            await self._process_elements(elements)
+        return self.stats
+
+    async def _detect_screen_size(self):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                ADB_PATH, '-s', self._udid, 'shell', 'wm', 'size',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+                env=_SUBPROCESS_ENV,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            m = re.search(r'(\d+)x(\d+)', stdout.decode())
+            if m:
+                self._screen_width = int(m.group(1))
+                self._screen_height = int(m.group(2))
+                logger.info(f"[SCANNER] Screen size: {self._screen_width}x{self._screen_height}")
+        except Exception:
+            pass
+
     async def _scan_loop(self):
-        """Periodically dump the UI hierarchy via maestro and extract elements."""
+        """Periodic dump loop — ADB-based, no Maestro dependency."""
         logger.info(f"[SCANNER] Scan loop started (device={self._udid})")
         while self._running:
             try:
-                hierarchy_json = await self._dump_hierarchy()
-                if hierarchy_json is None:
-                    logger.warning(f"[SCANNER] Dump #{self._dump_count + 1} failed — no hierarchy returned")
+                elements = await self._adb_dump_elements()
+                if elements:
+                    await self._process_elements(elements)
                 else:
-                    elements = _parse_maestro_hierarchy(hierarchy_json)
-                    screen_name = "?"
-                    if elements:
-                        # Auto-detect app package on first successful dump
-                        if not self._app_package:
-                            self._app_package = _detect_app_package(elements)
-                            if self._app_package:
-                                logger.info(f"[SCANNER] App package detected: {self._app_package}")
+                    hierarchy = await self._dump_via_studio_api()
+                    if hierarchy:
+                        elements = _parse_maestro_hierarchy(hierarchy)
+                        if elements:
+                            await self._process_elements(elements)
 
-                        # Filter: only capture screens that belong to the target app
-                        if self._app_package and not _is_app_screen(elements, self._app_package):
-                            self._dump_count += 1
-                            logger.info(f"[SCANNER] Dump #{self._dump_count}: skipped (not app screen — other app/system UI)")
-                            await asyncio.sleep(4)
-                            continue
-
-                        screen_name = _detect_screen_name(elements)
-                        if screen_name not in self._screens:
-                            self._screens[screen_name] = {}
-                            logger.info(f"[SCANNER] New screen discovered: '{screen_name}'")
-
-                        for el in elements:
-                            # Only store elements from the target app package or elements without package (text/hint only)
-                            if self._app_package and el.resource_id and not el.resource_id.startswith(self._app_package + ":"):
-                                continue
-                            key = el.unique_key
-                            if key not in self._screens[screen_name]:
-                                self._screens[screen_name][key] = el.to_dict()
-                                self._element_count += 1
-
-                    self._dump_count += 1
-                    logger.info(f"[SCANNER] Dump #{self._dump_count}: {len(elements)} elements on '{screen_name}'")
+                self._dump_count += 1
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.warning(f"[SCANNER] Dump error: {e}", exc_info=True)
+            await asyncio.sleep(4)
 
-            await asyncio.sleep(4)  # 4s between dumps
+    async def _process_elements(self, elements: list[UIElement]):
+        """Process a batch of elements into the screen map."""
+        if not elements:
+            return
 
-    def _find_maestro(self) -> Optional[str]:
-        """Find maestro binary, checking all common locations."""
-        import shutil
-        found = shutil.which("maestro")
-        if found:
-            return found
-        for p in [
-            Path.home() / ".maestro" / "bin" / "maestro",
-            Path("/opt/homebrew/bin/maestro"),
-            Path("/usr/local/bin/maestro"),
-        ]:
-            if p.exists() and os.access(p, os.X_OK):
-                return str(p)
-        return None
+        if not self._app_package:
+            self._app_package = _detect_app_package(elements)
+            if self._app_package:
+                logger.info(f"[SCANNER] App package detected: {self._app_package}")
 
-    async def _dump_hierarchy(self) -> Optional[dict]:
-        """
-        Dump the UI hierarchy.
-        Strategy 1: Query Maestro Studio HTTP API (port 9999) — works when Studio is running.
-        Strategy 2: Run `maestro hierarchy` CLI as fallback.
-        """
-        # Strategy 1: Maestro Studio HTTP API
-        result = await self._dump_via_studio_api()
-        if result is not None:
-            return result
+        if self._app_package and not _is_app_screen(elements, self._app_package):
+            logger.debug(f"[SCANNER] Skipped non-app screen")
+            return
 
-        # Strategy 2: maestro hierarchy CLI
-        return await self._dump_via_cli()
+        # Use ADB activity as primary screen identifier for precision
+        activity = await _get_foreground_activity(self._udid) or ""
+        heuristic_name = _detect_screen_name(elements)
+
+        # Build a meaningful screen name combining activity + heuristic
+        if activity and activity not in ("MainActivity", "Unknown"):
+            screen_name = activity.replace("Activity", "").replace("Fragment", "")
+        else:
+            screen_name = heuristic_name
+
+        is_new_screen = screen_name not in self._screens
+
+        if is_new_screen:
+            self._screens[screen_name] = {}
+            logger.info(f"[SCANNER] New screen discovered: '{screen_name}' (activity={activity})")
+            # Capture screenshot for the new screen
+            screenshot_b64 = await self._capture_screenshot_b64()
+            self._screen_meta[screen_name] = {
+                "activity": activity,
+                "heuristic_name": heuristic_name,
+                "screenshot": screenshot_b64,
+                "first_seen": time.strftime("%H:%M:%S"),
+            }
+        elif screen_name != self._last_screen_name:
+            # Screen changed back to an existing screen — update screenshot
+            screenshot_b64 = await self._capture_screenshot_b64()
+            if screenshot_b64:
+                self._screen_meta.setdefault(screen_name, {})["screenshot"] = screenshot_b64
+
+        self._last_screen_name = screen_name
+
+        added = 0
+        for el in elements:
+            rid = el.resource_id
+            if self._app_package and rid:
+                if ':' in rid and not rid.startswith(self._app_package + ":") and not rid.startswith("android:id/content"):
+                    continue
+            key = el.unique_key
+            if key not in self._screens[screen_name]:
+                self._screens[screen_name][key] = el.to_dict()
+                self._element_count += 1
+                added += 1
+
+        logger.info(f"[SCANNER] Dump #{self._dump_count + 1}: {len(elements)} elements on '{screen_name}' (+{added} new)")
+
+    async def _capture_screenshot_b64(self) -> str:
+        """Capture a screenshot via ADB and return as base64 JPEG."""
+        import base64
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                ADB_PATH, '-s', self._udid, 'exec-out', 'screencap', '-p',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+                env=_SUBPROCESS_ENV,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+            if proc.returncode == 0 and stdout and len(stdout) > 100:
+                return base64.b64encode(stdout).decode('ascii')
+        except Exception as e:
+            logger.debug(f"[SCANNER] Screenshot failed: {e}")
+        return ""
+
+    async def _adb_dump_elements(self) -> list[UIElement]:
+        """Dump UI hierarchy via ADB uiautomator — no external tools needed."""
+        # Strategy: dump to file on device, then cat it back
+        # /dev/stdout fails on many devices (Xiaomi, Samsung, etc.)
+        try:
+            dump_proc = await asyncio.create_subprocess_exec(
+                ADB_PATH, '-s', self._udid, 'shell', 'uiautomator', 'dump', '/sdcard/ui_dump.xml',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=_SUBPROCESS_ENV,
+            )
+            await asyncio.wait_for(dump_proc.communicate(), timeout=15)
+
+            cat_proc = await asyncio.create_subprocess_exec(
+                ADB_PATH, '-s', self._udid, 'shell', 'cat', '/sdcard/ui_dump.xml',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+                env=_SUBPROCESS_ENV,
+            )
+            stdout, _ = await asyncio.wait_for(cat_proc.communicate(), timeout=10)
+            xml = stdout.decode('utf-8', errors='replace').strip()
+            if xml and '<hierarchy' in xml:
+                return _parse_uiautomator_xml(xml)
+            else:
+                logger.warning(f"[SCANNER] ADB dump returned no XML (len={len(xml)})")
+        except Exception as e:
+            logger.warning(f"[SCANNER] ADB dump failed: {e}")
+
+        return []
 
     async def _dump_via_studio_api(self) -> Optional[dict]:
-        """Query Maestro Studio's built-in API to get the element hierarchy."""
+        """Query Maestro Studio HTTP API (fallback if running)."""
         import urllib.request
-        import urllib.error
         try:
             loop = asyncio.get_event_loop()
             def _fetch():
@@ -366,115 +567,178 @@ class ElementScanner:
                     "http://localhost:9999/api/v2/tree",
                     headers={"Accept": "application/json"},
                 )
-                with urllib.request.urlopen(req, timeout=5) as resp:
+                with urllib.request.urlopen(req, timeout=3) as resp:
                     return resp.read().decode("utf-8", errors="replace")
             raw = await loop.run_in_executor(None, _fetch)
             data = json.loads(raw)
-            # Maestro Studio returns {"hierarchy": {...}} or the tree directly
             if "hierarchy" in data:
                 return data["hierarchy"]
             if "tree" in data:
                 return data["tree"]
-            # If it's already the tree node
             if "attributes" in data or "children" in data:
                 return data
-            logger.debug(f"[SCANNER] Studio API returned unexpected shape: {list(data.keys())[:5]}")
-            return None
-        except Exception as e:
-            logger.debug(f"[SCANNER] Studio API not available: {e}")
-            return None
-
-    async def _dump_via_cli(self) -> Optional[dict]:
-        """Run `maestro hierarchy` CLI and parse its JSON output."""
-        try:
-            maestro_bin = self._find_maestro()
-            if not maestro_bin:
-                logger.error("[SCANNER] Maestro binary not found — checked PATH, ~/.maestro/bin, /opt/homebrew/bin, /usr/local/bin")
-                return None
-
-            logger.debug(f"[SCANNER] Running: {maestro_bin} hierarchy (device={self._udid})")
-            env = {**os.environ, 'ANDROID_SERIAL': self._udid}
-            proc = await asyncio.create_subprocess_exec(
-                maestro_bin, 'hierarchy',
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-            )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=20)
-            output = stdout.decode('utf-8', errors='replace')
-            err_output = stderr.decode('utf-8', errors='replace')
-
-            if proc.returncode != 0:
-                logger.warning(f"[SCANNER] maestro hierarchy failed (exit {proc.returncode}): {err_output[:300]}")
-                return None
-
-            if err_output.strip():
-                logger.debug(f"[SCANNER] maestro hierarchy stderr: {err_output[:200]}")
-
-            # Output starts with "Running on <udid>\n" then JSON
-            json_start = output.find('{')
-            if json_start >= 0:
-                try:
-                    return json.loads(output[json_start:])
-                except json.JSONDecodeError as je:
-                    logger.warning(f"[SCANNER] JSON parse error: {je} — output snippet: {output[json_start:json_start+100]}")
-                    return None
-
-            logger.warning(f"[SCANNER] No JSON in maestro hierarchy output. Full output: {output[:300]}")
-            return None
-        except asyncio.TimeoutError:
-            logger.warning("[SCANNER] maestro hierarchy timed out (20s)")
-            return None
-        except Exception as e:
-            logger.warning(f"[SCANNER] maestro hierarchy error: {e}")
-            return None
+        except Exception:
+            pass
+        return None
 
     def _build_element_map(self) -> dict:
-        """Build the final element map structure."""
+        """Build the final element map with ALL selector types."""
         result = {
             "project_id": self._project_id,
+            "project_name": self._project_name or self._project_id,
             "scanned_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "device": self._udid,
             "app_package": self._app_package or "",
+            "screen_size": f"{self._screen_width}x{self._screen_height}",
             "stats": self.stats,
             "screens": {},
         }
 
         for screen_name, elements in self._screens.items():
+            meta = self._screen_meta.get(screen_name, {})
             screen_data = {
                 "elements": [],
                 "maestro_selectors": [],
+                "screenshot": meta.get("screenshot", ""),
+                "activity": meta.get("activity", ""),
+                "first_seen": meta.get("first_seen", ""),
             }
-            for el_dict in elements.values():
-                screen_data["elements"].append(el_dict)
-                # Build maestro selector suggestion
-                sel = {}
-                if el_dict.get("id"):
-                    sel["id"] = el_dict["id"]
-                    sel["maestro"] = f'- tapOn:\n    id: "{el_dict["id"]}"'
-                elif el_dict.get("text"):
-                    sel["text"] = el_dict["text"]
-                    sel["maestro"] = f'- tapOn: "{el_dict["text"]}"'
-                elif el_dict.get("hint"):
-                    sel["hint"] = el_dict["hint"]
-                    sel["maestro"] = f'- tapOn: "{el_dict["hint"]}"'
-                elif el_dict.get("content_desc"):
-                    sel["content_desc"] = el_dict["content_desc"]
-                    sel["maestro"] = f'- tapOn: "{el_dict["content_desc"]}"'
 
-                if sel:
-                    sel["class"] = el_dict.get("class", "")
-                    if el_dict.get("password"):
-                        sel["is_password"] = True
-                    screen_data["maestro_selectors"].append(sel)
+            # Count duplicate IDs for index tracking
+            el_list = list(elements.values())
+            id_counts: dict[str, int] = Counter(
+                d.get("id", "") for d in el_list if d.get("id")
+            )
+            id_current_idx: dict[str, int] = defaultdict(int)
+
+            for el_dict in el_list:
+                el_id = el_dict.get("id", "")
+                el_text = el_dict.get("text", "")
+                el_hint = el_dict.get("hint", "")
+                el_desc = el_dict.get("content_desc", "")
+                el_bounds = el_dict.get("bounds", "")
+                is_dup = el_id and id_counts.get(el_id, 0) > 1
+
+                # Track index for duplicates
+                idx = None
+                if is_dup:
+                    idx = id_current_idx[el_id]
+                    id_current_idx[el_id] += 1
+                    el_dict["index"] = idx
+
+                screen_data["elements"].append(el_dict)
+
+                # Generate ALL selector commands for this element
+                commands = []
+
+                # tapOn by ID (with index if duplicate)
+                if el_id:
+                    if idx is not None:
+                        commands.append({
+                            "type": "tapOn",
+                            "strategy": "id",
+                            "command": f'- tapOn:\n    id: "{el_id}"\n    index: {idx}',
+                        })
+                    else:
+                        commands.append({
+                            "type": "tapOn",
+                            "strategy": "id",
+                            "command": f'- tapOn:\n    id: "{el_id}"',
+                        })
+
+                # tapOn by text
+                if el_text:
+                    commands.append({
+                        "type": "tapOn",
+                        "strategy": "text",
+                        "command": f'- tapOn: "{el_text}"',
+                    })
+
+                # tapOn by hint (if different from text)
+                if el_hint and el_hint != el_text:
+                    commands.append({
+                        "type": "tapOn",
+                        "strategy": "hint",
+                        "command": f'- tapOn: "{el_hint}"',
+                    })
+
+                # tapOn by content_desc (if different from text)
+                if el_desc and el_desc != el_text:
+                    commands.append({
+                        "type": "tapOn",
+                        "strategy": "content_desc",
+                        "command": f'- tapOn: "{el_desc}"',
+                    })
+
+                # tapOn by coordinates
+                if el_bounds and self._screen_width > 0:
+                    m = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', el_bounds)
+                    if m:
+                        cx = (int(m.group(1)) + int(m.group(3))) // 2
+                        cy = (int(m.group(2)) + int(m.group(4))) // 2
+                        px = round(cx / self._screen_width * 100)
+                        py = round(cy / self._screen_height * 100)
+                        commands.append({
+                            "type": "tapOn",
+                            "strategy": "point",
+                            "command": f'- tapOn:\n    point: "{px}%,{py}%"',
+                        })
+
+                # assertVisible by ID
+                if el_id:
+                    if idx is not None:
+                        commands.append({
+                            "type": "assertVisible",
+                            "strategy": "id",
+                            "command": f'- assertVisible:\n    id: "{el_id}"\n    index: {idx}',
+                        })
+                    else:
+                        commands.append({
+                            "type": "assertVisible",
+                            "strategy": "id",
+                            "command": f'- assertVisible:\n    id: "{el_id}"',
+                        })
+
+                # assertVisible by text
+                if el_text:
+                    commands.append({
+                        "type": "assertVisible",
+                        "strategy": "text",
+                        "command": f'- assertVisible: "{el_text}"',
+                    })
+
+                if commands:
+                    screen_data["maestro_selectors"].append({
+                        "element": {k: v for k, v in el_dict.items() if k in ("id", "text", "hint", "content_desc", "class", "index")},
+                        "commands": commands,
+                    })
 
             result["screens"][screen_name] = screen_data
 
         return result
 
     def _save_element_map(self, element_map: dict):
-        """Save element map to disk."""
-        file_path = ELEMENT_MAPS_DIR / f"{self._project_id}.json"
+        # Build human-readable filename: scaneamento_projeto_NOME_DATA.json
+        project_name = self._project_name or self._project_id
+        safe_name = re.sub(r'[^\w\s-]', '', project_name).strip().replace(' ', '_')
+        date_str = time.strftime("%Y%m%d_%H%M%S")
+        filename = f"scaneamento_projeto_{safe_name}_{date_str}.json"
+
+        # Delete previous scan file(s) for this project_id (keep only latest)
+        for old_file in ELEMENT_MAPS_DIR.glob("scaneamento_projeto_*.json"):
+            try:
+                old_data = json.loads(old_file.read_text(encoding="utf-8"))
+                if old_data.get("project_id") == self._project_id:
+                    old_file.unlink()
+                    logger.info(f"[SCANNER] Removed old scan: {old_file.name}")
+            except Exception:
+                continue
+        # Also remove legacy UUID-named file if it exists
+        legacy = ELEMENT_MAPS_DIR / f"{self._project_id}.json"
+        if legacy.exists():
+            legacy.unlink()
+
+        file_path = ELEMENT_MAPS_DIR / filename
         file_path.write_text(
             json.dumps(element_map, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -483,21 +747,28 @@ class ElementScanner:
 
 
 def load_element_map(project_id: str) -> Optional[dict]:
-    """Load a previously saved element map for a project."""
-    file_path = ELEMENT_MAPS_DIR / f"{project_id}.json"
-    if file_path.exists():
+    """Load element map for a project. Supports both new naming format
+    (scaneamento_projeto_NAME_DATE.json) and legacy UUID format."""
+    # 1. Search new naming format — find by project_id field in JSON
+    for fpath in sorted(ELEMENT_MAPS_DIR.glob("scaneamento_projeto_*.json"), reverse=True):
         try:
-            return json.loads(file_path.read_text(encoding="utf-8"))
+            data = json.loads(fpath.read_text(encoding="utf-8"))
+            if data.get("project_id") == project_id:
+                return data
+        except Exception:
+            continue
+    # 2. Legacy: UUID-named file
+    legacy = ELEMENT_MAPS_DIR / f"{project_id}.json"
+    if legacy.exists():
+        try:
+            return json.loads(legacy.read_text(encoding="utf-8"))
         except Exception:
             pass
     return None
 
 
 def element_map_to_prompt_context(element_map: dict) -> str:
-    """
-    Convert an element map into a text context string that can be
-    injected into the AI prompt for test generation.
-    """
+    """Convert element map to text context for AI prompt injection."""
     if not element_map or not element_map.get("screens"):
         return ""
 
@@ -510,25 +781,23 @@ def element_map_to_prompt_context(element_map: dict) -> str:
 
     for screen_name, screen_data in element_map["screens"].items():
         lines.append(f"--- TELA: {screen_name} ---")
-        selectors = screen_data.get("maestro_selectors", [])
-        for sel in selectors:
+        for sel_group in screen_data.get("maestro_selectors", []):
+            el = sel_group.get("element", {})
             parts = []
-            if sel.get("id"):
-                parts.append(f'id="{sel["id"]}"')
-            if sel.get("text"):
-                parts.append(f'text="{sel["text"]}"')
-            if sel.get("hint"):
-                parts.append(f'hint="{sel["hint"]}"')
-            if sel.get("content_desc"):
-                parts.append(f'desc="{sel["content_desc"]}"')
-            parts.append(f'class={sel.get("class", "?")}')
-            if sel.get("is_password"):
-                parts.append("(senha)")
+            if el.get("id"):
+                idx_str = f" [index:{el['index']}]" if "index" in el else ""
+                parts.append(f'id="{el["id"]}"{idx_str}')
+            if el.get("text"):
+                parts.append(f'text="{el["text"]}"')
+            if el.get("hint"):
+                parts.append(f'hint="{el["hint"]}"')
+            if el.get("content_desc"):
+                parts.append(f'desc="{el["content_desc"]}"')
+            parts.append(f'class={el.get("class", "?")}')
 
-            maestro = sel.get("maestro", "")
             lines.append(f"  {' | '.join(parts)}")
-            if maestro:
-                lines.append(f"    Maestro: {maestro}")
+            for cmd in sel_group.get("commands", []):
+                lines.append(f"    {cmd['command']}")
         lines.append("")
 
     return "\n".join(lines)

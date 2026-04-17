@@ -9,10 +9,31 @@ import base64
 
 logger = logging.getLogger("screenshot")
 
+def _png_to_jpeg_half_res(png_bytes: bytes) -> tuple[bytes, int, int]:
+    """PIL pipeline: decode PNG → resize to 50% → JPEG 45%. Returns (jpeg, native_w, native_h)."""
+    img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+    native_w, native_h = img.size
+    img = img.resize((native_w // 2, native_h // 2), Image.Resampling.LANCZOS)
+    output = io.BytesIO()
+    img.save(output, format='JPEG', quality=45, optimize=False)
+    return output.getvalue(), native_w, native_h
+
+
 async def capture_screenshot_fast(udid: str) -> bytes:
     """
     Optimized pipeline: PNG → JPEG 45% quality, 50% resolution.
     Result: ~80-120KB instead of ~500KB. Latency: ~150-250ms.
+    """
+    jpeg, _w, _h = await capture_screenshot_with_native_size(udid)
+    return jpeg
+
+
+async def capture_screenshot_with_native_size(udid: str) -> tuple[bytes, int, int]:
+    """Same as capture_screenshot_fast but also returns the NATIVE (pre-resize) dimensions.
+
+    Needed by the Maestro Studio SSE stream so that element bounds (which are in native
+    device coords from uiautomator) map correctly onto the preview — mismatched width/height
+    would cause highlights to be scaled wrong relative to the bounds percentages.
     """
     proc = await asyncio.create_subprocess_exec(
         'adb', '-s', udid, 'exec-out', 'screencap', '-p',
@@ -20,21 +41,14 @@ async def capture_screenshot_fast(udid: str) -> bytes:
         stderr=asyncio.subprocess.PIPE
     )
     png_bytes, _ = await proc.communicate()
-    
-    # Convert PNG -> Compressed JPEG with PIL
+
     try:
-        img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
-        
-        # Reduce resolution to 50% keeping proportion
-        w, h = img.size
-        img = img.resize((w // 2, h // 2), Image.Resampling.LANCZOS)
-        
-        output = io.BytesIO()
-        img.save(output, format='JPEG', quality=45, optimize=False)
-        return output.getvalue()
+        # PIL decode/resize/encode is CPU-bound — run off the event loop so concurrent
+        # SSE consumers and other HTTP handlers are not blocked.
+        return await asyncio.to_thread(_png_to_jpeg_half_res, png_bytes)
     except Exception as e:
         logger.error(f"Failed to capture fast screenshot for {udid}: {e}")
-        return b""
+        return b"", 0, 0
 
 class ScreenshotHandler:
     QUALITY = 80

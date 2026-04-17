@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/maestro-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Maestro Studio</title>
+
+    <!-- localStorage sanitizer: fix stale values from previous buggy sessions -->
+    <script>
+      (function() {
+        try {
+          // Fix: maestro-workspace-path was accidentally stored as JSON object {path:...}
+          // by old stub that returned {path:'/tmp/qamind-workspace'} instead of a string.
+          var WS_KEY = 'maestro-workspace-path';
+          var raw = localStorage.getItem(WS_KEY);
+          if (raw) {
+            try {
+              var val = JSON.parse(raw);
+              // If parsed value is an object (not a string), extract path or clear it
+              if (val && typeof val === 'object' && !Array.isArray(val)) {
+                var fixedPath = val.path || val.workspacePath || '';
+                if (fixedPath) {
+                  localStorage.setItem(WS_KEY, JSON.stringify(fixedPath));
+                } else {
+                  localStorage.removeItem(WS_KEY);
+                }
+              }
+            } catch (e) {}
+          }
+
+          // Fix: maestro-open-tabs — if stored as non-array, clear it
+          var TABS_KEY = 'maestro-open-tabs';
+          var rawTabs = localStorage.getItem(TABS_KEY);
+          if (rawTabs) {
+            try {
+              var tabs = JSON.parse(rawTabs);
+              if (!Array.isArray(tabs)) localStorage.removeItem(TABS_KEY);
+            } catch (e) { localStorage.removeItem(TABS_KEY); }
+          }
+
+          // Fix: maestro-expanded-folders — must be an array
+          var FOLDERS_KEY = 'maestro-expanded-folders';
+          var rawFolders = localStorage.getItem(FOLDERS_KEY);
+          if (rawFolders) {
+            try {
+              var folders = JSON.parse(rawFolders);
+              if (!Array.isArray(folders)) localStorage.removeItem(FOLDERS_KEY);
+            } catch (e) { localStorage.removeItem(FOLDERS_KEY); }
+          }
+        } catch (e) {}
+      })();
+    </script>
+
+    <!-- Cache buster: force invalidation of any stale service workers / caches -->
+    <script>
+      (function() {
+        try {
+          // Unregister any service workers that might be serving cached responses
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              regs.forEach(function(r) { r.unregister(); });
+            }).catch(function() {});
+          }
+          // Clear Cache API entries (if any)
+          if (typeof caches !== 'undefined' && caches.keys) {
+            caches.keys().then(function(names) {
+              names.forEach(function(n) { caches.delete(n); });
+            }).catch(function() {});
+          }
+        } catch (e) {}
+      })();
+    </script>
+
+    <!-- Polyfills: app was built for Electron — provide Node.js/Electron globals for browser -->
+    <script>
+      // ── process ──────────────────────────────────────────────────────────
+      window.process = window.process || {};
+      Object.assign(window.process, {
+        type: 'browser',     // NOT 'renderer' → skips Electron IPC paths
+        platform: 'darwin',
+        arch: 'arm64',
+        versions: {},
+        // SNAP=truthy → electron-store uses simple writeFileSync instead of write-file-atomic
+        env: { SNAP: 'snap' },
+        version: '',
+        cwd: function() { return '/tmp'; },
+        nextTick: function(fn) { Promise.resolve().then(fn); },
+        pid: 1,
+        ppid: 0,
+        title: 'maestro-studio',
+        argv: [],
+        execArgv: [],
+        exit: function() {},
+        getuid: undefined,
+        getgid: undefined,
+      });
+
+      // ── global ───────────────────────────────────────────────────────────
+      window.global = window.global || window;
+
+      // ── React.createElement patch: catch object-as-child at the source ──────
+      // Runs BEFORE React loads to wrap createElement and find the exact culprit.
+      (function() {
+        // We wrap createElement after React loads by hooking module define
+        var _origDefine = Object.getOwnPropertyDescriptor(window, '__REACT_DEVTOOLS_GLOBAL_HOOK__');
+        // Hook any future assignment of React internals
+        function patchReact(R) {
+          if (!R || !R.createElement || R.createElement.__patched) return;
+          var orig = R.createElement;
+          R.createElement = function(type, props) {
+            var children = Array.prototype.slice.call(arguments, 2);
+            for (var i = 0; i < children.length; i++) {
+              var child = children[i];
+              if (child !== null && child !== undefined && typeof child === 'object' && !Array.isArray(child) && typeof child.$$typeof === 'undefined') {
+                var typeName = typeof type === 'string' ? type : (type && (type.displayName || type.name)) || 'unknown';
+                console.warn('[createElement-DEBUG] OBJECT CHILD detected!');
+                console.warn('[createElement-DEBUG] Component/element type:', typeName);
+                console.warn('[createElement-DEBUG] Object keys:', Object.keys(child));
+                console.warn('[createElement-DEBUG] Object value:', JSON.stringify(child).substring(0, 300));
+                console.warn('[createElement-DEBUG] Stack:', new Error('trace').stack.split('\n').slice(2, 8).join(' | '));
+              }
+            }
+            return orig.apply(this, arguments);
+          };
+          R.createElement.__patched = true;
+        }
+        // Try to patch after scripts load
+        window.addEventListener('load', function() {
+          setTimeout(function() {
+            if (window.React) patchReact(window.React);
+            // Also check any module-level React instances
+            Object.keys(window).forEach(function(k) {
+              try {
+                var v = window[k];
+                if (v && v.createElement && v.Component && !v.createElement.__patched) patchReact(v);
+              } catch (e) {}
+            });
+          }, 100);
+        });
+      })();
+      // ── React #31 debugger: extract EXACT object keys from error URL ──────────
+      (function() {
+        var origErr = console.error.bind(console);
+        console.error = function() {
+          try {
+            var args = Array.prototype.slice.call(arguments);
+            var first = args[0];
+            var errObj = first instanceof Error ? first : (first && typeof first === 'object' && first.message ? first : null);
+            var msg = errObj ? errObj.message : (typeof first === 'string' ? first : '');
+            if (msg && (msg.indexOf('#31') !== -1 || msg.indexOf('Objects are not valid') !== -1)) {
+              // Extract full URL with args
+              var urlMatch = msg.match(/https?:\/\/[^\s]+invariant=31[^\s]*/);
+              if (urlMatch) {
+                var fullUrl = urlMatch[0];
+                var argsMatch = fullUrl.match(/args\[\]=([^&\s"'`]+)/g) || [];
+                var decoded = argsMatch.map(function(a) {
+                  try { return decodeURIComponent(a.replace('args[]=','')); } catch(e) { return a; }
+                });
+                console.warn('[REACT31] FULL ERROR URL: ' + fullUrl);
+                console.warn('[REACT31] DECODED ARGS: ' + JSON.stringify(decoded));
+                console.warn('[REACT31] STACK (top 5):', (errObj && errObj.stack || new Error('').stack).split('\n').slice(1,6).join(' | '));
+              }
+            }
+          } catch (e) {}
+          return origErr.apply(console, arguments);
+        };
+        // Also catch via window.onerror
+        var prevOnError = window.onerror;
+        window.onerror = function(msg, src, line, col, err) {
+          if (err && err.message && err.message.indexOf('#31') !== -1) {
+            var urlMatch = err.message.match(/https?:\/\/[^\s]+invariant=31[^\s]*/);
+            if (urlMatch) {
+              var decoded = (urlMatch[0].match(/args\[\]=([^&\s"'`]+)/g)||[]).map(function(a) {
+                try { return decodeURIComponent(a.replace('args[]=','')); } catch(e) { return a; }
+              });
+              console.warn('[REACT31-ONERROR] DECODED: ' + JSON.stringify(decoded));
+            }
+          }
+          if (prevOnError) return prevOnError.apply(this, arguments);
+        };
+      })();
+
+      // ── Maestro Cloud fetch interceptor ──────────────────────────────────
+      // The app calls https://api.copilot.mobile.dev/v2/maestro-studio/* for auth.
+      // We intercept those calls and return fake data so the UI renders fully offline.
+      (function() {
+        var mockUser = {
+          id: 'qamind-local-user',
+          email: 'local@qamind.dev',
+          firstName: 'QAMind',
+          lastName: 'User',
+        };
+        var mockOrg = {
+          id: 'qamind-local-org',
+          name: 'QAMind Local',
+          orgStatus: 'ACTIVE',
+          metadata: {
+            pricing_plan: 'enterprise',
+            trial_expires_on: null,
+          },
+          plan: 'enterprise',
+          type: 'organization',
+        };
+        var mockResponses = {
+          '/maestro-studio/user':   mockUser,
+          '/maestro-studio/org':    mockOrg,
+          '/maestro-studio/orgs':   [mockOrg],
+          '/maestro-studio/apps':   [],
+          '/maestro-studio/projects': [],
+          '/maestro-studio/metadata': {},
+        };
+
+        var origFetch = window.fetch;
+        window.fetch = function(input, init) {
+          var url = typeof input === 'string' ? input : (input && input.url) || '';
+
+          // Intercept Maestro Cloud API calls
+          if (url.indexOf('api.copilot.mobile.dev') !== -1 || url.indexOf('api.mobile.dev') !== -1) {
+            // Extract just the path (strip query string) and match EXACTLY at end
+            // so /maestro-studio/org doesn't accidentally match /maestro-studio/orgs
+            var pathOnly = url.split('?')[0];
+            var matched = null;
+            var matchedKey = null;
+            for (var path in mockResponses) {
+              // Must end with the exact path (or path + /something)
+              if (pathOnly === path || pathOnly.endsWith(path) && !pathOnly.endsWith(path + 's')) {
+                // Prefer longer matches
+                if (matchedKey === null || path.length > matchedKey.length) {
+                  matched = mockResponses[path];
+                  matchedKey = path;
+                }
+              }
+            }
+            // Also try exact suffix match for any path
+            if (matchedKey === null) {
+              for (var path2 in mockResponses) {
+                var idx = pathOnly.lastIndexOf(path2);
+                if (idx !== -1 && idx + path2.length === pathOnly.length) {
+                  matched = mockResponses[path2];
+                  matchedKey = path2;
+                  break;
+                }
+              }
+            }
+            var responseBody = matched !== null ? JSON.stringify(matched) : '{}';
+            return Promise.resolve(new Response(responseBody, {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }));
+          }
+          return origFetch.apply(this, arguments);
+        };
+      })();
+
+      // ── require ──────────────────────────────────────────────────────────
+      if (typeof require === 'undefined') {
+        var _fsStore = {};
+
+        var _fsStub = {
+          existsSync: function() { return false; },
+          mkdirSync: function() {},
+          statSync: function() { return { isFile: function() { return false; }, isDirectory: function() { return true; } }; },
+          readFileSync: function(p) { return _fsStore[p] !== undefined ? _fsStore[p] : '{}'; },
+          writeFileSync: function(p, d) { _fsStore[p] = typeof d === 'string' ? d : String(d); },
+          writeFile: function(p, d, o, cb) { _fsStore[p] = d; (typeof o === 'function' ? o : cb)(null); },
+          open: function(p, f, m, cb) { (typeof m === 'function' ? m : cb)(null, 1); },
+          close: function(fd, cb) { if (cb) cb(null); },
+          write: function(fd, buf, off, len, pos, cb) { if (cb) cb(null, len, buf); },
+          rename: function(a, b, cb) { _fsStore[b] = _fsStore[a]; if (cb) cb(null); },
+          renameSync: function(a, b) { _fsStore[b] = _fsStore[a]; },
+          unlink: function(p, cb) { delete _fsStore[p]; if (cb) cb(null); },
+          unlinkSync: function(p) { delete _fsStore[p]; },
+          watch: function() { return { close: function() {} }; },
+          createWriteStream: function() { return { write: function() {}, end: function() {}, on: function() {} }; },
+        };
+
+        // Coerce to string — Electron's path module handles non-string inputs loosely
+        var _str = function(p) { return typeof p === 'string' ? p : (p == null ? '' : String(p)); };
+        var _pathStub = {
+          sep: '/',
+          delimiter: ':',
+          join: function() {
+            var parts = Array.from(arguments).map(_str).filter(Boolean);
+            return parts.join('/').replace(/\/+/g, '/');
+          },
+          resolve: function() {
+            var parts = Array.from(arguments).map(_str).filter(Boolean);
+            var joined = parts.join('/').replace(/\/+/g, '/');
+            return joined.startsWith('/') ? joined : '/' + joined;
+          },
+          dirname: function(p) {
+            var s = _str(p);
+            var idx = s.lastIndexOf('/');
+            return idx <= 0 ? '/' : s.substring(0, idx);
+          },
+          basename: function(p, ext) {
+            var s = _str(p);
+            var b = s.substring(s.lastIndexOf('/') + 1);
+            return ext && b.endsWith(_str(ext)) ? b.slice(0, -_str(ext).length) : b;
+          },
+          extname: function(p) {
+            var s = _str(p);
+            var m = s.match(/(\.[^./]+)$/);
+            return m ? m[1] : '';
+          },
+          normalize: function(p) { return _str(p).replace(/\/+/g, '/'); },
+          isAbsolute: function(p) { return _str(p).startsWith('/'); },
+          relative: function(a, b) { return _str(b); },
+          parse: function(p) {
+            var s = _str(p);
+            var base = s.substring(s.lastIndexOf('/') + 1);
+            var dir = s.substring(0, s.lastIndexOf('/')) || '/';
+            var extMatch = base.match(/(\.[^./]+)$/);
+            var ext = extMatch ? extMatch[1] : '';
+            var name = ext ? base.slice(0, -ext.length) : base;
+            return { root: '/', dir: dir, base: base, ext: ext, name: name };
+          },
+          format: function(o) {
+            o = o || {};
+            return (_str(o.dir) || '/') + '/' + _str(o.base);
+          },
+        };
+
+        window.require = function(mod) {
+          // process: key fix — qf = require('process'); qf.env.SNAP crashes if env is missing
+          if (mod === 'process') return window.process;
+
+          if (mod === 'electron' || mod === 'electron/renderer') {
+            // Per-channel IPC invoke responses — app is built for Electron IPC
+            var _ipcInvokeHandlers = {
+              // Editor / App Settings (truthy objects → app renders past spinners)
+              // Key name MUST be `autosaveEnabled` (matches bundle's Oyt default) — camelCase
+              // variants like `autoSave` are ignored and autosave stays off.
+              'get-editor-settings':       { autosaveEnabled: true, singleQuote: false },
+              'set-editor-settings':       true,
+              'set-autosave-enabled':      true,
+              'get-allow-prerelease':      false,
+              'set-allow-prerelease':      true,
+              'get-web-browser-enabled':   true,
+              'set-web-browser-enabled':   true,
+
+              // Server status (needs a truthy object with a status field)
+              'get-server-status':         { status: 'running', port: 8001 },
+              'start-server':              true,
+              'stop-server':               true,
+              'build-server':              true,
+              'restart-server':            true,
+
+              // Android SDK — empty string so validation doesn't crash
+              'get-android-sdk-path':      '',
+              'set-android-sdk-path':      true,
+              'validate-android-sdk':      { valid: false, message: 'skipped in browser' },
+
+              // Workspace / Files — real filesystem via daemon
+              'get-recent-workspaces':     [],
+
+              // Native folder picker → returns selected path string
+              'create-workspace': function() {
+                return fetch('http://localhost:8001/api/maestro-studio/pick-directory')
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) { return (d && d.path) ? d.path : null; })
+                  .catch(function() { return null; });
+              },
+              'open-workspace-invoke': function() {
+                return fetch('http://localhost:8001/api/maestro-studio/pick-directory')
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) { return (d && d.path) ? d.path : null; })
+                  .catch(function() { return null; });
+              },
+
+              // File CRUD → real filesystem calls via daemon
+              'create-file': function(args) {
+                var a = (args && args[0]) || args || {};
+                return fetch('http://localhost:8001/api/maestro-studio/file/create', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: a.path || '', content: a.content || '' })
+                }).then(function(r) { return r.json(); }).catch(function() { return { success: false }; });
+              },
+              'save-file': function(args) {
+                var a = (args && args[0]) || args || {};
+                return fetch('http://localhost:8001/api/maestro-studio/file/save', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: a.path || '', content: a.content || '' })
+                }).then(function(r) { return r.json(); }).catch(function() { return { success: false }; });
+              },
+              'read-file': function(args) {
+                var path = (args && args[0]) || '';
+                return fetch('http://localhost:8001/api/maestro-studio/file/read?path=' + encodeURIComponent(path))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) { return d.content || ''; })
+                  .catch(function() { return ''; });
+              },
+              'load-file-content': function(args) {
+                var path = (args && args[0]) || '';
+                return fetch('http://localhost:8001/api/maestro-studio/file/read?path=' + encodeURIComponent(path))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) { return d.content || ''; })
+                  .catch(function() { return ''; });
+              },
+              'get-directory-contents': function(args) {
+                var path = (args && args[0]) || '';
+                return fetch('http://localhost:8001/api/maestro-studio/file/list?path=' + encodeURIComponent(path))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) { return d.tree ? [d.tree] : []; })
+                  .catch(function() { return []; });
+              },
+              'create-directory': function(args) {
+                var a = (args && args[0]) || args || {};
+                return fetch('http://localhost:8001/api/maestro-studio/file/create', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: (a.path||'') + '/.gitkeep', content: '' })
+                }).then(function(r) { return r.json(); }).catch(function() { return { success: false }; });
+              },
+              'delete-file-or-directory': function(args) {
+                var path = (args && (args.path || args[0])) || '';
+                return fetch('http://localhost:8001/api/maestro-studio/file/delete', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: path })
+                }).then(function(r) { return r.json(); }).catch(function() { return { success: false }; });
+              },
+              'rename-file-or-directory': function(args) {
+                var a = (args && args[0]) || args || {};
+                return fetch('http://localhost:8001/api/maestro-studio/file/rename', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ oldPath: a.oldPath || a.path || '', newPath: a.newPath || a.newName || '' })
+                }).then(function(r) { return r.json(); }).catch(function() { return { success: false }; });
+              },
+              'duplicate-file':            { success: true },
+              'move-files':                { success: true },
+              'directory-contents':        [],
+              'open-file':                 null,
+              'pick-app-file':             null,
+              'show-in-file-manager':      true,
+              'setup-file-watcher':        true,
+
+              // Window / App control
+              'window-minimize':           true,
+              'window-maximize':           true,
+              'window-close':              true,
+              'get-window-fullscreen-state': false,
+              'open-external':             true,
+              'open-about':                true,
+              'close-about-window':        true,
+              'show-message-box':          { response: 0 },
+              'app-control':               true,
+              'sync-user-context':         true,
+              'get-app-version':           '0.0.0',
+
+              // Updates
+              'check-update':              { hasUpdate: false },
+              'start-download':            true,
+              'quit-and-install':          true,
+
+              // OAuth — return fake token starting with "rb_" to bypass sign-in screen
+              'oauth-get-cached-token':    'rb_qamind_local_dev_token',
+              'oauth-validate-token':      true,
+              'oauth-sign-in':             { success: true, token: 'rb_qamind_local_dev_token' },
+              'oauth-logout':              true,
+              'oauth-switch-org':          true,
+            };
+            // Channel listener registry — Electron's ipcRenderer.on/once/removeListener
+            // The Electron main process pushes file-system-data and directory-contents
+            // events that the renderer listens for. In the browser we dispatch them
+            // from within our send() handler after fetching from the daemon.
+            var _ipcListeners = {};
+            var _ipcOnceListeners = {};
+            var _ipcDispatch = function(channel) {
+              var args = Array.prototype.slice.call(arguments, 1);
+              var fakeEvent = { sender: { id: 1 }, senderId: 1 };
+              var fire = function(list) {
+                if (!list) return;
+                list.slice().forEach(function(fn) {
+                  try { fn.apply(null, [fakeEvent].concat(args)); }
+                  catch (e) { console.error('[ipc] listener error on ' + channel, e); }
+                });
+              };
+              fire(_ipcListeners[channel]);
+              var onceList = _ipcOnceListeners[channel];
+              if (onceList && onceList.length) {
+                _ipcOnceListeners[channel] = [];
+                fire(onceList);
+              }
+            };
+
+            // ── Electron send() handlers: fire-and-forget IPC that pushes data back
+            // via dispatcher. These mirror what the Electron main process does when
+            // the renderer asks to set up a file watcher or list a directory.
+            var _ipcSendHandlers = {
+              'setup-file-watcher': function(args) {
+                var path = args && args[0];
+                if (!path) return;
+                fetch('http://localhost:8001/api/maestro-studio/file/list?path=' + encodeURIComponent(path))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    // Electron's native behaviour: file-system-data payload is the workspace's
+                    // IMMEDIATE children (flat list), not the wrapping root. Dispatching the
+                    // wrapped root causes the bundle to compute new-file paths as
+                    // `<workspace>/<workspace-basename>/...`, creating a nested duplicate dir.
+                    var children = (d && d.tree && d.tree.children) ? d.tree.children : [];
+                    _ipcDispatch('file-system-data', children);
+                  })
+                  .catch(function(e) {
+                    console.error('[ipc] setup-file-watcher failed', e);
+                    _ipcDispatch('file-system-data', []);
+                  });
+              },
+              'get-directory-contents': function(args) {
+                var path = args && args[0];
+                if (!path) return;
+                fetch('http://localhost:8001/api/maestro-studio/file/list?path=' + encodeURIComponent(path))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    var children = (d && d.tree && d.tree.children) ? d.tree.children : [];
+                    // Listener shape: (event, path, children)
+                    _ipcDispatch('directory-contents', path, children);
+                  })
+                  .catch(function(e) {
+                    console.error('[ipc] get-directory-contents failed', e);
+                    _ipcDispatch('directory-contents', path, []);
+                  });
+              },
+              'load-file-content': function(args) {
+                var path = args && args[0];
+                if (!path) return;
+                fetch('http://localhost:8001/api/maestro-studio/file/read?path=' + encodeURIComponent(path))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    var content = (d && typeof d.content === 'string') ? d.content : '';
+                    // Listener payload shape: { path, content }
+                    _ipcDispatch('file-content-loaded', { path: path, content: content });
+                  })
+                  .catch(function(e) {
+                    console.error('[ipc] load-file-content failed', e);
+                    _ipcDispatch('file-content-loaded', { path: path, content: '' });
+                  });
+              },
+              // The editor calls ipcRenderer.send('save-file', {path, content}) on autosave
+              // (fire-and-forget). Without this handler, edits never persisted to disk —
+              // VS Code open on the same file would show the old template.
+              'save-file': function(args) {
+                var a = (args && args[0]) || {};
+                if (!a.path) return;
+                fetch('http://localhost:8001/api/maestro-studio/file/save', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: a.path, content: a.content || '' })
+                }).catch(function(e) { console.error('[ipc] save-file send failed', e); });
+              },
+            };
+
+            return {
+              ipcRenderer: {
+                send: function(channel) {
+                  var extra = Array.prototype.slice.call(arguments, 1);
+                  var handler = _ipcSendHandlers[channel];
+                  if (handler) {
+                    try { handler(extra); } catch (e) { console.error('[ipc] send handler error', channel, e); }
+                  }
+                },
+                sendSync: function() { return null; },
+                invoke: function(channel) {
+                  // Collect extra args passed after the channel name
+                  var extraArgs = Array.prototype.slice.call(arguments, 1);
+                  if (Object.prototype.hasOwnProperty.call(_ipcInvokeHandlers, channel)) {
+                    var handler = _ipcInvokeHandlers[channel];
+                    // Support function handlers (e.g. file picker, real file ops)
+                    if (typeof handler === 'function') {
+                      try { return Promise.resolve(handler(extraArgs)); }
+                      catch (e) { return Promise.resolve(null); }
+                    }
+                    return Promise.resolve(handler);
+                  }
+                  // SAFE default: null
+                  return Promise.resolve(null);
+                },
+                on: function(channel, listener) {
+                  if (!_ipcListeners[channel]) _ipcListeners[channel] = [];
+                  _ipcListeners[channel].push(listener);
+                },
+                once: function(channel, listener) {
+                  if (!_ipcOnceListeners[channel]) _ipcOnceListeners[channel] = [];
+                  _ipcOnceListeners[channel].push(listener);
+                },
+                removeListener: function(channel, listener) {
+                  var list = _ipcListeners[channel];
+                  if (!list) return;
+                  var idx = list.indexOf(listener);
+                  if (idx !== -1) list.splice(idx, 1);
+                },
+              },
+              // ipcMain must be truthy: electron-store calls I0e() which does UQ && Z3 && I0e()
+              ipcMain: {
+                on: function() {}, once: function() {}, handle: function() {},
+                handleOnce: function() {}, removeHandler: function() {}, removeAllListeners: function() {},
+              },
+              nativeTheme: { shouldUseDarkColors: true },
+              app: {
+                getVersion: function() { return '0.0.0'; },
+                getPath: function() { return '/tmp'; },
+                getName: function() { return 'maestro-studio'; },
+                getAppPath: function() { return '/tmp'; },
+              },
+              shell: {
+                openExternal: function() {},
+                openPath: function() { return Promise.resolve(''); },
+              },
+              clipboard: { writeText: function() {}, readText: function() { return ''; } },
+              contextBridge: { exposeInMainWorld: function() {} },
+              crashReporter: { start: function() {} },
+            };
+          }
+
+          if (mod === 'fs' || mod === 'graceful-fs' || mod === 'original-fs') return _fsStub;
+          if (mod === 'path' || mod === 'path/posix') return _pathStub;
+
+          if (mod === 'os') {
+            return {
+              homedir: function() { return '/tmp'; },
+              tmpdir: function() { return '/tmp'; },
+              platform: function() { return 'darwin'; },
+              arch: function() { return 'arm64'; },
+              type: function() { return 'Darwin'; },
+              release: function() { return '0.0.0'; },
+              userInfo: function() { return { uid: 1000, gid: 1000, username: 'user', homedir: '/tmp', shell: '/bin/sh' }; },
+              EOL: '\n',
+              cpus: function() { return []; },
+              totalmem: function() { return 8 * 1024 * 1024 * 1024; },
+              freemem: function() { return 4 * 1024 * 1024 * 1024; },
+            };
+          }
+
+          if (mod === 'util') {
+            return {
+              promisify: function(fn) { return fn; },
+              inspect: function(v) { return String(v); },
+              inherits: function() {},
+              deprecate: function(fn) { return fn; },
+              format: function() { return Array.from(arguments).join(' '); },
+            };
+          }
+
+          if (mod === 'crypto') {
+            return {
+              randomBytes: function(n) { var b = new Uint8Array(n); crypto.getRandomValues(b); return b; },
+              createCipheriv: function() { return { update: function(d) { return d; }, final: function() { return ''; } }; },
+              createDecipheriv: function() { return { update: function(d) { return d; }, final: function() { return ''; } }; },
+              pbkdf2Sync: function(p, s, i, kl) { return new Uint8Array(kl); },
+            };
+          }
+
+          if (mod === 'events') {
+            return {
+              EventEmitter: function() { this._events = {}; },
+            };
+          }
+
+          // ajv runtime stubs (these appear in template literals as code strings, but stub anyway)
+          if (mod.startsWith('ajv') || mod.startsWith('@emotion')) {
+            return { default: function() {} };
+          }
+
+          return {};
+        };
+      }
+    </script>
+
+    <script type="module" crossorigin src="./assets/index-UODQPoio.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/vendor-Bf6NDVRq.js">
+    <link rel="modulepreload" crossorigin href="./assets/ui-BTdxILdH.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-WLtyZKa4.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

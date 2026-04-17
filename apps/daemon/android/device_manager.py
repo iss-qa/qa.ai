@@ -1,6 +1,7 @@
 import asyncio
 import subprocess
 import logging
+import re
 import shutil
 import sys
 import os
@@ -100,61 +101,75 @@ class DeviceManager:
             return False
 
     async def _handle_new_device(self, udid: str):
+        """Detect device using only ADB — no app installation required."""
         logger.info(f"New device detected: {udid}")
         log_manager.device(f"Novo device detectado: {udid}", udid=udid)
-        device_name = "Unknown"
+        device_name = "Android Device"
         device_model = "Unknown"
         os_version = "Unknown"
         resolution = "1080x1920"
         battery = 100
 
+        # All info gathered via ADB shell — fast and requires nothing installed
+        adb_props = {
+            "model": "ro.product.model",
+            "brand": "ro.product.brand",
+            "name": "ro.product.marketname",
+            "version": "ro.build.version.release",
+        }
+        prop_values = {}
+        for key, prop in adb_props.items():
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    ADB_PATH, '-s', udid, 'shell', 'getprop', prop,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                    env=_SUBPROCESS_ENV,
+                )
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+                val = stdout.decode().strip()
+                if val:
+                    prop_values[key] = val
+            except Exception:
+                pass
+
+        device_model = prop_values.get("model", "Unknown")
+        device_name = prop_values.get("name") or prop_values.get("model") or "Android Device"
+        brand = prop_values.get("brand", "")
+        if brand and brand.lower() not in device_name.lower():
+            device_name = f"{brand} {device_name}"
+        os_version = prop_values.get("version", "Unknown")
+
+        # Resolution via ADB
         try:
-            # Try to get model via adb directly as a quick fallback
-            model_proc = await asyncio.create_subprocess_shell(
-                f"{ADB_PATH} -s {udid} shell getprop ro.product.model",
+            proc = await asyncio.create_subprocess_exec(
+                ADB_PATH, '-s', udid, 'shell', 'wm', 'size',
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=_SUBPROCESS_ENV
+                stderr=asyncio.subprocess.DEVNULL,
+                env=_SUBPROCESS_ENV,
             )
-            stdout, _ = await model_proc.communicate()
-            if model_proc.returncode == 0:
-                device_model = stdout.decode().strip()
-                device_name = device_model
-        except Exception as e:
-            log_manager.error(f"Falha ao obter modelo do device {udid} via ADB: {e}", context="DEVICE", exc=e)
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            m = re.search(r'(\d+)x(\d+)', stdout.decode())
+            if m:
+                resolution = f"{m.group(1)}x{m.group(2)}"
+        except Exception:
+            pass
 
+        # Battery via ADB
         try:
-            # Initialize u2 silently to prevent errors on first connect
-            init_proc = await asyncio.create_subprocess_shell(
-                f"{sys.executable} -m uiautomator2 init --serial {udid}",
+            proc = await asyncio.create_subprocess_exec(
+                ADB_PATH, '-s', udid, 'shell', 'dumpsys', 'battery',
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=_SUBPROCESS_ENV
+                stderr=asyncio.subprocess.DEVNULL,
+                env=_SUBPROCESS_ENV,
             )
-            await init_proc.communicate()
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            m = re.search(r'level:\s*(\d+)', stdout.decode())
+            if m:
+                battery = int(m.group(1))
+        except Exception:
+            pass
 
-            # Create connection to get info (run blocking u2 calls in thread
-            # to avoid stalling the event loop / scrcpy relay)
-            d = await asyncio.to_thread(u2.connect, udid)
-            info = await asyncio.to_thread(lambda: d.info)
-            device_info = await asyncio.to_thread(lambda: d.device_info)
-            battery = device_info.get("battery", {}).get("level", 100)
-
-            # Use safe defaults if some fields are missing
-            display = info.get("displaySizeDpX", 1080), info.get("displaySizeDpY", 1920)
-            resolution = f"{display[0]}x{display[1]}"
-            device_name = device_info.get("marketName", device_info.get("model", device_model))
-            device_model = device_info.get("model", device_model)
-            os_version = str(device_info.get("version", "Unknown"))
-
-            self.connections[udid] = d
-        except Exception as e:
-            logger.error(f"Failed to connect and initialize uiautomator2 for device {udid}: {e}")
-            logger.info("Adding device to list anyway with basic info")
-            log_manager.device(f"Falha ao inicializar u2: {e}", udid=udid, level="ERROR")
-            log_manager.error(f"Falha u2 init para device {udid}: {e}", context="DEVICE", exc=e)
-
-        # Create device entry regardless of u2 success
         device = Device(
             id=udid,
             udid=udid,
@@ -163,20 +178,19 @@ class DeviceManager:
             os_version=os_version,
             resolution=resolution,
             status=DeviceStatus.ONLINE,
-            battery_level=battery
+            battery_level=battery,
         )
 
         self.devices[udid] = device
         log_manager.device(
             f"Device conectado: {udid} | {device_name} ({device_model}) | Android {os_version} | {resolution} | Bateria: {battery}%",
-            udid=udid
+            udid=udid,
         )
 
-        # Broadcast event
         await ws_server.broadcast(RunEvent(
             type=EventType.DEVICE_CONNECTED,
             run_id="system",
-            data={"device": device.model_dump()}
+            data={"device": device.model_dump()},
         ))
 
     async def _handle_disconnected_device(self, udid: str):

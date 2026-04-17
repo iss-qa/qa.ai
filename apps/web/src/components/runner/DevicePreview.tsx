@@ -12,7 +12,7 @@ interface DevicePreviewProps {
 
 export function DevicePreview({ screenshotUrl, status, udid = 'emulator-5554' }: DevicePreviewProps) {
     // Passar udid mock ou recebido
-    const { canvasRef, deviceDimensions, sendTouch } = useScrcpyStream(udid);
+    const { canvasRef, deviceDimensions, sendTouch, streamStatus } = useScrcpyStream(udid);
     const containerRef = useRef<HTMLDivElement>(null);
     const pointerDown = useRef<{ x: number; y: number; time: number } | null>(null);
 
@@ -74,10 +74,14 @@ export function DevicePreview({ screenshotUrl, status, udid = 'emulator-5554' }:
                     />
 
                     {/* Fallback de UI caso o vídeo H264 e screenshot não estejam presentes */}
-                    {!canvasRef.current && (
+                    {streamStatus !== 'streaming' && (
                         <div className="absolute z-0 flex flex-col items-center text-textSecondary gap-4 pointer-events-none">
                             <Smartphone className="w-12 h-12 opacity-20" />
-                            <p className="text-sm font-medium">Aguardando Conexão...</p>
+                            <p className="text-sm font-medium">
+                                {streamStatus === 'connecting' ? 'Conectando...' :
+                                 streamStatus === 'error' ? 'Falha na conexao. Reconectando...' :
+                                 'Aguardando Conexão...'}
+                            </p>
                         </div>
                     )}
                 </div>

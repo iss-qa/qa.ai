@@ -131,8 +131,8 @@ export default function DevicesPage() {
                             <X className="w-5 h-5" />
                         </button>
 
-                        <h2 className="text-xl font-bold text-white mb-2">Conectar Novo Dispositivo</h2>
-                        <p className="text-sm text-slate-400 mb-6">Instale o App QAMind Bridge no seu celular ou utilize o cabo USB para detecção.</p>
+                        <h2 className="text-xl font-bold text-white mb-2">Conectar Dispositivo</h2>
+                        <p className="text-sm text-slate-400 mb-6">Conecte o celular via cabo USB com depuração USB ativada.</p>
 
                         <div className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center transition-colors ${isScanning ? 'border-brand/50 bg-brand/5' : scanResult === 'found' ? 'border-green-500/50 bg-green-500/10' : scanResult === 'error' ? 'border-red-500/50 bg-red-500/5' : 'border-white/10 hover:border-brand/30'}`}>
                             {isScanning ? (

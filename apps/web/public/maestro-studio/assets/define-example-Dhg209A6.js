@@ -1,0 +1,2 @@
+import"./vendor-Bf6NDVRq.js";(function(){try{var d=typeof window<"u"?window:typeof global<"u"?global:typeof self<"u"?self:{},e=new d.Error().stack;e&&(d._sentryDebugIds=d._sentryDebugIds||{},d._sentryDebugIds[e]="717497f2-6d47-442d-b3d7-9587dc151976",d._sentryDebugIdIdentifier="sentry-dbid-717497f2-6d47-442d-b3d7-9587dc151976")}catch{}})();function r(d){return d}export{r as d};
+//# sourceMappingURL=define-example-Dhg209A6.js.map

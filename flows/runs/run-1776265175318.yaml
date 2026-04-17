@@ -1,0 +1,31 @@
+appId: com.app.unknown
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/common.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/comprar.js"
+- assertVisible:
+- tapOn:
+- waitForAnimationToEnd:
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_livro_ofertas_btc"
+- assertVisible: Livro de Ofertas
+- assertVisible: Gráfico para BTCBRL, 6 horas
+- assertVisible:
+- swipe:
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_livro_ofertas_scroll"
+- assertVisible:
+- assertVisible: Últimos trades
+- tapOn: Últimos trades
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_ultimos_trades"
+- assertVisible: Preço (R$)
+- assertVisible: Quantia (BTC)
+- assertVisible: Data
+- tapOn:
+- waitForAnimationToEnd:
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/04_livro_ofertas_detalhado"
+- assertVisible: |-
+- runFlow: "../../helpers/menu_scroll_baixo_cima.yaml"
+- tapOn: Voltar
+- waitForAnimationToEnd:
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/05_retorno_tela_inicial"

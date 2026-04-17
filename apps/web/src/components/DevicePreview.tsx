@@ -1,6 +1,6 @@
 import React, { useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Smartphone } from 'lucide-react';
-import { useScrcpyStream } from '../hooks/useScrcpyStream';
+import { useScrcpyStream, type StreamStatus } from '../hooks/useScrcpyStream';
 
 export interface RecordedInteraction {
     type: 'tap' | 'swipe' | 'keyevent';
@@ -23,12 +23,16 @@ interface DevicePreviewProps {
 
 export interface DevicePreviewHandle {
     sendKeyevent: (keycode: number) => void;
+    getDeviceDimensions: () => { width: number; height: number };
 }
 
 export const DevicePreview = forwardRef<DevicePreviewHandle, DevicePreviewProps>(function DevicePreview({ udid, frameSrc, onInteraction, onTextInput }, ref) {
-    const { canvasRef, deviceDimensions, sendTouch, sendKeyevent, sendText, sendBackspace } = useScrcpyStream(udid);
+    const { canvasRef, deviceDimensions, sendTouch, sendKeyevent, sendText, sendBackspace, streamStatus } = useScrcpyStream(udid);
 
-    useImperativeHandle(ref, () => ({ sendKeyevent }), [sendKeyevent]);
+    useImperativeHandle(ref, () => ({
+        sendKeyevent,
+        getDeviceDimensions: () => deviceDimensions,
+    }), [sendKeyevent, deviceDimensions]);
 
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -240,10 +244,14 @@ export const DevicePreview = forwardRef<DevicePreviewHandle, DevicePreviewProps>
                 }}
             />
 
-            {!canvasRef.current && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-[-1]">
-                    <Smartphone className="w-16 h-16 text-white/5 mb-4" />
-                    <p className="text-white/20 text-sm font-medium">Aguardando espelhamento...</p>
+            {streamStatus !== 'streaming' && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
+                    <Smartphone className="w-12 h-12 text-white/10 mb-3" />
+                    <p className="text-white/30 text-xs font-medium">
+                        {streamStatus === 'connecting' ? 'Conectando ao espelhamento...' :
+                         streamStatus === 'error' ? 'Falha na conexao. Reconectando...' :
+                         'Aguardando espelhamento...'}
+                    </p>
                 </div>
             )}
         </div>

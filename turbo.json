@@ -17,7 +17,13 @@
         },
         "dev": {
             "cache": false,
-            "persistent": true
+            "persistent": true,
+            "passThroughEnv": [
+                "WATCHPACK_POLLING",
+                "CHOKIDAR_USEPOLLING",
+                "CHOKIDAR_INTERVAL",
+                "NODE_OPTIONS"
+            ]
         },
         "test": {
             "dependsOn": [

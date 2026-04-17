@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Play, Plus, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, X, Download, Upload, FileUp, AlertTriangle, CheckCircle2, ScanSearch, Monitor, Square } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { ArrowLeft, Play, Plus, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, X, Download, Upload, FileUp, AlertTriangle, CheckCircle2, ScanSearch, Monitor, Square, ChevronDown, ChevronRight, MousePointerClick, Eye, Copy, Smartphone, Wand2, RefreshCw, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useDeviceStore } from '@/store/deviceStore';
+import { DevicePreview, type DevicePreviewHandle, type RecordedInteraction } from '@/components/DevicePreview';
 
 interface Project {
     id: string;
@@ -44,13 +45,40 @@ export default function ProjectDetailPage() {
     const [importing, setImporting] = useState(false);
     const [deletingTestId, setDeletingTestId] = useState<string | null>(null);
 
+    // Maestro Studio webview
+    const [showMaestroStudio, setShowMaestroStudio] = useState(false);
+    const [maestroPhase, setMaestroPhase] = useState<'starting' | 'ready' | 'error'>('starting');
+    const [maestroReloadKey, setMaestroReloadKey] = useState(0);
+    // Frontend patched: "http://localhost:5050" → "http://localhost:8001/mss"
+    // Cache-bust query string ensures updated polyfills/stubs load without hard refresh
+    const MAESTRO_STUDIO_EMBED_URL = `/maestro-studio/index.html?v=${maestroReloadKey}`;
+    const MAESTRO_STUDIO_API_URL = 'http://localhost:8001/mss';
+    // unused in simple flow but kept for cleanup safety
+
+    const openMaestroStudio = () => {
+        setMaestroReloadKey(Date.now()); // cache-bust on every open
+        setShowMaestroStudio(true);
+        setMaestroPhase('ready');
+    };
+
+    const reloadMaestroStudio = () => {
+        setMaestroReloadKey(Date.now());
+        setMaestroPhase('ready');
+    };
+
     // Scanner (Scanear Aplicacao) state
     const [showScannerModal, setShowScannerModal] = useState(false);
-    const [scannerRunning, setScannerRunning] = useState(false);
+    const [scannerPhase, setScannerPhase] = useState<'select_app' | 'scanning' | 'results'>('select_app');
     const [scannerStats, setScannerStats] = useState({ screens_found: 0, elements_found: 0, elapsed_seconds: 0, dumps_completed: 0 });
     const [scannerTimer, setScannerTimer] = useState<ReturnType<typeof setInterval> | null>(null);
     const [hasElementMap, setHasElementMap] = useState(false);
     const [availableDeviceUdid, setAvailableDeviceUdid] = useState<string | null>(null);
+    const [scanResults, setScanResults] = useState<any>(null);
+    const [expandedScreens, setExpandedScreens] = useState<Record<string, boolean>>({});
+    const [scanAppPackage, setScanAppPackage] = useState<string | null>(null);
+    const [scanAppLabel, setScanAppLabel] = useState<string>('');
+    const [detectingApp, setDetectingApp] = useState(false);
+    const devicePreviewRef = useRef<DevicePreviewHandle>(null);
 
     const DAEMON = process.env.NEXT_PUBLIC_DAEMON_URL || 'http://localhost:8001';
 
@@ -76,39 +104,58 @@ export default function ProjectDetailPage() {
         if (connectedDevice?.udid) setAvailableDeviceUdid(connectedDevice.udid);
     }, [connectedDevice]);
 
-    const handleStartScanner = async () => {
-        if (!availableDeviceUdid) {
-            alert('Nenhum dispositivo Android detectado via ADB. Conecte um dispositivo USB ou inicie um emulador.');
-            return;
-        }
+    // When user taps on DevicePreview during "select_app" phase,
+    // wait for the app to open, then detect the foreground package
+    const handleScannerInteraction = useCallback(async (interaction: RecordedInteraction) => {
+        if (scannerPhase !== 'select_app' || detectingApp || !availableDeviceUdid) return;
+        if (interaction.type !== 'tap') return;
 
-        // 1. Start Maestro Studio (so its device connection is available for hierarchy dumps)
-        try {
-            await fetch(`${DAEMON}/api/maestro/studio`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ udid: availableDeviceUdid }),
-            });
-        } catch (e) {
-            console.warn('Could not start Maestro Studio:', e);
-        }
-
-        // 2. Open Maestro Studio in a new browser tab
-        window.open('http://localhost:9999', '_blank');
-
-        // 3. Wait a moment for Studio to initialize, then start the element scanner
+        setDetectingApp(true);
+        // Wait for the app to fully launch
         await new Promise(r => setTimeout(r, 2000));
 
+        try {
+            const res = await fetch(`${DAEMON}/api/devices/${availableDeviceUdid}/foreground-app`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.package && !data.package.startsWith('com.android.launcher') &&
+                    !data.package.startsWith('com.google.android.apps.nexuslauncher') &&
+                    !data.package.startsWith('com.miui.home') &&
+                    !data.package.startsWith('com.sec.android.app.launcher')) {
+                    // Found an app! Start scanning locked to it
+                    setScanAppPackage(data.package);
+                    setScanAppLabel(data.label || data.package.split('.').pop() || '');
+                    await startScanForApp(data.package);
+                } else {
+                    // Still on launcher
+                    setDetectingApp(false);
+                }
+            } else {
+                setDetectingApp(false);
+            }
+        } catch (e) {
+            console.error('Failed to detect foreground app:', e);
+            setDetectingApp(false);
+        }
+    }, [scannerPhase, detectingApp, availableDeviceUdid]);
+
+    const startScanForApp = async (appPackage: string) => {
         try {
             const res = await fetch(`${DAEMON}/api/scanner/start`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ udid: availableDeviceUdid, project_id: projectId }),
+                body: JSON.stringify({
+                    udid: availableDeviceUdid,
+                    project_id: projectId,
+                    project_name: project?.name || '',
+                    mode: 'auto',
+                    app_package: appPackage,
+                }),
             });
             if (res.ok) {
-                setScannerRunning(true);
+                setScannerPhase('scanning');
+                setDetectingApp(false);
                 setScannerStats({ screens_found: 0, elements_found: 0, elapsed_seconds: 0, dumps_completed: 0 });
-                // Poll stats every 2s
                 const interval = setInterval(async () => {
                     try {
                         const statusRes = await fetch(`${DAEMON}/api/scanner/status`);
@@ -122,6 +169,7 @@ export default function ProjectDetailPage() {
             }
         } catch (e) {
             console.error('Failed to start scanner:', e);
+            setDetectingApp(false);
         }
     };
 
@@ -133,12 +181,32 @@ export default function ProjectDetailPage() {
         try {
             const res = await fetch(`${DAEMON}/api/scanner/stop`, { method: 'POST' });
             if (res.ok) {
-                setScannerRunning(false);
+                const data = await res.json();
                 setHasElementMap(true);
+                if (data.element_map) {
+                    setScanResults(data.element_map);
+                    setScannerPhase('results');
+                    const screens = Object.keys(data.element_map.screens || {});
+                    if (screens.length > 0) {
+                        setExpandedScreens({ [screens[0]]: true });
+                    }
+                }
             }
         } catch (e) {
             console.error('Failed to stop scanner:', e);
         }
+    };
+
+    const getSelectorsFromGroup = (selectorGroup: any): { type: string; strategy: string; command: string }[] => {
+        return (selectorGroup?.commands || []).map((cmd: any) => ({
+            type: cmd.type || 'tapOn',
+            strategy: cmd.strategy || '',
+            command: cmd.command || '',
+        }));
+    };
+
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text);
     };
 
     /**
@@ -304,7 +372,14 @@ export default function ProjectDetailPage() {
         setImportStatus({ type: 'idle', message: '' });
 
         try {
-            const content = await file.text();
+            const rawContent = await file.text();
+
+            // Strip comment lines (lines starting with #) before parsing
+            // This avoids comment blocks like "### ---" being treated as YAML separators
+            const content = rawContent
+                .split('\n')
+                .filter(line => !line.trimStart().startsWith('#'))
+                .join('\n');
 
             // Validate: must have appId and --- separator
             if (!content.includes('---')) {
@@ -593,16 +668,43 @@ export default function ProjectDetailPage() {
                     </span>
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={() => { setShowScannerModal(true); }}
+                            onClick={() => { setShowScannerModal(true); setScannerPhase('select_app'); setScanResults(null); }}
                             className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 border-cyan-500/30 text-cyan-400 bg-cyan-500/5 hover:bg-cyan-500/10 hover:border-cyan-500/50"
                         >
                             <ScanSearch className="w-3.5 h-3.5" /> Scanear Aplicacao
                         </button>
+                        {hasElementMap && (
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        const res = await fetch(`${DAEMON}/api/projects/${projectId}/element-map`);
+                                        if (res.ok) {
+                                            const data = await res.json();
+                                            setScanResults(data);
+                                            setScannerPhase('results');
+                                            setShowScannerModal(true);
+                                            const screens = Object.keys(data.screens || {});
+                                            if (screens.length > 0) setExpandedScreens({ [screens[0]]: true });
+                                        }
+                                    } catch (e) { console.error('Failed to load element map:', e); }
+                                }}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 border-cyan-500/20 text-cyan-400/70 bg-cyan-500/5 hover:bg-cyan-500/10"
+                            >
+                                <Eye className="w-3.5 h-3.5" /> Ver Mapa
+                            </button>
+                        )}
                         <button
                             onClick={() => setShowImportModal(true)}
                             className="px-3 py-1.5 rounded-lg text-xs font-bold border border-amber-500/30 text-amber-400 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500/50 transition-all flex items-center gap-1.5"
                         >
                             <Upload className="w-3.5 h-3.5" /> Importar YAML
+                        </button>
+                        <button
+                            onClick={openMaestroStudio}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 border-violet-500/40 text-violet-300 bg-violet-500/10 hover:bg-violet-500/20 hover:border-violet-500/60"
+                            title="Abrir Maestro Studio integrado"
+                        >
+                            <Wand2 className="w-3.5 h-3.5" /> Novo Teste com Maestro Studio
                         </button>
                         <Link
                             href={`/dashboard/tests/editor?projectId=${projectId}`}
@@ -789,124 +891,348 @@ export default function ProjectDetailPage() {
                 </div>
             )}
 
-            {/* Scanner Modal (Scanear Aplicacao) */}
+            {/* Scanner Modal (Scanear Aplicacao) — Full screen */}
             {showScannerModal && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl">
-                        {/* Header */}
-                        <div className="flex items-center justify-between p-5 border-b border-white/10">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center">
-                                    <ScanSearch className="w-5 h-5 text-cyan-400" />
-                                </div>
-                                <div>
-                                    <h2 className="text-lg font-bold text-white">Scanear Aplicacao</h2>
-                                    <p className="text-xs text-slate-400">Mapeie os elementos do app navegando por ele</p>
-                                </div>
+                <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
+                    {/* Header bar */}
+                    <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 bg-[#0A0C14] shrink-0">
+                        <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+                                <ScanSearch className="w-4 h-4 text-cyan-400" />
                             </div>
+                            <div>
+                                <h2 className="text-base font-bold text-white">
+                                    {scannerPhase === 'results' ? 'Resultado do Scan' : scannerPhase === 'scanning' ? `Escaneando — ${scanAppLabel}` : 'Scanear Aplicacao'}
+                                </h2>
+                                <p className="text-xs text-slate-400">
+                                    {scannerPhase === 'results'
+                                        ? `${Object.keys(scanResults?.screens || {}).length} telas | ${scanResults?.stats?.elements_found || 0} elementos | ${scanResults?.app_package || ''}`
+                                        : scannerPhase === 'scanning'
+                                            ? `${scanAppPackage} | ${scannerStats.screens_found} telas | ${scannerStats.elements_found} elementos`
+                                            : 'Toque no app que deseja escanear'}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            {scannerPhase === 'scanning' && (
+                                <button
+                                    onClick={handleStopScanner}
+                                    className="px-5 py-2 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition-all text-sm flex items-center gap-2"
+                                >
+                                    <Square className="w-3.5 h-3.5 fill-current" /> Finalizar Scan
+                                </button>
+                            )}
                             <button
                                 onClick={async () => {
-                                    if (scannerRunning) await handleStopScanner();
+                                    if (scannerPhase === 'scanning') await handleStopScanner();
                                     setShowScannerModal(false);
+                                    setScanResults(null);
+                                    setScannerPhase('select_app');
+                                    setScanAppPackage(null);
+                                    setDetectingApp(false);
                                 }}
                                 className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5"
                             >
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
+                    </div>
 
-                        {/* Content */}
-                        <div className="p-6">
-                            {!scannerRunning ? (
-                                /* Pre-start */
-                                <div className="flex flex-col items-center gap-5">
-                                    <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 flex items-center justify-center">
-                                        <Monitor className="w-8 h-8 text-cyan-400" />
-                                    </div>
-                                    <div className="text-center max-w-sm">
-                                        <h3 className="text-lg font-bold text-white mb-3">Como funciona</h3>
-                                        <div className="space-y-2.5 text-sm text-slate-300 text-left">
-                                            <p><span className="text-cyan-400 font-bold">1.</span> Clique em "Iniciar Scan" — o Maestro Studio abrira em outra aba</p>
-                                            <p><span className="text-cyan-400 font-bold">2.</span> Na aba do Maestro Studio, navegue pelo app: abra telas, menus, formularios</p>
-                                            <p><span className="text-cyan-400 font-bold">3.</span> Clique em botoes, preencha campos de login, senha, busca...</p>
-                                            <p><span className="text-cyan-400 font-bold">4.</span> Em background, capturamos todos os IDs, textos e seletores automaticamente</p>
-                                            <p><span className="text-cyan-400 font-bold">5.</span> Volte aqui e clique "Finalizar" — o mapa sera usado pela IA</p>
-                                        </div>
-                                        <p className="text-xs text-slate-500 mt-3">Navegue por 2-3 minutos para cobrir todas as telas</p>
-                                    </div>
+                    {/* Content area */}
+                    <div className="flex-1 flex overflow-hidden">
 
-                                    {!availableDeviceUdid ? (
-                                        <p className="text-sm text-red-400">Nenhum dispositivo detectado via ADB. Conecte um celular USB ou inicie um emulador.</p>
-                                    ) : (
-                                        <div className="flex flex-col items-center gap-2">
-                                            <p className="text-xs text-green-400">Dispositivo detectado: {availableDeviceUdid}</p>
-                                            <button
-                                                onClick={handleStartScanner}
-                                                className="px-6 py-3 bg-cyan-500 text-black font-bold rounded-xl hover:bg-cyan-400 transition-all flex items-center gap-2"
-                                            >
-                                                <Play className="w-4 h-4 fill-current" /> Iniciar Scan
-                                            </button>
-                                        </div>
-                                    )}
-                                    {hasElementMap && (
-                                        <p className="text-xs text-green-400 bg-green-500/10 border border-green-500/20 px-3 py-1.5 rounded-lg">
-                                            Este projeto ja possui um mapa de elementos. Scanear novamente ira substituir.
-                                        </p>
-                                    )}
+                        {/* ── PHASE 1: SELECT APP ── */}
+                        {scannerPhase === 'select_app' && (
+                            <div className="flex-1 flex items-center justify-center">
+                                {availableDeviceUdid ? (
+                                    <div className="relative h-full w-full max-w-[400px]">
+                                        <DevicePreview
+                                            ref={devicePreviewRef}
+                                            udid={availableDeviceUdid}
+                                            onInteraction={handleScannerInteraction}
+                                        />
+                                        {detectingApp ? (
+                                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center pointer-events-none">
+                                                <div className="bg-[#0A0C14]/90 border border-cyan-500/30 rounded-xl px-6 py-4 flex items-center gap-3">
+                                                    <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
+                                                    <span className="text-sm text-white font-medium">Detectando app...</span>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="absolute bottom-4 left-4 right-4 pointer-events-none">
+                                                <div className="bg-cyan-500 text-black rounded-xl px-4 py-3 text-center shadow-lg">
+                                                    <p className="text-sm font-bold">Toque no app que deseja escanear</p>
+                                                    <p className="text-xs opacity-70 mt-0.5">O app abrira e o scan comecara automaticamente</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center gap-4 p-10">
+                                        <Smartphone className="w-12 h-12 text-red-400" />
+                                        <p className="text-sm text-red-400 text-center">Nenhum dispositivo detectado via ADB.</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ── PHASE 2: SCANNING (side-by-side) ── */}
+                        {scannerPhase === 'scanning' && availableDeviceUdid && (
+                            <>
+                                {/* Left: Device preview */}
+                                <div className="w-[360px] shrink-0 border-r border-white/10 relative bg-black">
+                                    <DevicePreview
+                                        ref={devicePreviewRef}
+                                        udid={availableDeviceUdid}
+                                    />
                                 </div>
-                            ) : (
-                                /* Scanner running */
-                                <div className="flex flex-col items-center gap-6">
-                                    {/* Animated scan indicator */}
-                                    <div className="relative">
-                                        <div className="w-20 h-20 rounded-full border-4 border-cyan-500/20 flex items-center justify-center">
-                                            <div className="w-16 h-16 rounded-full border-4 border-transparent border-t-cyan-400 animate-spin" />
+                                {/* Right: Live stats + element feed */}
+                                <div className="flex-1 flex flex-col overflow-hidden bg-[#0A0C14]">
+                                    {/* Stats bar */}
+                                    <div className="grid grid-cols-4 gap-2 p-4 border-b border-white/10 shrink-0">
+                                        <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-lg p-2.5 text-center">
+                                            <p className="text-xl font-bold text-cyan-400">{scannerStats.screens_found}</p>
+                                            <p className="text-[9px] text-slate-400 uppercase font-bold">Telas</p>
                                         </div>
-                                        <div className="absolute inset-0 flex items-center justify-center">
-                                            <ScanSearch className="w-6 h-6 text-cyan-400" />
+                                        <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 text-center">
+                                            <p className="text-xl font-bold text-white">{scannerStats.elements_found}</p>
+                                            <p className="text-[9px] text-slate-400 uppercase font-bold">Elementos</p>
                                         </div>
-                                    </div>
-
-                                    <div className="text-center">
-                                        <p className="text-lg font-bold text-white">Escaneando...</p>
-                                        <p className="text-sm text-cyan-400 mt-1">Navegue no Maestro Studio (aba aberta)</p>
-                                    </div>
-
-                                    {/* Stats grid */}
-                                    <div className="grid grid-cols-2 gap-3 w-full max-w-xs">
-                                        <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
-                                            <p className="text-2xl font-bold text-white">{scannerStats.screens_found}</p>
-                                            <p className="text-[10px] text-slate-400 uppercase font-bold">Telas</p>
+                                        <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 text-center">
+                                            <p className="text-xl font-bold text-white">{scannerStats.dumps_completed}</p>
+                                            <p className="text-[9px] text-slate-400 uppercase font-bold">Capturas</p>
                                         </div>
-                                        <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
-                                            <p className="text-2xl font-bold text-white">{scannerStats.elements_found}</p>
-                                            <p className="text-[10px] text-slate-400 uppercase font-bold">Elementos</p>
-                                        </div>
-                                        <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
-                                            <p className="text-2xl font-bold text-white">{scannerStats.dumps_completed}</p>
-                                            <p className="text-[10px] text-slate-400 uppercase font-bold">Capturas</p>
-                                        </div>
-                                        <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
-                                            <p className="text-2xl font-bold text-white">{Math.floor(scannerStats.elapsed_seconds / 60)}:{String(scannerStats.elapsed_seconds % 60).padStart(2, '0')}</p>
-                                            <p className="text-[10px] text-slate-400 uppercase font-bold">Tempo</p>
+                                        <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 text-center">
+                                            <p className="text-xl font-bold text-white">{Math.floor(scannerStats.elapsed_seconds / 60)}:{String(scannerStats.elapsed_seconds % 60).padStart(2, '0')}</p>
+                                            <p className="text-[9px] text-slate-400 uppercase font-bold">Tempo</p>
                                         </div>
                                     </div>
+                                    {/* Live feed area */}
+                                    <div className="flex-1 flex items-center justify-center p-6">
+                                        <div className="text-center">
+                                            <div className="relative inline-block mb-4">
+                                                <div className="w-16 h-16 rounded-full border-4 border-cyan-500/20 flex items-center justify-center">
+                                                    <div className="w-12 h-12 rounded-full border-4 border-transparent border-t-cyan-400 animate-spin" />
+                                                </div>
+                                                <div className="absolute inset-0 flex items-center justify-center">
+                                                    <ScanSearch className="w-5 h-5 text-cyan-400" />
+                                                </div>
+                                            </div>
+                                            <p className="text-white font-bold">Capturando elementos...</p>
+                                            <p className="text-xs text-slate-400 mt-2 max-w-xs">Navegue pelo app no celular. Abra telas, menus, preencha campos. Os elementos sao capturados a cada 4 segundos.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
+                        )}
 
-                                    <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-lg p-3 w-full">
-                                        <p className="text-xs text-cyan-400 text-center">
-                                            Use o Maestro Studio (aba que abriu no navegador) para navegar pelo app. Abra menus, preencha campos, clique em botoes. Quando terminar, clique abaixo.
+                        {/* ── PHASE 3: RESULTS (side-by-side) ── */}
+                        {scannerPhase === 'results' && scanResults && (
+                            <div className="flex-1 flex flex-col overflow-hidden bg-[#0A0C14]">
+                                {/* Stats summary */}
+                                <div className="grid grid-cols-4 gap-2 p-4 border-b border-white/10 shrink-0">
+                                    <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-lg p-2.5 text-center">
+                                        <p className="text-xl font-bold text-cyan-400">{Object.keys(scanResults.screens || {}).length}</p>
+                                        <p className="text-[10px] text-slate-400 uppercase font-bold">Telas</p>
+                                    </div>
+                                    <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 text-center">
+                                        <p className="text-xl font-bold text-white">{scanResults.stats?.elements_found || 0}</p>
+                                        <p className="text-[10px] text-slate-400 uppercase font-bold">Elementos</p>
+                                    </div>
+                                    <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 text-center">
+                                        <p className="text-xl font-bold text-white">{scanResults.stats?.dumps_completed || 0}</p>
+                                        <p className="text-[10px] text-slate-400 uppercase font-bold">Capturas</p>
+                                    </div>
+                                    <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-2.5 text-center">
+                                        <p className="text-xl font-bold text-green-400">
+                                            {(() => { let t = 0; Object.values(scanResults.screens || {}).forEach((s: any) => { (s.maestro_selectors || []).forEach((g: any) => { t += (g.commands || []).length; }); }); return t; })()}
                                         </p>
+                                        <p className="text-[10px] text-slate-400 uppercase font-bold">Seletores</p>
                                     </div>
+                                </div>
+                                {/* Scrollable results */}
+                                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                    {Object.entries(scanResults.screens || {}).map(([screenName, screenData]: [string, any]) => {
+                                        const selectorGroups = screenData.maestro_selectors || [];
+                                        const screenshot = screenData.screenshot || '';
+                                        const activity = screenData.activity || '';
+                                        const isExpanded = expandedScreens[screenName] || false;
+                                        return (
+                                            <div key={screenName} className="border border-white/10 rounded-xl overflow-hidden">
+                                                {/* Screen header with thumbnail */}
+                                                <button
+                                                    onClick={() => setExpandedScreens(prev => ({ ...prev, [screenName]: !prev[screenName] }))}
+                                                    className="w-full flex items-center gap-3 px-4 py-3 bg-white/[0.03] hover:bg-white/[0.06] transition-colors"
+                                                >
+                                                    {/* Screenshot thumbnail */}
+                                                    {screenshot ? (
+                                                        <img
+                                                            src={`data:image/png;base64,${screenshot}`}
+                                                            alt={screenName}
+                                                            className="w-10 h-[52px] object-cover rounded-md border border-white/10 shrink-0"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-10 h-[52px] rounded-md border border-white/10 bg-white/5 flex items-center justify-center shrink-0">
+                                                            <Monitor className="w-4 h-4 text-slate-500" />
+                                                        </div>
+                                                    )}
+                                                    <div className="flex-1 text-left min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-cyan-400 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
+                                                            <span className="font-bold text-sm text-white truncate">{screenName}</span>
+                                                        </div>
+                                                        {activity && <p className="text-[10px] text-slate-500 font-mono ml-5.5 truncate">{activity}</p>}
+                                                    </div>
+                                                    <span className="text-xs text-slate-400 shrink-0">{selectorGroups.length} elementos</span>
+                                                </button>
 
-                                    <button
-                                        onClick={handleStopScanner}
-                                        className="px-6 py-3 bg-red-500 text-white font-bold rounded-xl hover:bg-red-600 transition-all flex items-center gap-2"
-                                    >
-                                        <Square className="w-4 h-4 fill-current" /> Finalizar Scan
+                                                {/* Expanded: screenshot + elements */}
+                                                {isExpanded && (
+                                                    <div className="border-t border-white/5">
+                                                        {/* Large screenshot preview */}
+                                                        {screenshot && (
+                                                            <div className="p-3 bg-black/30 flex justify-center">
+                                                                <img
+                                                                    src={`data:image/png;base64,${screenshot}`}
+                                                                    alt={screenName}
+                                                                    className="max-h-[300px] rounded-lg border border-white/10 object-contain"
+                                                                />
+                                                            </div>
+                                                        )}
+                                                        {/* Elements */}
+                                                        <div className="max-h-[50vh] overflow-y-auto">
+                                                            {selectorGroups.map((group: any, gIdx: number) => {
+                                                                const el = group.element || {};
+                                                                const selectors = getSelectorsFromGroup(group);
+                                                                if (selectors.length === 0) return null;
+                                                                return (
+                                                                    <div key={gIdx} className="border-b border-white/5 last:border-0">
+                                                                        <div className="px-4 py-2 bg-white/[0.02]">
+                                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                                <span className="text-xs font-mono text-slate-500">{el.class?.split('.').pop() || 'View'}</span>
+                                                                                {el.id && <span className="text-xs bg-cyan-500/10 text-cyan-400 px-1.5 py-0.5 rounded font-mono">id: {el.id}{'index' in el ? ` [${el.index}]` : ''}</span>}
+                                                                                {el.text && <span className="text-xs bg-white/5 text-white px-1.5 py-0.5 rounded truncate max-w-[250px]">&quot;{el.text}&quot;</span>}
+                                                                                {el.hint && el.hint !== el.text && <span className="text-xs bg-yellow-500/10 text-yellow-400 px-1.5 py-0.5 rounded truncate max-w-[200px]">hint: &quot;{el.hint}&quot;</span>}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="px-4 py-1.5 space-y-1">
+                                                                            {selectors.map((sel, sIdx) => (
+                                                                                <div key={sIdx} className="flex items-center gap-2 group">
+                                                                                    <span className={`w-14 text-[10px] font-bold uppercase shrink-0 ${sel.type === 'tapOn' ? 'text-green-400' : 'text-blue-400'}`}>
+                                                                                        {sel.type === 'tapOn' ? <span className="flex items-center gap-1"><MousePointerClick className="w-3 h-3" /> tap</span> : <span className="flex items-center gap-1"><Eye className="w-3 h-3" /> assert</span>}
+                                                                                    </span>
+                                                                                    <code className="flex-1 text-xs text-slate-300 font-mono bg-black/30 px-2 py-1 rounded whitespace-pre">{sel.command}</code>
+                                                                                    <button onClick={() => copyToClipboard(sel.command)} className="p-1 text-slate-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity" title="Copiar"><Copy className="w-3 h-3" /></button>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                {/* Bottom actions */}
+                                <div className="flex gap-3 p-4 border-t border-white/10 shrink-0">
+                                    <button onClick={() => { setScanResults(null); setScannerPhase('select_app'); setScanAppPackage(null); }} className="flex-1 px-4 py-2.5 bg-cyan-500 text-black font-bold rounded-xl hover:bg-cyan-400 text-sm flex items-center justify-center gap-2">
+                                        <ScanSearch className="w-4 h-4" /> Novo Scan
+                                    </button>
+                                    <button onClick={() => { setShowScannerModal(false); setScanResults(null); setScannerPhase('select_app'); }} className="flex-1 px-4 py-2.5 bg-white/5 text-white font-bold rounded-xl hover:bg-white/10 text-sm border border-white/10">
+                                        Fechar
                                     </button>
                                 </div>
-                            )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Maestro Studio Webview Modal */}
+            {showMaestroStudio && (
+                <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 bg-[#0A0C14] shrink-0">
+                        <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-violet-500/10 flex items-center justify-center">
+                                <Wand2 className="w-4 h-4 text-violet-400" />
+                            </div>
+                            <div>
+                                <h2 className="text-base font-bold text-white">Maestro Studio</h2>
+                                <p className="text-xs text-slate-400 font-mono flex items-center gap-1.5">
+                                    {MAESTRO_STUDIO_API_URL}
+                                    {maestroPhase === 'ready' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block animate-pulse" />}
+                                </p>
+                            </div>
                         </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={reloadMaestroStudio}
+                                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+                                title="Recarregar"
+                            >
+                                <RefreshCw className="w-4 h-4" />
+                            </button>
+                            <a
+                                href={MAESTRO_STUDIO_EMBED_URL}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+                                title="Abrir em nova aba (tela cheia)"
+                            >
+                                <ExternalLink className="w-4 h-4" />
+                            </a>
+                            <button
+                                onClick={() => setShowMaestroStudio(false)}
+                                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Content area */}
+                    <div className="flex-1 relative overflow-hidden">
+
+                        {/* ── STARTING: quick ping in progress ── */}
+                        {maestroPhase === 'starting' && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-[#0A0C14] z-10">
+                                <div className="w-12 h-12 rounded-full border-4 border-transparent border-t-violet-400 animate-spin" />
+                            </div>
+                        )}
+
+                        {/* ── ERROR: no device connected ── */}
+                        {maestroPhase === 'error' && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-[#0A0C14] z-10 p-8">
+                                <div className="w-20 h-20 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                                    <Smartphone className="w-10 h-10 text-amber-400" />
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-white font-bold text-xl">Nenhum dispositivo conectado</p>
+                                    <p className="text-slate-400 text-sm mt-2">Conecte um dispositivo Android via USB para usar o Maestro Studio</p>
+                                </div>
+                                <button
+                                    onClick={openMaestroStudio}
+                                    className="px-8 py-3 bg-violet-500 text-white font-bold rounded-xl hover:bg-violet-600 active:scale-95 transition-all flex items-center gap-2 text-sm"
+                                >
+                                    <RefreshCw className="w-4 h-4" /> Tentar novamente
+                                </button>
+                            </div>
+                        )}
+
+                        {/* ── READY: render the embedded Maestro Studio frontend ── */}
+                        {maestroPhase === 'ready' && (
+                            <iframe
+                                key={maestroReloadKey}
+                                src={MAESTRO_STUDIO_EMBED_URL}
+                                className="w-full h-full border-0"
+                                allow="clipboard-read; clipboard-write"
+                                title="Maestro Studio"
+                            />
+                        )}
                     </div>
                 </div>
             )}

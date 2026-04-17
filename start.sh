@@ -41,6 +41,12 @@ lsof -ti:3000,3001,8001 | xargs kill -9 2>/dev/null || true
 sleep 1
 echo -e "  ${OK} Portas livres."
 
+# ── 1b. Avisar o usuário sobre cache do browser ──────────────────────────────
+echo ""
+echo -e "${WARN} ${BOLD}IMPORTANTE:${NC} se estiver com o browser aberto na aplicação,"
+echo -e "   feche a aba do QAMind antes de continuar OU faça ${BOLD}Cmd+Shift+R${NC}"
+echo -e "   (hard refresh) depois que o servidor iniciar."
+
 # ── 2. Verificar dependências de sistema ───────────────────────────────────────
 echo ""
 echo -e "${INFO} Verificando dependências..."
@@ -173,6 +179,109 @@ if [ ! -d "$ROOT_DIR/node_modules" ]; then
     (cd "$ROOT_DIR" && pnpm install --silent)
 else
     echo -e "  ${OK} node_modules presente"
+fi
+
+# ── 7b. Limpar caches (Next.js, Turbo, Maestro Studio estático) ────────────────
+echo ""
+echo -e "${INFO} Limpando caches..."
+
+# Next.js cache
+if [ -d "$ROOT_DIR/apps/web/.next" ]; then
+    rm -rf "$ROOT_DIR/apps/web/.next"
+    echo -e "  ${OK} Next.js .next removido"
+fi
+
+# Turborepo cache
+if [ -d "$ROOT_DIR/.turbo" ]; then
+    rm -rf "$ROOT_DIR/.turbo"
+    echo -e "  ${OK} Turbo .turbo removido"
+fi
+
+# Node module cache (helps com mudanças no tsconfig/build)
+if [ -d "$ROOT_DIR/apps/web/.turbo" ]; then
+    rm -rf "$ROOT_DIR/apps/web/.turbo"
+fi
+if [ -f "$ROOT_DIR/apps/web/tsconfig.tsbuildinfo" ]; then
+    rm -f "$ROOT_DIR/apps/web/tsconfig.tsbuildinfo"
+    echo -e "  ${OK} tsconfig.tsbuildinfo removido"
+fi
+
+# ── 7c. Re-extrair e re-patchear Maestro Studio (garante frontend atualizado) ──
+MAESTRO_APP="/Applications/Maestro Studio.app"
+MSS_DIR="$ROOT_DIR/apps/web/public/maestro-studio"
+MSS_INDEX_HTML="$MSS_DIR/index.html"
+
+if [ -d "$MAESTRO_APP" ]; then
+    echo ""
+    echo -e "${INFO} Atualizando frontend do Maestro Studio embutido..."
+
+    # Preserve o nosso index.html com polyfills (ele não é gerado pelo asar)
+    TMP_INDEX=""
+    if [ -f "$MSS_INDEX_HTML" ] && grep -q "Polyfills" "$MSS_INDEX_HTML" 2>/dev/null; then
+        TMP_INDEX=$(mktemp)
+        cp "$MSS_INDEX_HTML" "$TMP_INDEX"
+    fi
+
+    # Re-extract via Node (lê o app.asar, respeitando padding de 4 bytes do Pickle)
+    node -e "
+    const fs = require('fs');
+    const path = require('path');
+    const asar = '$MAESTRO_APP/Contents/Resources/app.asar';
+    const outDir = '$MSS_DIR';
+    if (!fs.existsSync(asar)) { process.exit(2); }
+    const buf = fs.readFileSync(asar);
+    const hs = buf.readUInt32LE(12);
+    const header = JSON.parse(buf.slice(16, 16 + hs).toString());
+    const padded = (hs + 3) & ~3;
+    const dataOffset = 16 + padded;
+    function extract(node, base) {
+      for (const [name, child] of Object.entries(node)) {
+        const full = path.join(base, name);
+        if (child.files !== undefined) {
+          fs.mkdirSync(full, { recursive: true });
+          extract(child.files, full);
+        } else if (child.offset !== undefined) {
+          const start = dataOffset + parseInt(child.offset);
+          fs.writeFileSync(full, buf.slice(start, start + child.size));
+        }
+      }
+    }
+    fs.rmSync(outDir, { recursive: true, force: true });
+    fs.mkdirSync(outDir, { recursive: true });
+    extract(header.files.dist.files, outDir);
+    " 2>/dev/null
+    RC=$?
+
+    if [ $RC -eq 2 ]; then
+        echo -e "  ${WARN} Maestro Studio.app não encontrado — pulando extração"
+    elif [ $RC -ne 0 ]; then
+        echo -e "  ${WARN} Falha ao extrair — frontend pode estar desatualizado"
+    else
+        echo -e "  ${OK} Arquivos dist/ extraídos do app.asar"
+
+        # Restaura/cria nosso index.html com polyfills
+        if [ -n "$TMP_INDEX" ] && [ -f "$TMP_INDEX" ]; then
+            mv "$TMP_INDEX" "$MSS_INDEX_HTML"
+            echo -e "  ${OK} index.html com polyfills preservado"
+        fi
+
+        # Re-aplica o patch de URL (localhost:5050 → localhost:8001/mss)
+        PATCH_COUNT=$(python3 -c "
+import os, glob
+base = '$MSS_DIR/assets'
+n = 0
+for p in glob.glob(os.path.join(base, '*.js')):
+    with open(p, 'r', encoding='utf-8', errors='replace') as f:
+        c = f.read()
+    if 'localhost:5050' in c:
+        c = c.replace('\"http://localhost:5050\"', '\"http://localhost:8001/mss\"')
+        with open(p, 'w', encoding='utf-8') as f:
+            f.write(c)
+        n += 1
+print(n)
+" 2>/dev/null || echo "0")
+        echo -e "  ${OK} Patch de API URL aplicado em $PATCH_COUNT arquivo(s)"
+    fi
 fi
 
 # ── 8. Iniciar o Daemon Python em background ──────────────────────────────────

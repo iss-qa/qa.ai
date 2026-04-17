@@ -1,0 +1,224 @@
+{
+  "id": "044c4270-1c3f-4bc5-87fd-1d55d17727d8",
+  "name": "test",
+  "description": "Teste gravado com 19 passos (Maestro)",
+  "steps": [
+    {
+      "id": "1f1ebe67-b5f3-4eb8-b451-52b1637449e4",
+      "num": 1,
+      "action": "assertVisible",
+      "elementId": "img_welcome_logo",
+      "target": "img_welcome_logo",
+      "value": "",
+      "description": "Confirmar tela › img_welcome_logo",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"img_welcome_logo\""
+    },
+    {
+      "id": "6b9cb98d-456d-414c-bfc1-b779aa145746",
+      "num": 2,
+      "action": "assertVisible",
+      "elementId": "img_welcome_logo",
+      "target": "img_welcome_logo",
+      "value": "",
+      "description": "Confirmar tela › img_welcome_logo",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"img_welcome_logo\""
+    },
+    {
+      "id": "c3340f62-6cd8-4839-8f73-f9b8ec58a092",
+      "num": 3,
+      "action": "tapOn",
+      "elementId": "img_welcome_logo",
+      "target": "img_welcome_logo",
+      "value": "",
+      "description": "Tocar em › img_welcome_logo",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"img_welcome_logo\""
+    },
+    {
+      "id": "1845f012-13d9-4c87-bbb7-bffe33d9cde7",
+      "num": 4,
+      "action": "tapOn",
+      "elementId": "700,657",
+      "target": "700,657",
+      "value": "",
+      "description": "Tocar em › 700,657",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    point: \"700,657\""
+    },
+    {
+      "id": "4ecca9fb-d095-405f-8894-01f4928ee67d",
+      "num": 5,
+      "action": "assertVisible",
+      "elementId": "inp_login_email",
+      "target": "inp_login_email",
+      "value": "",
+      "description": "Confirmar tela › inp_login_email",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"inp_login_email\""
+    },
+    {
+      "id": "db5fdf8e-0f55-4b90-8c8f-5dda453eb681",
+      "num": 6,
+      "action": "assertVisible",
+      "elementId": "inp_login_email",
+      "target": "inp_login_email",
+      "value": "xczfgdf",
+      "description": "Digitar › \"xczfgdf\"",
+      "engine": "maestro",
+      "maestro_command": "- inputText: \"xczfgdf\""
+    },
+    {
+      "id": "03c4e405-6b1c-4297-a1d3-bd0199a78ca1",
+      "num": 7,
+      "action": "tapOn",
+      "elementId": "inp_login_email",
+      "target": "inp_login_email",
+      "value": "",
+      "description": "Tocar em › inp_login_email",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"inp_login_email\""
+    },
+    {
+      "id": "a5c308b7-c75c-40af-9267-39be57299858",
+      "num": 8,
+      "action": "inputText",
+      "elementId": "inp_login_email",
+      "target": "inp_login_email",
+      "value": "__PENDING_INPUT__",
+      "description": "Digitar › [aguardando texto...]",
+      "engine": "maestro",
+      "maestro_command": "- inputText: \"__PENDING_INPUT__\""
+    },
+    {
+      "id": "0bb13882-3719-45c9-958a-a4ad7001b585",
+      "num": 9,
+      "action": "assertVisible",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "sdffd",
+      "description": "Digitar › \"sdffd\"",
+      "engine": "maestro",
+      "maestro_command": "- inputText: \"sdffd\""
+    },
+    {
+      "id": "fa9a9ab3-ed44-4ebb-afa6-5d246e3805be",
+      "num": 10,
+      "action": "assertVisible",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Confirmar tela › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "9fde7e5a-0814-4418-b2ad-32321a8cc83e",
+      "num": 11,
+      "action": "tapOn",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Tocar em › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "6b6eb2db-c731-49e8-9419-448d49259d17",
+      "num": 12,
+      "action": "inputText",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "__PENDING_INPUT__",
+      "description": "Digitar › [aguardando texto...]",
+      "engine": "maestro",
+      "maestro_command": "- inputText: \"__PENDING_INPUT__\""
+    },
+    {
+      "id": "207061d4-f09e-4b20-9df4-c81574eb3841",
+      "num": 13,
+      "action": "assertVisible",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Confirmar tela › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "cce43826-f56f-49df-9ca4-c3d93bdcc93b",
+      "num": 14,
+      "action": "assertVisible",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Confirmar tela › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "86ca2b0b-6326-463d-9fff-02a42b878f15",
+      "num": 15,
+      "action": "tapOn",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Tocar em › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "588de80f-3aec-408f-8c75-54a3ecebc399",
+      "num": 16,
+      "action": "inputText",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "__PENDING_INPUT__",
+      "description": "Digitar › [aguardando texto...]",
+      "engine": "maestro",
+      "maestro_command": "- inputText: \"__PENDING_INPUT__\""
+    },
+    {
+      "id": "3e1fed38-ec63-4f8b-b40a-39e1a8ceadb9",
+      "num": 17,
+      "action": "swipe",
+      "elementId": "",
+      "target": "Deslizar DOWN",
+      "value": "",
+      "description": "Deslizar DOWN",
+      "engine": "maestro",
+      "maestro_command": ""
+    },
+    {
+      "id": "22694e78-3578-424c-9d98-aaffaa2a8689",
+      "num": 18,
+      "action": "swipe",
+      "elementId": "",
+      "target": "Deslizar DOWN",
+      "value": "",
+      "description": "Deslizar DOWN",
+      "engine": "maestro",
+      "maestro_command": ""
+    },
+    {
+      "id": "25ceb710-f3c3-4813-bbe2-54a42bd9d5b7",
+      "num": 19,
+      "action": "tapOn",
+      "elementId": "67,210",
+      "target": "67,210",
+      "value": "",
+      "description": "Tocar em › 67,210",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    point: \"67,210\""
+    }
+  ],
+  "tags": [
+    "recorded",
+    "maestro"
+  ],
+  "project_id": "b63d8dd4-f0dd-4eeb-a7ad-e8a00a4644ad",
+  "is_active": true,
+  "version": 1,
+  "created_at": "2026-04-17T02:02:12.618053"
+}

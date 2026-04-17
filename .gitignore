@@ -62,3 +62,6 @@ coverage/
 # Miscellaneous
 .npm
 .eslintcache
+
+# Claude local settings — contains auto-allowed commands that may include secrets
+.claude/settings.json

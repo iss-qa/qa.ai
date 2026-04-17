@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
+export type StreamStatus = 'idle' | 'connecting' | 'streaming' | 'error';
+
 function isKeyframe(data: Uint8Array): boolean {
     for (let i = 0; i < data.length - 4; i++) {
         if (data[i] === 0 && data[i + 1] === 0 && data[i + 2] === 0 && data[i + 3] === 1) {
@@ -15,14 +17,22 @@ export function useScrcpyStream(udid: string | null) {
     const decoderRef = useRef<VideoDecoder | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const [deviceDimensions, setDeviceDimensions] = useState({ width: 1080, height: 2400 });
+    const [streamStatus, setStreamStatus] = useState<StreamStatus>('idle');
+    const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
-        if (!udid || !canvasRef.current) return;
+        if (!udid || !canvasRef.current) {
+            setStreamStatus('idle');
+            return;
+        }
 
         if (!('VideoDecoder' in window)) {
             console.error('WebCodecs API is not supported in this browser.');
+            setStreamStatus('error');
             return;
         }
+
+        setStreamStatus('connecting');
 
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d')!;
@@ -30,6 +40,7 @@ export function useScrcpyStream(udid: string | null) {
         let configBuffer: Uint8Array | null = null;
         let codecString = '';
         let waitingForKeyframe = false;
+        let cancelled = false;
 
         function createDecoder(): VideoDecoder {
             return new VideoDecoder({
@@ -74,6 +85,21 @@ export function useScrcpyStream(udid: string | null) {
         const ws = new WebSocket(`${baseUrl}/stream/${udid}`);
         ws.binaryType = 'arraybuffer';
         wsRef.current = ws;
+
+        ws.onopen = () => {
+            console.log('[Scrcpy] WebSocket connected');
+            setStreamStatus('connecting'); // still connecting until first frame
+        };
+
+        ws.onerror = (e) => {
+            console.error('[Scrcpy] WebSocket error:', e);
+            if (!cancelled) setStreamStatus('error');
+        };
+
+        ws.onclose = (e) => {
+            console.warn('[Scrcpy] WebSocket closed:', e.code, e.reason);
+            if (!cancelled) setStreamStatus('error');
+        };
 
         ws.onmessage = (event) => {
             if (typeof event.data === 'string') {
@@ -152,6 +178,7 @@ export function useScrcpyStream(udid: string | null) {
                         timestamp: performance.now() * 1000,
                         data: chunkData,
                     }));
+                    setStreamStatus('streaming');
                 }
             } catch (e) {
                 console.warn('[Scrcpy] Decode error:', e);
@@ -160,6 +187,11 @@ export function useScrcpyStream(udid: string | null) {
         };
 
         return () => {
+            cancelled = true;
+            if (retryRef.current) {
+                clearTimeout(retryRef.current);
+                retryRef.current = null;
+            }
             if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
                 ws.close();
             }
@@ -204,5 +236,5 @@ export function useScrcpyStream(udid: string | null) {
         }
     }, []);
 
-    return { canvasRef, deviceDimensions, sendTouch, sendKeyevent, sendText, sendBackspace };
+    return { canvasRef, deviceDimensions, sendTouch, sendKeyevent, sendText, sendBackspace, streamStatus };
 }

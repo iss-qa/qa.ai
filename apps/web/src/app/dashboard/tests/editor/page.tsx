@@ -20,6 +20,7 @@ import { AmbiguityDialog } from '@/components/AmbiguityDialog';
 import { SaveRecordingModal } from '@/components/SaveRecordingModal';
 import { ExecutionOverlay } from '@/components/ExecutionOverlay';
 import { supabase } from '@/lib/supabase';
+import { getMaestroActionLabel, getMaestroActionIcon, getMaestroStepDescription, stepsToMaestroYaml } from '@/lib/maestroYaml';
 
 export interface TestStep {
     id: string;
@@ -493,12 +494,25 @@ export default function TestEditorPage() {
         addInteraction,
         addKeyevent: addRecordingKeyevent,
         addTextInput,
+        addStepFromDaemon,
+        updateStepAtIndex,
         updateStepElement,
         setElapsedSeconds,
         setShowSaveModal,
         clearRecording,
         deviceResolution,
     } = useRecordingStore();
+
+    // SSE state for recording
+    const recordingEsRef = useRef<EventSource | null>(null);
+    const recordingUdidRef = useRef<string>('');
+
+    // Pending inputText modal state
+    const [pendingInputModal, setPendingInputModal] = useState<{
+        visible: boolean;
+        stepIndex: number;
+    }>({ visible: false, stepIndex: -1 });
+    const [pendingInputText, setPendingInputText] = useState('');
 
     // Recording timer
     useEffect(() => {
@@ -509,14 +523,53 @@ export default function TestEditorPage() {
         return () => clearInterval(interval);
     }, [isRecordingActive, recordingStartTime, setElapsedSeconds]);
 
+    // Cleanup SSE on unmount
+    useEffect(() => {
+        return () => {
+            if (recordingEsRef.current) {
+                recordingEsRef.current.close();
+                recordingEsRef.current = null;
+            }
+        };
+    }, []);
+
+    // SSE step handler
+    const handleSseStep = useCallback((data: any) => {
+        if (data.updated && typeof data.step_index === 'number') {
+            // confirm-input update for existing step
+            updateStepAtIndex(data.step_index, data);
+            return;
+        }
+        const step = addStepFromDaemon(data);
+        if (step && data.is_pending) {
+            setPendingInputModal({ visible: true, stepIndex: data.step_index ?? 0 });
+            setPendingInputText('');
+        }
+    }, [addStepFromDaemon, updateStepAtIndex]);
+
+    // DevicePreview interaction — scrcpy sends touch to device, we also notify daemon
+    // so it can do u2 dump at those coords and broadcast the step via SSE.
     const handleRecordingInteraction = useCallback(async (interaction: RecordedInteraction) => {
         if (!isRecordingActive || !connectedDevice) return;
-
-        const step = addInteraction(interaction);
-
-        // Enrich step with element info from daemon (async, non-blocking)
+        if (interaction.type === 'swipe') {
+            // Swipes detected from getevent OR handled by daemon when stream notified
+            // For now add swipe step locally (daemon SSE would duplicate if from getevent)
+            addStepFromDaemon({
+                action: 'swipe',
+                direction: (() => {
+                    const dx = (interaction.endX || interaction.startX) - interaction.startX;
+                    const dy = (interaction.endY || interaction.startY) - interaction.startY;
+                    if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'RIGHT' : 'LEFT';
+                    return dy > 0 ? 'DOWN' : 'UP';
+                })(),
+                maestro_command: undefined,
+            });
+            return;
+        }
+        // For taps: notify daemon with stream coordinates (daemon scales and identifies)
         try {
-            const res = await fetch(`${DAEMON_URL}/recordings/enrich-step`, {
+            const dims = devicePreviewRef.current?.getDeviceDimensions?.() || { width: 1080, height: 2400 };
+            await fetch(`${DAEMON_URL}/recordings/enrich-and-record`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -524,41 +577,62 @@ export default function TestEditorPage() {
                     x: interaction.startX,
                     y: interaction.startY,
                     action: interaction.type,
+                    stream_width: dims.width,
+                    stream_height: dims.height,
+                    project_id: currentProjectId || undefined,
                 }),
             });
-            if (res.ok) {
-                const data = await res.json();
-                if (data.element_info) {
-                    updateStepElement(step.id, data.element_info);
-                }
-            }
+            // Step will arrive via SSE — no need to add locally
         } catch (e) {
-            // Enrichment is best-effort, don't block recording
+            console.error('enrich-and-record failed:', e);
         }
-    }, [isRecordingActive, connectedDevice, addInteraction, updateStepElement]);
+    }, [isRecordingActive, connectedDevice, addStepFromDaemon]);
 
-    const handleRecordingTextInput = useCallback((text: string) => {
-        if (!isRecordingActive) return;
-        addTextInput(text);
-    }, [isRecordingActive, addTextInput]);
+    const handleRecordingTextInput = useCallback((_text: string) => {
+        // no-op: text captured via confirm-input modal after EditText tap
+    }, []);
 
     const handleStartRecording = async () => {
         if (!connectedDevice) {
             alert('Conecte um dispositivo primeiro!');
             return;
         }
-        startRecordingStore();
+        startRecordingStore(undefined, testIdParam || undefined);
         setIsRecording(true);
+        setSelectedEngine('maestro');
+        setRunId(`rec-${Date.now()}`);
+        recordingUdidRef.current = connectedDevice.udid;
 
-        // Notify daemon
         try {
-            await fetch(`${DAEMON_URL}/recordings/start`, {
+            const res = await fetch(`${DAEMON_URL}/recordings/start`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ udid: connectedDevice.udid }),
+                body: JSON.stringify({
+                    udid: connectedDevice.udid,
+                    project_id: currentProjectId || undefined,
+                }),
             });
+            if (!res.ok) throw new Error(`status ${res.status}`);
+
+            // Open SSE stream for real-time step updates
+            const es = new EventSource(
+                `${DAEMON_URL}/recordings/events?udid=${encodeURIComponent(connectedDevice.udid)}`
+            );
+            es.addEventListener('step', (e) => {
+                try {
+                    handleSseStep(JSON.parse((e as MessageEvent).data));
+                } catch { /* ignore parse errors */ }
+            });
+            es.addEventListener('done', () => {
+                es.close();
+                recordingEsRef.current = null;
+            });
+            es.onerror = () => {
+                // SSE will reconnect automatically; log silently
+            };
+            recordingEsRef.current = es;
         } catch (e) {
-            console.error('Failed to notify daemon about recording start:', e);
+            console.error('Failed to start recording on daemon:', e);
         }
     };
 
@@ -566,7 +640,12 @@ export default function TestEditorPage() {
         stopRecordingStore();
         setIsRecording(false);
 
-        // Notify daemon
+        // Close SSE
+        if (recordingEsRef.current) {
+            recordingEsRef.current.close();
+            recordingEsRef.current = null;
+        }
+
         if (connectedDevice) {
             try {
                 await fetch(`${DAEMON_URL}/recordings/stop`, {
@@ -575,96 +654,113 @@ export default function TestEditorPage() {
                     body: JSON.stringify({ udid: connectedDevice.udid }),
                 });
             } catch (e) {
-                console.error('Failed to notify daemon about recording stop:', e);
+                console.error('Failed to stop recording on daemon:', e);
             }
         }
 
-        // Maestro: convert recorded steps to YAML via Claude
-        if (selectedEngine === 'maestro' && recordedSteps.length > 0) {
-            try {
-                const events = recordedSteps.map(rs => ({
-                    type: rs.action,
-                    x: rs.x,
-                    y: rs.y,
-                    value: rs.value,
-                    element_info: rs.elementInfo || null,
-                }));
-                const res = await fetch(`${DAEMON_URL}/api/maestro/convert-recording`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        recorded_events: events,
-                        width: deviceResolution?.width || 1080,
-                        height: deviceResolution?.height || 2400,
-                    }),
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    setMaestroYaml(data.yaml_flow || '');
-                    setEnvVarsNeeded(data.env_vars_needed || []);
-                }
-            } catch (e) {
-                console.error('Failed to convert recording to Maestro:', e);
-            }
+        if (recordedSteps.length > 0) {
+            const appId = 'br.com.foxbit.foxbitandroid';
+            const yaml = stepsToMaestroYaml(
+                appId,
+                recordedSteps.map((rs, idx) => ({
+                    id: rs.id,
+                    order: idx + 1,
+                    action: rs.action as any,
+                    elementId: rs.elementId || undefined,
+                    value: rs.value || undefined,
+                    direction: rs.direction,
+                }))
+            );
+            setMaestroYaml(yaml);
+        }
+    };
+
+    const handleConfirmInput = async () => {
+        const { stepIndex } = pendingInputModal;
+        const text = pendingInputText.trim();
+        setPendingInputModal({ visible: false, stepIndex: -1 });
+        setPendingInputText('');
+        if (!text || !connectedDevice) return;
+        try {
+            await fetch(`${DAEMON_URL}/recordings/confirm-input`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    udid: connectedDevice.udid,
+                    step_index: stepIndex,
+                    text,
+                }),
+            });
+        } catch (e) {
+            console.error('Failed to confirm input:', e);
         }
     };
 
     const handleSaveRecording = async (testName: string, projectId: string, yamlContent?: string) => {
-        // Maestro: if YAML provided, save it and set up for execution
-        if (selectedEngine === 'maestro' && yamlContent) {
-            try {
-                const saveRes = await fetch(`${DAEMON_URL}/api/maestro/save-yaml`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        yaml_content: yamlContent,
-                        project_id: projectId || 'default',
-                        test_name: testName,
-                    }),
-                });
-                const saveData = await saveRes.json();
-                if (!saveRes.ok) {
-                    alert('YAML invalido: ' + (saveData.detail || 'erro'));
-                    return;
-                }
+        // Generate Maestro YAML from recorded steps
+        const appId = 'br.com.foxbit.foxbitandroid';
+        const generatedYaml = yamlContent || stepsToMaestroYaml(
+            appId,
+            recordedSteps.map((rs, idx) => ({
+                id: rs.id,
+                order: idx + 1,
+                action: rs.action as any,
+                elementId: rs.elementId || undefined,
+                value: rs.value || undefined,
+                direction: rs.direction,
+            }))
+        );
+
+        // Save YAML to backend
+        try {
+            const saveRes = await fetch(`${DAEMON_URL}/api/maestro/save-yaml`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    yaml_content: generatedYaml,
+                    project_id: projectId || 'default',
+                    test_name: testName,
+                }),
+            });
+            const saveData = await saveRes.json();
+            if (saveRes.ok && saveData.path) {
                 setMaestroYamlPath(saveData.path);
-                setMaestroYaml(yamlContent);
-            } catch (e) {
-                console.error('Failed to save Maestro YAML:', e);
-                alert('Erro ao salvar YAML Maestro.');
-                return;
+                setMaestroYaml(generatedYaml);
             }
+        } catch (e) {
+            console.error('Failed to save Maestro YAML:', e);
         }
 
-        // Convert recorded steps to TestStep format and load into editor
+        // Convert recorded steps to TestStep format for editor
         const newSteps: TestStep[] = recordedSteps.map((rs) => ({
             id: rs.id,
-            action: rs.action === 'back' ? 'press_back' : rs.action === 'home' ? 'press_home' : rs.action,
-            target: rs.elementInfo?.text || rs.elementInfo?.resource_id || rs.target,
+            action: rs.action,
+            target: rs.elementId || rs.description,
             value: rs.value || '',
             status: 'idle',
-            engine: selectedEngine,
+            engine: 'maestro' as const,
+            maestro_command: rs.maestro_command || '',
         }));
 
-        // Persist to Supabase
+        // Persist to backend
         const stepsForDb = recordedSteps.map((rs, idx) => ({
             id: rs.id,
             num: idx + 1,
-            action: rs.action === 'back' ? 'press_back' : rs.action === 'home' ? 'press_home' : rs.action,
-            target: rs.elementInfo?.text || rs.elementInfo?.resource_id || rs.target || '',
+            action: rs.action,
+            elementId: rs.elementId || '',
+            target: rs.elementId || rs.description || '',
             value: rs.value || '',
             description: rs.description || '',
-            engine: selectedEngine,
-            maestro_command: (rs as any).maestro_command || '',
+            engine: 'maestro',
+            maestro_command: rs.maestro_command || '',
         }));
 
         try {
-            const engineTag = selectedEngine === 'maestro' ? 'maestro' : 'u2';
             const savePayload: Record<string, unknown> = {
                 name: testName,
-                description: `Teste gravado com ${recordedSteps.length} passos`,
+                description: `Teste gravado com ${recordedSteps.length} passos (Maestro)`,
                 steps: stepsForDb,
-                tags: ['recorded', engineTag],
+                tags: ['recorded', 'maestro'],
             };
             if (projectId && projectId !== 'default') {
                 savePayload.project_id = projectId;
@@ -845,6 +941,12 @@ export default function TestEditorPage() {
                 } else if (data.type === 'step_fallback') {
                     setSteps(prev => prev.map((s, i) => i === data.data.step_num - 1 ? { ...s, status: 'fallback' } : s));
                     useVisionStore.getState().setExecutionProgress({ current: data.data.step_num, total: steps.length, description: 'Fallback XML...' });
+                } else if (data.type === 'step_recorded') {
+                    // Handle recording events from daemon (auto assertVisible on screen change)
+                    const stepData = data.data;
+                    if (stepData?.action === 'assertVisible' && stepData?.auto_generated && stepData?.elementId) {
+                        useRecordingStore.getState().addAssertVisible(stepData.elementId, true);
+                    }
                 } else if (data.type === 'ambiguity_detected') {
                     useVisionStore.getState().setAmbiguityEvent({
                         stepNum: data.data.step_num,
@@ -1070,12 +1172,33 @@ export default function TestEditorPage() {
     };
 
     const handleExecuteTest = async () => {
-        if (!connectedDevice || steps.length === 0) {
-            if (!connectedDevice) alert('Conecte um dispositivo primeiro.');
+        if (!connectedDevice) {
+            alert('Conecte um dispositivo primeiro.');
             return;
         }
 
-        const stepsEngine = steps[0]?.engine || selectedEngine;
+        // Resolve which steps to execute — editor steps take priority,
+        // but fall back to recorded steps if the editor list is empty.
+        let stepsToRun: TestStep[] = steps;
+        if (stepsToRun.length === 0 && recordedSteps.length > 0) {
+            stepsToRun = recordedSteps.map(rs => ({
+                id: rs.id,
+                action: rs.action,
+                target: rs.elementId || rs.description,
+                value: rs.value || '',
+                status: 'idle' as const,
+                engine: 'maestro' as const,
+                maestro_command: rs.maestro_command || '',
+            }));
+            setSteps(stepsToRun);  // persist to editor so progress indicators work
+        }
+
+        if (stepsToRun.length === 0) {
+            alert('Nenhum passo para executar. Grave ou adicione passos primeiro.');
+            return;
+        }
+
+        const stepsEngine = stepsToRun[0]?.engine || selectedEngine;
 
         // Maestro: if env vars needed, show modal first
         if (stepsEngine === 'maestro' && envVarsNeeded.length > 0 && !showEnvVarsModal) {
@@ -1089,11 +1212,11 @@ export default function TestEditorPage() {
 
         // Reset all step statuses
         setSteps(prev => prev.map(s => ({ ...s, status: 'idle' })));
-        setShowExecutionOverlay(true);
+        setShowExecutionOverlay(false);
         setIsExecuting(true);
 
         // Small delay to let WebSocket connect before sending the request
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 200));
 
         const { referenceImages, imageStepMapping, autoMapImages } = useVisionStore.getState();
 
@@ -1147,22 +1270,29 @@ export default function TestEditorPage() {
                     test_case_id: testIdParam || 'test-1',
                     device_udid: connectedDevice.udid,
                     run_id: execRunId,
-                    steps: steps,
+                    steps: stepsToRun,
                     platform: 'android',
                     engine: currentEngine,
                 };
 
                 if (currentEngine === 'maestro') {
-                    let yamlPath = maestroYamlPath;
+                    // Always regenerate fresh YAML from current steps' maestro_command fields
+                    const appId = 'br.com.foxbit.foxbitandroid';
+                    const commands = stepsToRun
+                        .map(s => s.maestro_command || '')
+                        .filter(Boolean);
+                    let yamlContent = commands.length > 0
+                        ? `appId: ${appId}\n---\n${commands.join('\n')}`
+                        : maestroYaml;
 
-                    // If no yaml_path saved yet but we have the AI-generated yaml, save it first
-                    if (!yamlPath && maestroYaml) {
+                    let yamlPath = maestroYamlPath;
+                    if (yamlContent) {
                         try {
                             const saveRes = await fetch(`${DAEMON_URL}/api/maestro/save-yaml`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
-                                    yaml_content: maestroYaml,
+                                    yaml_content: yamlContent,
                                     project_id: currentProjectId || 'runs',
                                     test_name: testName || execRunId,
                                 }),
@@ -1171,6 +1301,7 @@ export default function TestEditorPage() {
                             if (saveData.path) {
                                 yamlPath = saveData.path;
                                 setMaestroYamlPath(saveData.path);
+                                setMaestroYaml(yamlContent);
                             }
                         } catch (e) {
                             console.error('Failed to save YAML before execution:', e);
@@ -1247,11 +1378,7 @@ export default function TestEditorPage() {
             </header>
 
             <div className="flex flex-1 overflow-hidden relative">
-                {/* Execution loading overlay — covers entire editor */}
-                <ExecutionOverlay
-                    isVisible={showExecutionOverlay}
-                    onComplete={() => setShowExecutionOverlay(false)}
-                />
+                {/* Execution overlay removed — tests start immediately */}
 
                 <div className="w-[550px] border-r border-white/10 bg-[#0C0F1A] flex flex-col shrink-0 h-full">
                     <div className="flex-shrink-0 px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
@@ -1261,39 +1388,52 @@ export default function TestEditorPage() {
                     </div>
 
                     <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0 flex flex-col gap-3 custom-scrollbar">
-                        {/* Recording steps list */}
+                        {/* Recording steps list — Maestro format */}
                         {isRecordingActive && recordedSteps.length > 0 && (
                             <div className="flex flex-col gap-2 mb-3">
                                 <div className="flex items-center gap-2 text-xs font-bold text-red-400 uppercase tracking-wider px-1">
                                     <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                                     Gravando — {recordedSteps.length} passos
                                 </div>
-                                {recordedSteps.map((rs, idx) => (
-                                    <div key={rs.id} className="bg-white/5 border border-red-500/20 rounded-lg p-3 flex items-start gap-3 animate-[fadeIn_0.3s_ease-out]">
-                                        <div className="w-6 h-6 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center text-xs font-bold shrink-0 border border-red-500/30">
-                                            {idx + 1}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-1.5 text-sm font-bold text-brandLight">
-                                                {rs.action === 'tap' && <MousePointerClick className="w-3.5 h-3.5" />}
-                                                {rs.action === 'type' && <Keyboard className="w-3.5 h-3.5" />}
-                                                {rs.action === 'swipe' && <MoveHorizontal className="w-3.5 h-3.5" />}
-                                                {rs.action === 'back' && <ChevronLeft className="w-3.5 h-3.5" />}
-                                                {rs.action === 'home' && <Circle className="w-3.5 h-3.5" />}
-                                                {rs.action.toUpperCase()}
+                                {recordedSteps.map((rs, idx) => {
+                                    const actionLabel = getMaestroActionLabel(rs.action);
+                                    const actionIcon = getMaestroActionIcon(rs.action);
+                                    const isAssert = rs.action === 'assertVisible';
+                                    const isInput = rs.action === 'inputText';
+                                    const borderColor = isAssert ? 'border-cyan-500/30' : 'border-red-500/20';
+                                    const bgColor = isAssert ? 'bg-cyan-500/10' : 'bg-red-500/20';
+                                    const textColor = isAssert ? 'text-cyan-400' : isInput ? 'text-amber-400' : 'text-brandLight';
+
+                                    return (
+                                        <div key={rs.id} className={`bg-white/5 border ${borderColor} rounded-lg p-3 flex items-start gap-3 animate-[fadeIn_0.3s_ease-out]`}>
+                                            <div className={`w-6 h-6 rounded-full ${bgColor} ${textColor} flex items-center justify-center text-xs font-bold shrink-0 border ${borderColor}`}>
+                                                {idx + 1}
                                             </div>
-                                            <div className="text-xs text-slate-300 mt-1 truncate">
-                                                {rs.isPassword ? rs.description.replace(/"[^"]*"/, `"${'*'.repeat(8)}"`) : rs.description}
-                                            </div>
-                                            {rs.elementInfo?.text && (
-                                                <div className="text-[10px] text-slate-500 mt-0.5 font-mono truncate">
-                                                    {rs.elementInfo.text}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-sm">{actionIcon}</span>
+                                                    <span className={`text-xs font-bold ${textColor}`}>{actionLabel}</span>
+                                                    <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-purple-500/20 text-purple-400">maestro</span>
+                                                    {rs.autoGenerated && (
+                                                        <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-cyan-500/20 text-cyan-400">auto</span>
+                                                    )}
+                                                    {rs.fromScan && (
+                                                        <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-400">scan</span>
+                                                    )}
                                                 </div>
-                                            )}
+                                                <div className="text-[11px] text-slate-300 mt-1.5 px-2 py-1 rounded bg-black/30 border border-black/20 truncate font-mono">
+                                                    {rs.elementId || rs.description}
+                                                </div>
+                                                {isInput && rs.value && (
+                                                    <div className="text-xs text-slate-400 mt-1 pl-1 truncate">
+                                                        Valor: <span className="text-white">&quot;{rs.isPassword ? '*'.repeat(rs.value.length) : rs.value}&quot;</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0 mt-1" />
                                         </div>
-                                        <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0 mt-1" />
-                                    </div>
-                                ))}
+                                    );
+                                })}
                                 <div className="bg-white/5 border border-dashed border-red-500/20 rounded-lg p-3 flex items-center gap-3 text-slate-500 text-xs">
                                     <div className="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center shrink-0">
                                         <div className="w-2 h-2 rounded-full bg-red-500/50 animate-pulse" />
@@ -1336,7 +1476,28 @@ export default function TestEditorPage() {
                                             editingData={editingData}
                                             setEditingData={setEditingData}
                                             onSaveEdit={() => {
-                                                setSteps(prev => prev.map(s => s.id === step.id ? { ...s, ...editingData } as TestStep : s));
+                                                setSteps(prev => prev.map(s => {
+                                                    if (s.id !== step.id) return s;
+                                                    const updated = { ...s, ...editingData } as TestStep;
+                                                    // Auto-generate maestro_command from action/target/value if not manually set
+                                                    if (updated.engine === 'maestro' && !editingData.maestro_command) {
+                                                        const act = (updated.action || '').toLowerCase();
+                                                        const tgt = updated.target || '';
+                                                        const val = updated.value || '';
+                                                        if (act === 'tapon' || act === 'tapOn') {
+                                                            updated.maestro_command = tgt.match(/^[a-z_][a-z0-9_]*$/)
+                                                                ? `- tapOn:\n    id: "${tgt}"`
+                                                                : `- tapOn: "${tgt}"`;
+                                                        } else if (act === 'inputtext' || act === 'inputText') {
+                                                            updated.maestro_command = `- inputText: "${val || tgt}"`;
+                                                        } else if (act === 'assertvisible' || act === 'assertVisible') {
+                                                            updated.maestro_command = tgt.match(/^[a-z_][a-z0-9_]*$/)
+                                                                ? `- assertVisible:\n    id: "${tgt}"`
+                                                                : `- assertVisible:\n    text: "${tgt}"`;
+                                                        }
+                                                    }
+                                                    return updated;
+                                                }));
                                                 setEditingStepId(null);
                                             }}
                                             onCancelEdit={() => setEditingStepId(null)}
@@ -1344,6 +1505,71 @@ export default function TestEditorPage() {
                                     ))}
                                 </SortableContext>
                             </DndContext>
+                        )}
+
+                        {/* ── Add Step Button ── */}
+                        {steps.length > 0 && !isExecuting && !isGenerating && (
+                            <div className="flex flex-col gap-1.5 mt-1">
+                                <div className="flex gap-1.5">
+                                    <button
+                                        onClick={() => {
+                                            const newStep: TestStep = {
+                                                id: `step-${Date.now()}-1`,
+                                                action: 'tapOn',
+                                                target: '',
+                                                value: '',
+                                                status: 'idle',
+                                                engine: 'maestro',
+                                                maestro_command: '- tapOn:\n    id: ""',
+                                            };
+                                            setSteps(prev => [...prev, newStep]);
+                                            setEditingStepId(newStep.id);
+                                            setEditingData(newStep);
+                                        }}
+                                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-white/5 border border-dashed border-white/10 rounded-lg text-xs text-slate-400 hover:text-white hover:border-brand/50 hover:bg-brand/5 transition-all"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> tapOn
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            const newStep: TestStep = {
+                                                id: `step-${Date.now()}-2`,
+                                                action: 'inputText',
+                                                target: 'Texto a digitar',
+                                                value: '',
+                                                status: 'idle',
+                                                engine: 'maestro',
+                                                maestro_command: '- inputText: ""',
+                                            };
+                                            setSteps(prev => [...prev, newStep]);
+                                            setEditingStepId(newStep.id);
+                                            setEditingData(newStep);
+                                        }}
+                                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-white/5 border border-dashed border-white/10 rounded-lg text-xs text-slate-400 hover:text-white hover:border-amber-500/50 hover:bg-amber-500/5 transition-all"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> inputText
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            const newStep: TestStep = {
+                                                id: `step-${Date.now()}-3`,
+                                                action: 'assertVisible',
+                                                target: '',
+                                                value: '',
+                                                status: 'idle',
+                                                engine: 'maestro',
+                                                maestro_command: '- assertVisible:\n    id: ""',
+                                            };
+                                            setSteps(prev => [...prev, newStep]);
+                                            setEditingStepId(newStep.id);
+                                            setEditingData(newStep);
+                                        }}
+                                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-white/5 border border-dashed border-white/10 rounded-lg text-xs text-slate-400 hover:text-white hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> assert
+                                    </button>
+                                </div>
+                            </div>
                         )}
 
                         {/* ── Confidence Report (Maestro only) ── */}
@@ -1518,16 +1744,26 @@ export default function TestEditorPage() {
                     <div className="flex items-start gap-4">
                         {/* Phone + bottom toolbar */}
                         <div className="flex flex-col items-center gap-3">
+                            {/* Device info label */}
+                            {connectedDevice && (
+                                <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                                    <span>{connectedDevice.model}</span>
+                                    <span className="text-slate-600">|</span>
+                                    <span>{devicePreviewRef.current?.getDeviceDimensions?.()
+                                        ? `${devicePreviewRef.current.getDeviceDimensions().width}x${devicePreviewRef.current.getDeviceDimensions().height}`
+                                        : '...'
+                                    }</span>
+                                    {connectedDevice.os_version && (
+                                        <>
+                                            <span className="text-slate-600">|</span>
+                                            <span>Android {connectedDevice.os_version}</span>
+                                        </>
+                                    )}
+                                </div>
+                            )}
                             <div className="relative w-[306px] h-[648px] shrink-0 bg-black rounded-[40px] border-[8px] border-[#1E2330] shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col">
                                 <div className="flex-1 w-full bg-[#0A0C14] relative">
-                                    <div className="absolute top-0 w-full h-6 bg-black/20 flex justify-between items-center px-4 z-10">
-                                        <span className="text-[10px] text-white font-medium">14:32</span>
-                                        <div className="flex gap-1">
-                                            <Wifi className="w-3 h-3 text-white" />
-                                            <div className="w-4 h-2 border border-white rounded-[2px] relative"><div className="absolute left-0 top-0 bottom-0 bg-white w-3/4"></div></div>
-                                        </div>
-                                    </div>
-
                                     <DevicePreview
                                         ref={devicePreviewRef}
                                         udid={connectedDevice?.udid || ''}
@@ -1612,6 +1848,47 @@ export default function TestEditorPage() {
 
             <ExecutionToast />
             <AmbiguityDialog runId={runId} />
+
+            {/* Pending InputText Modal — shown when daemon detects an EditText tap */}
+            {pendingInputModal.visible && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+                    <div className="bg-[#1A1D27] border border-white/10 rounded-2xl p-6 w-[380px] shadow-2xl">
+                        <h3 className="text-base font-bold text-white mb-2">Qual texto você digitou?</h3>
+                        <p className="text-xs text-slate-400 mb-4">
+                            Um campo de texto foi detectado. Informe o valor digitado para gerar o passo <code className="text-purple-400">inputText</code>.
+                        </p>
+                        <input
+                            autoFocus
+                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-brand mb-4"
+                            placeholder="Texto digitado..."
+                            value={pendingInputText}
+                            onChange={e => setPendingInputText(e.target.value)}
+                            onKeyDown={e => {
+                                if (e.key === 'Enter') handleConfirmInput();
+                                if (e.key === 'Escape') {
+                                    setPendingInputModal({ visible: false, stepIndex: -1 });
+                                    setPendingInputText('');
+                                }
+                            }}
+                        />
+                        <div className="flex gap-2 justify-end">
+                            <button
+                                onClick={() => { setPendingInputModal({ visible: false, stepIndex: -1 }); setPendingInputText(''); }}
+                                className="px-3 py-1.5 text-xs text-slate-400 hover:text-white border border-white/10 rounded-lg"
+                            >
+                                Pular
+                            </button>
+                            <button
+                                onClick={handleConfirmInput}
+                                className="px-4 py-1.5 text-xs font-semibold bg-brand text-white rounded-lg hover:bg-brand/80"
+                            >
+                                Confirmar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <SaveRecordingModal
                 isOpen={showSaveModal}
                 stepCount={recordedSteps.length}

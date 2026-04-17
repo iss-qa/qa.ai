@@ -1,0 +1,180 @@
+{
+  "id": "e0bee606-6592-4327-a353-19d0d6b5c45d",
+  "name": "GSfsd",
+  "description": "Teste gravado com 15 passos (Maestro)",
+  "steps": [
+    {
+      "id": "a118d6bf-562d-4cf7-95a0-4d58d365fe7e",
+      "num": 1,
+      "action": "assertVisible",
+      "elementId": "img_welcome_logo",
+      "target": "img_welcome_logo",
+      "value": "",
+      "description": "Confirmar tela › img_welcome_logo",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"img_welcome_logo\""
+    },
+    {
+      "id": "8ad827c4-fe5b-4170-8e31-671f1a815840",
+      "num": 2,
+      "action": "assertVisible",
+      "elementId": "img_welcome_logo",
+      "target": "img_welcome_logo",
+      "value": "",
+      "description": "Confirmar tela › img_welcome_logo",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"img_welcome_logo\""
+    },
+    {
+      "id": "afe3fdaf-7ac1-43d9-8877-0ad772066a43",
+      "num": 3,
+      "action": "tapOn",
+      "elementId": "img_welcome_logo",
+      "target": "img_welcome_logo",
+      "value": "",
+      "description": "Tocar em › img_welcome_logo",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"img_welcome_logo\""
+    },
+    {
+      "id": "2ca256e8-517d-4407-b479-707bc6a91750",
+      "num": 4,
+      "action": "assertVisible",
+      "elementId": "bt_welcome_login",
+      "target": "bt_welcome_login",
+      "value": "",
+      "description": "Confirmar tela › bt_welcome_login",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"bt_welcome_login\""
+    },
+    {
+      "id": "932f4711-aaa7-4cd0-98cc-9a535b7b4418",
+      "num": 5,
+      "action": "assertVisible",
+      "elementId": "bt_welcome_login",
+      "target": "bt_welcome_login",
+      "value": "",
+      "description": "Confirmar tela › bt_welcome_login",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"bt_welcome_login\""
+    },
+    {
+      "id": "dac17ccc-8853-456a-90b9-7534ebf8ffcd",
+      "num": 6,
+      "action": "tapOn",
+      "elementId": "bt_welcome_login",
+      "target": "bt_welcome_login",
+      "value": "",
+      "description": "Tocar em › bt_welcome_login",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"bt_welcome_login\""
+    },
+    {
+      "id": "31c656e6-3d47-4da3-8f9e-107b225328f5",
+      "num": 7,
+      "action": "assertVisible",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "isaias@gmail.com",
+      "description": "Digitar › \"isaias@gmail.com\"",
+      "engine": "maestro",
+      "maestro_command": "- inputText: \"isaias@gmail.com\""
+    },
+    {
+      "id": "d6c2ea8a-539a-4ba7-acc8-ae401a8c9f97",
+      "num": 8,
+      "action": "assertVisible",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Confirmar tela › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "0c363260-fa8a-4186-9534-d8a37fbe13eb",
+      "num": 9,
+      "action": "tapOn",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Tocar em › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "d29fe0c7-9dd2-4ad7-89be-81fcf9356b4a",
+      "num": 10,
+      "action": "inputText",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "askldfhdgofkln",
+      "description": "Digitar › \"askldfhdgofkln\"",
+      "engine": "maestro",
+      "maestro_command": "- inputText: \"askldfhdgofkln\""
+    },
+    {
+      "id": "4379d94e-7db4-4d26-a396-c1c47ae4a949",
+      "num": 11,
+      "action": "swipe",
+      "elementId": "",
+      "target": "Deslizar DOWN",
+      "value": "",
+      "description": "Deslizar DOWN",
+      "engine": "maestro",
+      "maestro_command": ""
+    },
+    {
+      "id": "350cdc7b-f89c-467f-b096-fd90e3adf608",
+      "num": 12,
+      "action": "assertVisible",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Confirmar tela › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "5ff44ef1-9052-4b7e-9590-e0cf4c8711e6",
+      "num": 13,
+      "action": "assertVisible",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Confirmar tela › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "eabe4134-0755-4ff5-972a-2052c7c438b2",
+      "num": 14,
+      "action": "tapOn",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Tocar em › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "644d8797-df3b-4658-b738-1a76736dd9e2",
+      "num": 15,
+      "action": "inputText",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "__PENDING_INPUT__",
+      "description": "Digitar › [aguardando texto...]",
+      "engine": "maestro",
+      "maestro_command": "- inputText: \"__PENDING_INPUT__\""
+    }
+  ],
+  "tags": [
+    "recorded",
+    "maestro"
+  ],
+  "project_id": "b63d8dd4-f0dd-4eeb-a7ad-e8a00a4644ad",
+  "is_active": true,
+  "version": 1,
+  "created_at": "2026-04-16T15:29:12.043328"
+}

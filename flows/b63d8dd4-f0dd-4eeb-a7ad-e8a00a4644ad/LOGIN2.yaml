@@ -1,0 +1,24 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- tapOn:
+    id: "img_welcome_logo"
+- tapOn:
+    id: "txt_welcome_title"
+- tapOn:
+    id: "card_home_balance"
+- tapOn:
+    id: "txt_login_welcome"
+- tapOn:
+    id: "txt_login_welcome"
+- tapOn:
+    id: "txt_login_welcome"
+- tapOn:
+    id: "txt_login_welcome"
+- tapOn:
+    id: "bt_login_continue"
+- tapOn:
+    id: "txt_save_biometry"
+- tapOn:
+    id: "bt_bottom_bar_home"
+- tapOn:
+    id: "card_home_balance"

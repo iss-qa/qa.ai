@@ -1,0 +1,43 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- assertVisible:
+    id: "Voltar"
+- tapOn:
+    id: "75%,26%"
+- tapOn:
+    id: "51%,53%"
+- tapOn:
+    id: "41%,47%"
+- tapOn:
+    id: "51%,78%"
+- tapOn:
+    id: "bt_login_continue"
+- tapOn:
+    id: "bt_bottom_bar_home"
+- tapOn:
+    id: "Scrim"
+- tapOn:
+    id: "35%,80%"
+- tapOn:
+    id: "card_convert_input_pay"
+- inputText: "1"
+- tapOn:
+    id: "49%,67%"
+- tapOn:
+    id: "55%,90%"
+- tapOn:
+    id: "56%,52%"
+- tapOn:
+    id: "42%,21%"
+- tapOn:
+    id: "48%,22%"
+- tapOn:
+    id: "51%,28%"
+- tapOn:
+    id: "51%,28%"
+- tapOn:
+    id: "11%,6%"
+- tapOn:
+    id: "6%,6%"
+- tapOn:
+    id: "bt_bottom_bar_wallet"

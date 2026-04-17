@@ -1,0 +1,8 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- tapOn:
+    id: "22%,5%"
+- tapOn:
+    id: "27%,10%"
+- tapOn:
+    id: "31%,10%"

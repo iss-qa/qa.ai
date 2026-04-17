@@ -1,0 +1,42 @@
+appId: com.app.unknown
+---
+- assertVisible:
+    id: "Voltar"
+- tapOn:
+    point: "75%,26%"
+- tapOn:
+    point: "51%,53%"
+- tapOn:
+    point: "41%,47%"
+- tapOn:
+    point: "51%,78%"
+- tapOn:
+    id: "bt_login_continue"
+- tapOn:
+    id: "bt_bottom_bar_home"
+- tapOn: "Scrim"
+- tapOn:
+    point: "35%,80%"
+- tapOn:
+    id: "card_convert_input_pay"
+- inputText: "1"
+- tapOn:
+    point: "49%,67%"
+- tapOn:
+    point: "55%,90%"
+- tapOn:
+    point: "56%,52%"
+- tapOn:
+    point: "42%,21%"
+- tapOn:
+    point: "48%,22%"
+- tapOn:
+    point: "51%,28%"
+- tapOn:
+    point: "51%,28%"
+- tapOn:
+    point: "11%,6%"
+- tapOn:
+    point: "6%,6%"
+- tapOn:
+    id: "bt_bottom_bar_wallet"

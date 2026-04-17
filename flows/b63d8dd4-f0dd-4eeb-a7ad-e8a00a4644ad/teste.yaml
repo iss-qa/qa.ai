@@ -1,0 +1,14 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- tapOn:
+    id: "img_welcome_logo"
+- tapOn:
+    id: "txt_welcome_title"
+- tapOn:
+    id: "[unresolved]"
+- tapOn:
+    id: "txt_login_welcome"
+- inputText: "t"
+- tapOn:
+    id: "bt_login_forgot_password"
+- inputText: "e"

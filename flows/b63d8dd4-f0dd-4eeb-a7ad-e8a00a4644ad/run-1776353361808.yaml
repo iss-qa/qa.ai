@@ -1,0 +1,27 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- assertVisible:
+    id: "img_welcome_logo"
+- assertVisible:
+    id: "img_welcome_logo"
+- tapOn:
+    id: "img_welcome_logo"
+- assertVisible:
+    id: "bt_welcome_login"
+- assertVisible:
+    id: "bt_welcome_login"
+- tapOn:
+    id: "bt_welcome_login"
+- inputText: "isaias@gmail.com"
+- assertVisible:
+    id: "inp_login_password"
+- tapOn:
+    id: "inp_login_password"
+- inputText: "askldfhdgofkln"
+- assertVisible:
+    id: "inp_login_password"
+- assertVisible:
+    id: "inp_login_password"
+- tapOn:
+    id: "inp_login_password"
+- inputText: "__PENDING_INPUT__"
