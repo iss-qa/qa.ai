@@ -1,0 +1,103 @@
+{
+  "id": "3e4b4fb8-dbd8-435b-9b2c-5efa5a281cc4",
+  "name": "Login app",
+  "description": "Teste gravado com 8 passos (Maestro)",
+  "steps": [
+    {
+      "id": "7c7460e3-e7e5-4bc1-b21a-5791abb81087",
+      "num": 1,
+      "action": "tapOn",
+      "elementId": "img_welcome_logo",
+      "target": "img_welcome_logo",
+      "value": "",
+      "description": "Tocar em › img_welcome_logo",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"img_welcome_logo\""
+    },
+    {
+      "id": "63a75d08-4f3a-4237-b300-8fcc1010970d",
+      "num": 2,
+      "action": "tapOn",
+      "elementId": "card_home_balance",
+      "target": "card_home_balance",
+      "value": "",
+      "description": "Tocar em › card_home_balance",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"card_home_balance\""
+    },
+    {
+      "id": "0a2ebb93-5d0b-4abc-94f5-1a5fe2779c00",
+      "num": 3,
+      "action": "tapOn",
+      "elementId": "txt_login_welcome",
+      "target": "txt_login_welcome",
+      "value": "",
+      "description": "Tocar em › txt_login_welcome",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"txt_login_welcome\""
+    },
+    {
+      "id": "c4f73762-54ce-4460-980b-af8077851616",
+      "num": 4,
+      "action": "tapOn",
+      "elementId": "bt_login_forgot_password",
+      "target": "bt_login_forgot_password",
+      "value": "",
+      "description": "Tocar em › bt_login_forgot_password",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"bt_login_forgot_password\""
+    },
+    {
+      "id": "0112b045-48f9-4b2d-a5d0-87e7c8aa0bd4",
+      "num": 5,
+      "action": "tapOn",
+      "elementId": "bt_login_continue",
+      "target": "bt_login_continue",
+      "value": "",
+      "description": "Tocar em › bt_login_continue",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"bt_login_continue\""
+    },
+    {
+      "id": "d55044d5-a02b-4998-a9ca-3dd23c83d7cf",
+      "num": 6,
+      "action": "tapOn",
+      "elementId": "Salvar",
+      "target": "Salvar",
+      "value": "",
+      "description": "Tocar em › Salvar",
+      "engine": "maestro",
+      "maestro_command": "- tapOn: \"Salvar\""
+    },
+    {
+      "id": "6ab1fac7-fa78-44df-a68e-6edad6b09c37",
+      "num": 7,
+      "action": "tapOn",
+      "elementId": "bt_bottom_bar_home",
+      "target": "bt_bottom_bar_home",
+      "value": "",
+      "description": "Tocar em › bt_bottom_bar_home",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"bt_bottom_bar_home\""
+    },
+    {
+      "id": "84350adb-e91f-470f-b656-dfb0d4fad325",
+      "num": 8,
+      "action": "tapOn",
+      "elementId": "Scrim",
+      "target": "Scrim",
+      "value": "",
+      "description": "Tocar em › Scrim",
+      "engine": "maestro",
+      "maestro_command": "- tapOn: \"Scrim\""
+    }
+  ],
+  "tags": [
+    "recorded",
+    "maestro"
+  ],
+  "project_id": "b63d8dd4-f0dd-4eeb-a7ad-e8a00a4644ad",
+  "is_active": true,
+  "version": 1,
+  "created_at": "2026-04-15T18:41:30.396636"
+}

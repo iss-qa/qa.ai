@@ -1,0 +1,48 @@
+{
+  "id": "2d3a9678-12f3-4f62-a0a1-4134b49da48e",
+  "name": "sadf",
+  "description": "Teste gravado com 3 passos (Maestro)",
+  "steps": [
+    {
+      "id": "5de42812-4cab-48f4-9c84-7dcfa94e2d3c",
+      "num": 1,
+      "action": "tapOn",
+      "elementId": "22%,5%",
+      "target": "22%,5%",
+      "value": "",
+      "description": "Tocar em › 22%,5%",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    point: \"22%,5%\""
+    },
+    {
+      "id": "2a5c4197-ffb7-49e2-9af4-cf686933d5fd",
+      "num": 2,
+      "action": "tapOn",
+      "elementId": "27%,10%",
+      "target": "27%,10%",
+      "value": "",
+      "description": "Tocar em › 27%,10%",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    point: \"27%,10%\""
+    },
+    {
+      "id": "3ad49949-e56e-4a6c-b1a6-28e6871f4ac5",
+      "num": 3,
+      "action": "tapOn",
+      "elementId": "31%,10%",
+      "target": "31%,10%",
+      "value": "",
+      "description": "Tocar em › 31%,10%",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    point: \"31%,10%\""
+    }
+  ],
+  "tags": [
+    "recorded",
+    "maestro"
+  ],
+  "project_id": "b63d8dd4-f0dd-4eeb-a7ad-e8a00a4644ad",
+  "is_active": true,
+  "version": 1,
+  "created_at": "2026-04-15T21:08:58.908256"
+}

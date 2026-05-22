@@ -1,0 +1,136 @@
+{
+  "id": "9ab0dea8-fac1-48fa-95ab-304c6c1d7e65",
+  "name": "sads",
+  "description": "Teste gravado com 11 passos (Maestro)",
+  "steps": [
+    {
+      "id": "bf093403-a521-4794-9be5-9a2733407e77",
+      "num": 1,
+      "action": "tapOn",
+      "elementId": "img_welcome_logo",
+      "target": "img_welcome_logo",
+      "value": "",
+      "description": "Tocar em › img_welcome_logo",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"img_welcome_logo\""
+    },
+    {
+      "id": "e4235b08-eb0f-4838-a90a-1d8b8499bd88",
+      "num": 2,
+      "action": "tapOn",
+      "elementId": "card_home_balance",
+      "target": "card_home_balance",
+      "value": "",
+      "description": "Tocar em › card_home_balance",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"card_home_balance\""
+    },
+    {
+      "id": "20359e5c-7484-4563-b0d6-d0242aac1430",
+      "num": 3,
+      "action": "tapOn",
+      "elementId": "txt_home_markets",
+      "target": "txt_home_markets",
+      "value": "",
+      "description": "Tocar em › txt_home_markets",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"txt_home_markets\""
+    },
+    {
+      "id": "06aa5282-3aa7-40a2-8a95-65b38189dacd",
+      "num": 4,
+      "action": "tapOn",
+      "elementId": "card_home_balance",
+      "target": "card_home_balance",
+      "value": "",
+      "description": "Tocar em › card_home_balance",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"card_home_balance\""
+    },
+    {
+      "id": "d46c59b9-f104-48d8-bf40-7c7193f0aad5",
+      "num": 5,
+      "action": "tapOn",
+      "elementId": "txt_login_welcome",
+      "target": "txt_login_welcome",
+      "value": "",
+      "description": "Tocar em › txt_login_welcome",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"txt_login_welcome\""
+    },
+    {
+      "id": "52874581-a16d-4e22-b8c4-6300c9279510",
+      "num": 6,
+      "action": "tapOn",
+      "elementId": "bt_login_forgot_password",
+      "target": "bt_login_forgot_password",
+      "value": "",
+      "description": "Tocar em › bt_login_forgot_password",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"bt_login_forgot_password\""
+    },
+    {
+      "id": "cfc93678-9736-482d-b6c8-20fb0ab2e25e",
+      "num": 7,
+      "action": "tapOn",
+      "elementId": "txt_login_welcome",
+      "target": "txt_login_welcome",
+      "value": "",
+      "description": "Tocar em › txt_login_welcome",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"txt_login_welcome\""
+    },
+    {
+      "id": "eb94f011-7432-4357-90f7-bf27cadbaa44",
+      "num": 8,
+      "action": "tapOn",
+      "elementId": "txt_home_markets",
+      "target": "txt_home_markets",
+      "value": "",
+      "description": "Tocar em › txt_home_markets",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"txt_home_markets\""
+    },
+    {
+      "id": "df77e797-516c-49fa-95da-92365af5705e",
+      "num": 9,
+      "action": "swipe",
+      "elementId": "bt_home_qa_deposit",
+      "target": "bt_home_qa_deposit",
+      "value": "DOWN",
+      "description": "Deslizar DOWN",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"bt_home_qa_deposit\""
+    },
+    {
+      "id": "c778d989-f5f4-4262-8482-e5ea72f9390a",
+      "num": 10,
+      "action": "tapOn",
+      "elementId": "bt_login_forgot_password",
+      "target": "bt_login_forgot_password",
+      "value": "",
+      "description": "Tocar em › bt_login_forgot_password",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"bt_login_forgot_password\""
+    },
+    {
+      "id": "06b83562-5eb9-4ae9-9164-bb2ed8cd3c29",
+      "num": 11,
+      "action": "swipe",
+      "elementId": "card_home_balance",
+      "target": "card_home_balance",
+      "value": "DOWN",
+      "description": "Deslizar DOWN",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"card_home_balance\""
+    }
+  ],
+  "tags": [
+    "recorded",
+    "maestro"
+  ],
+  "project_id": "b63d8dd4-f0dd-4eeb-a7ad-e8a00a4644ad",
+  "is_active": true,
+  "version": 1,
+  "created_at": "2026-04-15T19:21:52.548314"
+}

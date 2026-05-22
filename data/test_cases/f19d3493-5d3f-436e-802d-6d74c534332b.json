@@ -1,0 +1,155 @@
+{
+  "id": "f19d3493-5d3f-436e-802d-6d74c534332b",
+  "name": "Converter",
+  "description": "Teste gravado com 14 passos",
+  "steps": [
+    {
+      "id": "0dfc4108-f9c8-41dc-9def-3ca69cb6b4ea",
+      "num": 1,
+      "action": "tap",
+      "target": "69,385",
+      "value": "",
+      "description": "Tap — Scrim (69, 385)",
+      "engine": "uiautomator2",
+      "maestro_command": "- tapOn: \"Scrim\""
+    },
+    {
+      "id": "e36912b6-bc1e-4304-9f9b-dee3bcb0342f",
+      "num": 2,
+      "action": "tap",
+      "target": "250,830",
+      "value": "",
+      "description": "Tap em (250, 830)",
+      "engine": "uiautomator2",
+      "maestro_command": ""
+    },
+    {
+      "id": "52c1fb03-cad3-4890-a979-b09c38cc6c52",
+      "num": 3,
+      "action": "tap",
+      "target": "0",
+      "value": "",
+      "description": "Tap — \"0\" (85, 270)",
+      "engine": "uiautomator2",
+      "maestro_command": "- tapOn:\n    id: \"card_convert_input_pay\""
+    },
+    {
+      "id": "1f6f8376-1734-49b6-b7c7-82120498d8a9",
+      "num": 4,
+      "action": "type",
+      "target": "85,270",
+      "value": "1",
+      "description": "Digitou \"1\"",
+      "engine": "uiautomator2",
+      "maestro_command": ""
+    },
+    {
+      "id": "de719ed1-54bc-4db9-9271-eda9bb9865b5",
+      "num": 5,
+      "action": "tap",
+      "target": "257,723",
+      "value": "",
+      "description": "Tap em (257, 723)",
+      "engine": "uiautomator2",
+      "maestro_command": ""
+    },
+    {
+      "id": "e9332f9c-cbc6-4b59-b457-150d491abed7",
+      "num": 6,
+      "action": "tap",
+      "target": "331,981",
+      "value": "",
+      "description": "Tap em (331, 981)",
+      "engine": "uiautomator2",
+      "maestro_command": ""
+    },
+    {
+      "id": "5a0dd38c-7476-4093-8dcc-94e670da91af",
+      "num": 7,
+      "action": "tap",
+      "target": "245,502",
+      "value": "",
+      "description": "Tap em (245, 502)",
+      "engine": "uiautomator2",
+      "maestro_command": ""
+    },
+    {
+      "id": "7637eaa1-eb85-4651-9da1-27ec16603c28",
+      "num": 8,
+      "action": "tap",
+      "target": "267,578",
+      "value": "",
+      "description": "Tap em (267, 578)",
+      "engine": "uiautomator2",
+      "maestro_command": ""
+    },
+    {
+      "id": "93c57beb-901a-4cb0-bc31-15c8ddf80e82",
+      "num": 9,
+      "action": "tap",
+      "target": "300,322",
+      "value": "",
+      "description": "Tap em (300, 322)",
+      "engine": "uiautomator2",
+      "maestro_command": ""
+    },
+    {
+      "id": "ac21b0c3-77d3-43d3-b647-1f1806db4bfc",
+      "num": 10,
+      "action": "tap",
+      "target": "300,322",
+      "value": "",
+      "description": "Tap em (300, 322)",
+      "engine": "uiautomator2",
+      "maestro_command": ""
+    },
+    {
+      "id": "f5c2365d-8fb0-4ab0-83d8-dc57d595d0e7",
+      "num": 11,
+      "action": "tap",
+      "target": "311,247",
+      "value": "",
+      "description": "Tap em (311, 247)",
+      "engine": "uiautomator2",
+      "maestro_command": ""
+    },
+    {
+      "id": "9597c8ef-4070-4ccc-98e7-36f1a7ac7b0e",
+      "num": 12,
+      "action": "tap",
+      "target": "311,247",
+      "value": "",
+      "description": "Tap em (311, 247)",
+      "engine": "uiautomator2",
+      "maestro_command": ""
+    },
+    {
+      "id": "f047e1ae-2dd5-4d58-a328-1b275abdaf4b",
+      "num": 13,
+      "action": "tap",
+      "target": "36,62",
+      "value": "",
+      "description": "Tap em (36, 62)",
+      "engine": "uiautomator2",
+      "maestro_command": ""
+    },
+    {
+      "id": "a1b86b3f-43c3-4f27-bbcb-8554037c1425",
+      "num": 14,
+      "action": "tap",
+      "target": "bt_bottom_bar_menu",
+      "value": "",
+      "description": "Tap — Menu (372, 993)",
+      "engine": "uiautomator2",
+      "maestro_command": "- tapOn:\n    id: \"bt_bottom_bar_menu\""
+    }
+  ],
+  "tags": [
+    "recorded",
+    "u2"
+  ],
+  "project_id": "b63d8dd4-f0dd-4eeb-a7ad-e8a00a4644ad",
+  "is_active": true,
+  "version": 1,
+  "created_at": "2026-04-15T16:06:49.072349"
+}

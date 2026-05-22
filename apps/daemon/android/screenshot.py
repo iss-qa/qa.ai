@@ -40,7 +40,18 @@ async def capture_screenshot_with_native_size(udid: str) -> tuple[bytes, int, in
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
-    png_bytes, _ = await proc.communicate()
+    try:
+        png_bytes, _ = await asyncio.wait_for(proc.communicate(), timeout=5.0)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        logger.warning(f"screencap timed out for {udid}")
+        return b"", 0, 0
+
+    if not png_bytes:
+        return b"", 0, 0
 
     try:
         # PIL decode/resize/encode is CPU-bound — run off the event loop so concurrent

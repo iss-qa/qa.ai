@@ -220,23 +220,32 @@ async def _execute_maestro_yaml(
     )
 
     all_output_lines = []
+    # Per-line timeout: if Maestro produces no output for 120 s it is hung —
+    # kill it and surface a timeout failure instead of blocking forever.
+    LINE_TIMEOUT = 120
 
-    async for raw_line in process.stdout:
+    while True:
+        try:
+            raw_line = await asyncio.wait_for(process.stdout.readline(), timeout=LINE_TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.warning(f"[MAESTRO] No output for {LINE_TIMEOUT}s — killing hung process")
+            try:
+                process.kill()
+                await process.wait()
+            except Exception:
+                pass
+            return 1, step_count, f"Timeout: sem atividade do Maestro por {LINE_TIMEOUT} segundos"
+
+        if not raw_line:  # EOF — process finished
+            break
+
         line = raw_line.decode('utf-8', errors='replace').strip()
         if not line:
             continue
 
         all_output_lines.append(line)
-
-        # Broadcast raw log
-        await ws_broadcaster.broadcast(RunEvent(
-            type=EventType.STEP_STARTED,
-            run_id=run_id,
-            data={"type": "maestro_log", "line": line, "engine": "maestro"},
-        ))
         log_manager.execution(f"[MAESTRO] {line}", run_id=run_id)
 
-        # Parse step status
         event = parse_maestro_line(line, run_id)
         if event:
             if event.type == EventType.STEP_COMPLETED:
@@ -246,6 +255,8 @@ async def _execute_maestro_yaml(
                 step_count += 1
                 event.data["step_num"] = step_count
                 last_failed_line = line
+            elif event.type == EventType.STEP_STARTED:
+                event.data["step_num"] = step_count + 1
             await ws_broadcaster.broadcast(event)
 
     code = await process.wait()

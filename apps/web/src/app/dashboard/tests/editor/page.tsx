@@ -428,6 +428,7 @@ export default function TestEditorPage() {
     const [showSaveDialog, setShowSaveDialog] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const devicePreviewRef = useRef<DevicePreviewHandle>(null);
+    const executionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Fetch project name when projectId is available
     useEffect(() => {
@@ -955,6 +956,10 @@ export default function TestEditorPage() {
                         reason: data.data.reason,
                     });
                 } else if (data.type === 'run_completed' || data.type === 'run_failed' || data.type === 'run_cancelled') {
+                    if (executionTimeoutRef.current) {
+                        clearTimeout(executionTimeoutRef.current);
+                        executionTimeoutRef.current = null;
+                    }
                     setIsExecuting(false);
                     setShowExecutionOverlay(false);
                     useVisionStore.getState().setExecutionProgress(null);
@@ -1228,6 +1233,7 @@ export default function TestEditorPage() {
         console.log("Executar Teste:", { execRunId, engine: stepsEngine, steps: steps.length });
 
         const timeoutId = setTimeout(() => {
+            executionTimeoutRef.current = null;
             setIsExecuting(current => {
                 if (current) {
                     console.error("Execucao Timeout: 5min excedidos.");
@@ -1237,6 +1243,7 @@ export default function TestEditorPage() {
                 return current;
             });
         }, 300000);
+        executionTimeoutRef.current = timeoutId;
 
         try {
             let res: Response;
@@ -1322,9 +1329,10 @@ export default function TestEditorPage() {
             if (!res.ok) {
                 const errText = await res.text();
                 console.error("Erro na request de execucao:", res.status, errText);
+                clearTimeout(timeoutId);
+                executionTimeoutRef.current = null;
                 setIsExecuting(false);
                 setShowExecutionOverlay(false);
-                clearTimeout(timeoutId);
                 alert("Falha ao iniciar execucao: " + res.status);
             } else {
                 const responseData = await res.json();
@@ -1332,9 +1340,10 @@ export default function TestEditorPage() {
             }
         } catch (error) {
             console.error("Execution failed:", error);
+            clearTimeout(timeoutId);
+            executionTimeoutRef.current = null;
             setIsExecuting(false);
             setShowExecutionOverlay(false);
-            clearTimeout(timeoutId);
         }
     };
 
