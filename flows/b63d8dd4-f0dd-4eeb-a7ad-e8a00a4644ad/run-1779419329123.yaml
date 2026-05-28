@@ -1,0 +1,26 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- assertVisible:
+    id: "bt_welcome_deposit"
+- assertVisible:
+    id: "bt_welcome_deposit"
+- tapOn:
+    id: "bt_welcome_deposit"
+- assertVisible:
+    id: "list_item_welcome_market_btcbrl"
+- assertVisible:
+    id: "list_item_welcome_market_btcbrl"
+- tapOn:
+    id: "list_item_welcome_market_btcbrl"
+- assertVisible:
+    id: "txt_welcome_title"
+- assertVisible:
+    id: "txt_welcome_title"
+- tapOn:
+    id: "txt_welcome_title"
+- assertVisible:
+    id: "txt_login_welcome"
+- assertVisible:
+    id: "txt_login_welcome"
+- tapOn:
+    id: "txt_login_welcome"

@@ -212,6 +212,66 @@ def _find_element_bounds_by_text(xml_str: str, text: str) -> Optional[dict]:
     return walk(root)
 
 
+def _find_element_bounds_by_query(xml_str: str, query: str) -> Optional[dict]:
+    """Resolve the Maestro `tapOn: "<query>"` shorthand to bounds.
+
+    Maestro's text shorthand is fuzzy: it can match a resource-id, an exact
+    text/content-desc, a regex, or a substring. We mimic that with a four-pass
+    walk so it works for "Entrar" (exact text), "br.com.foxbit/bt_login"
+    (resource id), and "Foxbit Earn\\nNovo" (multi-line content-desc that the
+    Maestro Studio bundle generates when concatenating overlapping labels).
+    """
+    try:
+        root = _ET.fromstring(xml_str)
+    except Exception:
+        return None
+
+    def collect(node, out):
+        rid = node.get("resource-id") or ""
+        t = node.get("text") or ""
+        cd = node.get("content-desc") or ""
+        b = _parse_bounds(node.get("bounds", ""))
+        if b and b["width"] > 0 and b["height"] > 0:
+            out.append((rid, t, cd, b))
+        for child in node:
+            collect(child, out)
+
+    nodes: list = []
+    collect(root, nodes)
+    if not nodes:
+        return None
+
+    # Maestro accepts \n in the query string; users see literal "\n" in the
+    # generated YAML when content-desc spans multiple labels.
+    norm = query.replace("\\n", "\n")
+
+    # Pass 1: exact match on resource-id (suffix-tolerant)
+    for rid, _t, _cd, b in nodes:
+        if rid == norm or rid.endswith("/" + norm) or rid.endswith(":" + norm):
+            return b
+
+    # Pass 2: exact match on text / content-desc
+    for _rid, t, cd, b in nodes:
+        if t == norm or cd == norm:
+            return b
+
+    # Pass 3: case-insensitive exact match
+    low = norm.lower()
+    for _rid, t, cd, b in nodes:
+        if t.lower() == low or cd.lower() == low:
+            return b
+
+    # Pass 4: substring match (prefer text, then content-desc)
+    for _rid, t, _cd, b in nodes:
+        if t and (norm in t or low in t.lower()):
+            return b
+    for _rid, _t, cd, b in nodes:
+        if cd and (norm in cd or low in cd.lower()):
+            return b
+
+    return None
+
+
 async def _get_fresh_xml(udid: str, max_age_ok: bool = True) -> str:
     """Return cached XML (updated every ~1.5s by the SSE dump task) or do a fresh dump."""
     if max_age_ok and state.mss_last_xml:
@@ -233,6 +293,27 @@ async def _fast_run_maestro_command(udid: str, yaml_content: str) -> Optional[di
     if "---" in body:
         parts = body.split("---", 1)
         body = parts[1].strip()
+
+    # tapOn shorthand:  - tapOn: "Entrar"   (Maestro resolves as id|text|desc)
+    m = _re.match(r'-\s*tapOn:\s*["\']([^"\']+)["\']\s*$', body, _re.MULTILINE | _re.DOTALL)
+    if m:
+        query = m.group(1)
+        xml = await _get_fresh_xml(udid, max_age_ok=False)
+        bounds = _find_element_bounds_by_query(xml, query) if xml else None
+        if bounds:
+            cx = bounds["x"] + bounds["width"] // 2
+            cy = bounds["y"] + bounds["height"] // 2
+            rc = await _adb_shell(udid, "input", "tap", str(cx), str(cy))
+            return {"success": rc == 0} if rc == 0 else {"success": False, "error": "tap failed"}
+        return {"success": False, "error": f"Element '{query}' not found"}
+
+    # assertVisible shorthand: - assertVisible: "Entrar"
+    m = _re.match(r'-\s*assertVisible:\s*["\']([^"\']+)["\']\s*$', body, _re.MULTILINE | _re.DOTALL)
+    if m:
+        query = m.group(1)
+        xml = await _get_fresh_xml(udid, max_age_ok=False)
+        bounds = _find_element_bounds_by_query(xml, query) if xml else None
+        return {"success": bool(bounds), "error": None if bounds else f"Element '{query}' not visible"}
 
     # tapOn with resource id:   - tapOn:\n    id: "xxx"
     m = _re.match(r'-\s*tapOn:\s*\n\s+id:\s*["\']([^"\']+)["\']\s*$', body, _re.MULTILINE | _re.DOTALL)

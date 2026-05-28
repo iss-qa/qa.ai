@@ -1,0 +1,9 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- launchApp:
+    clearState: true
+- assertVisible: "Pesquisar apps e jogos"
+- tapOn: "Pesquisar apps e jogos"
+- inputText: "WasteZero"
+- assertVisible: "WasteZero | Desperd\u00edcio Zero\nInstalado\n"
+- tapOn: "Abrir"

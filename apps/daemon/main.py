@@ -82,12 +82,22 @@ async def startup_event():
     except Exception:
         pass
 
-    # NOTE: Warm-up is intentionally disabled.
+    # NOTE: PROCESS warm-up is intentionally disabled.
     # `maestro studio --no-window` and `maestro test` both hold the device's
     # Maestro driver session. Running both simultaneously causes
     # TcpForwarder.waitFor TimeoutException and silently kills the test.
     # The embedded studio starts on-demand when the console needs it (first
     # use of _embedded_run_yaml). For "Run Test" we use `maestro test` directly.
+    #
+    # What we DO is read-only OS-level warm-up: page-cache the maestro JARs
+    # and pre-confirm the driver APK is registered on connected devices.
+    # See services/maestro/prewarm.py — safe to disable via MAESTRO_PREWARM=0.
+    try:
+        from services.maestro.prewarm import run_all as _maestro_prewarm
+        asyncio.create_task(_maestro_prewarm())
+        logger.info("Started maestro pre-warm background task.")
+    except Exception as e:
+        logger.warning(f"Pre-warm scheduling failed (non-fatal): {e}")
 
 
 @app.on_event("shutdown")

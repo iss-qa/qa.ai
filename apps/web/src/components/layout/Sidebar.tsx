@@ -42,8 +42,8 @@ export function Sidebar() {
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { href: '/dashboard/projects', label: 'Projetos', icon: Folder },
         { href: '/dashboard/tests', label: 'Testes', icon: FlaskConical },
-        { href: '/dashboard/devices', label: 'Dispositivos', icon: Smartphone },
         { href: '/dashboard/bugs', label: 'Bug Tracker', icon: Bug },
+        { href: '/dashboard/devices', label: 'Dispositivos', icon: Smartphone },
         { href: '/dashboard/logs', label: 'Logs', icon: ScrollText, badge: errorCount > 0 ? errorCount : undefined },
         { href: '/docs', label: 'Docs', icon: BookOpen },
     ];

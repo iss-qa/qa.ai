@@ -41,3 +41,8 @@ APP_PACKAGE_CACHE: dict = {
 
 # --- Background task strong references (prevent GC) ---
 background_tasks: set = set()
+
+# --- Per-device flag: Maestro driver APKs already verified this daemon lifecycle ---
+# `pm list instrumentation` adds ~500ms to every Run Test; cache the affirmative
+# result so subsequent runs skip the check. Invalidate on driver reinstall.
+mss_apks_verified: set = set()  # udids confirmed good

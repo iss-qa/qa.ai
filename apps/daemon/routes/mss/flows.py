@@ -4,6 +4,7 @@ import logging
 import os
 import time
 
+import yaml as _yaml
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
@@ -13,6 +14,72 @@ from services.maestro.runner import _embedded_run_yaml, _run_maestro_test_file
 
 router = APIRouter()
 logger = logging.getLogger("mss.flows")
+
+
+def _extract_command_start_lines(yaml_text: str) -> list:
+    """Return a list of `startLine` ints per top-level command in the flow,
+    in declaration order. 1-based line numbers.
+
+    Maestro flows have an optional `appId:` config header separated by `---`;
+    the commands list lives after `---`. We compose the YAML stream and walk
+    the SequenceNode children to extract `node.start_mark.line`.
+    """
+    try:
+        docs = list(_yaml.compose_all(yaml_text))
+    except _yaml.YAMLError:
+        return []
+    commands_node = next(
+        (d for d in reversed(docs) if isinstance(d, _yaml.SequenceNode)),
+        None,
+    )
+    if commands_node is None:
+        return []
+    return [child.start_mark.line + 1 for child in commands_node.value]
+
+
+def _build_original_commands(
+    command_statuses: list,
+    start_lines: list,
+    flow_done: bool,
+) -> list:
+    """Build the `originalCommands` array the bundle reads parallel to
+    `commandStatuses` to paint editor-gutter decorations.
+
+    Default bundle behaviour is to paint EVERY step's status — accumulating
+    green checks for the whole flow history. We want a SINGLE moving
+    indicator that follows the currently-running step, and a red mark when
+    a step fails. So we expose `startLine` only for the step the user should
+    see right now; other entries are `{}` (bundle's `qn(undefined)` check
+    skips paint).
+
+    - mid-flight: only the last RUNNING step gets a startLine
+    - on FAILED: the failed step keeps its startLine (red mark stays)
+    - on COMPLETED: the last step gets its startLine (final green tick)
+    """
+    n = len(command_statuses)
+    out: list = [{} for _ in range(n)]
+    if not n or not start_lines:
+        return out
+
+    target_idx = -1
+    # Priority: a FAILED step (red) always wins over RUNNING.
+    for i, cs in enumerate(command_statuses):
+        if cs.get("status") == "FAILED":
+            target_idx = i
+            break
+    if target_idx == -1:
+        # Last RUNNING step — the one currently executing.
+        for i in range(n - 1, -1, -1):
+            if command_statuses[i].get("status") == "RUNNING":
+                target_idx = i
+                break
+    if target_idx == -1 and flow_done:
+        # Flow ended cleanly — anchor the final state on the last step.
+        target_idx = n - 1
+
+    if 0 <= target_idx < n and target_idx < len(start_lines):
+        out[target_idx] = {"startLine": start_lines[target_idx]}
+    return out
 
 
 @router.get("/mss/api/devices/flowStatus/sse")
@@ -29,17 +96,28 @@ async def mss_flow_status_sse(flowId: str = "", filepath: str = ""):
         so each event MUST carry those keys as iterables or the bundle throws
         `TypeError: ... is not iterable` into its top-level error boundary
         and shows "Something went wrong".
+
+        `originalCommands` is indexed parallel to `commandStatuses` for the
+        editor's per-line highlight code; if absent, `Ei.originalCommands[ct]`
+        throws. Empty array is safe (optional chaining yields undefined).
         """
         payload = {
             "flowId": flowId,
             "flowStatus": status,
             "filepath": filepath,
+            "flowName": "",
             "commands": [],
+            "originalCommands": [],
             "onFlowStartCommandsStatuses": [],
             "commandStatuses": [],
             "onFlowCompleteCommandsStatuses": [],
             **extra,
         }
+        cs = payload.get("commandStatuses") or []
+        sample_keys = sorted(cs[0].keys()) if cs else []
+        logger.info(
+            f"SSE flow={flowId[:8]} status={status} cs={len(cs)} keys={sample_keys}"
+        )
         return f"data: {json.dumps(payload)}\n\n"
 
     async def generate():
@@ -99,7 +177,24 @@ async def mss_flow_status_sse(flowId: str = "", filepath: str = ""):
         flow_file_path = flow.get("filePath", "")
         flow_env = flow.get("env") or {}
 
-        yield _flow_event("RUNNING", output="Aguarde, iniciando teste...")
+        # Parse YAML to extract per-command line numbers — used by both the
+        # bundle's gutter painter (via `originalCommands[i].startLine`) and
+        # our injected helper script for auto-scroll + tab status dots.
+        source_yaml = yaml_content
+        if (not source_yaml) and flow_file_path and os.path.exists(flow_file_path):
+            try:
+                with open(flow_file_path, encoding="utf-8") as f:
+                    source_yaml = f.read()
+            except Exception:
+                source_yaml = ""
+        start_lines = _extract_command_start_lines(source_yaml)
+
+        yield _flow_event(
+            "RUNNING",
+            output="Aguarde, iniciando teste...",
+            originalCommands=[],
+            qamindStartLines=start_lines,
+        )
 
         # ── Real-time step streaming ──────────────────────────────────────────
         # We run the test in a background task and read step updates from a
@@ -168,6 +263,9 @@ async def mss_flow_status_sse(flowId: str = "", filepath: str = ""):
                         if status in ("COMPLETED", "FAILED", "WARNED", "SKIPPED"):
                             existing["endTimestamp"] = ts
                     else:
+                        # subCommands/subOnStart/subOnComplete are REQUIRED by
+                        # the bundle's ZKt(i): `i.subCommands.length>0 || ...`.
+                        # Missing → TypeError → "Something went wrong" boundary.
                         command_statuses.append({
                             "id": f"cmd-{step_index}",
                             "index": step_index,
@@ -175,10 +273,20 @@ async def mss_flow_status_sse(flowId: str = "", filepath: str = ""):
                             "status": status,
                             "timestamp": ts,
                             "command": desc,
+                            "subCommands": [],
+                            "subOnStartCommands": [],
+                            "subOnCompleteCommands": [],
                         })
                         step_index += 1
 
-                    yield _flow_event("RUNNING", commandStatuses=command_statuses)
+                    yield _flow_event(
+                        "RUNNING",
+                        commandStatuses=command_statuses,
+                        originalCommands=_build_original_commands(
+                            command_statuses, start_lines, flow_done=False
+                        ),
+                        qamindStartLines=start_lines,
+                    )
 
             # Await the task result (should already be done after sentinel)
             try:
@@ -198,7 +306,18 @@ async def mss_flow_status_sse(flowId: str = "", filepath: str = ""):
             state.mss_flows[flowId]["status"] = final_status
             state.mss_flows[flowId]["error"] = err if not ok else None
 
-            extra: dict = {"commandStatuses": command_statuses}
+            if not ok:
+                logger.error(f"[SSE flow={flowId[:8]}] FAILED: {err[:500] if err else 'no error message'}")
+            else:
+                logger.info(f"[SSE flow={flowId[:8]}] COMPLETED ({len(command_statuses)} steps)")
+
+            extra: dict = {
+                "commandStatuses": command_statuses,
+                "originalCommands": _build_original_commands(
+                    command_statuses, start_lines, flow_done=True
+                ),
+                "qamindStartLines": start_lines,
+            }
             if not ok and err:
                 extra["error"] = err
             yield _flow_event(final_status, **extra)
@@ -206,7 +325,15 @@ async def mss_flow_status_sse(flowId: str = "", filepath: str = ""):
         except Exception as e:
             state.mss_flows[flowId]["status"] = "FAILED"
             state.mss_flows[flowId]["error"] = str(e)
-            yield _flow_event("FAILED", error=str(e), commandStatuses=command_statuses)
+            yield _flow_event(
+                "FAILED",
+                error=str(e),
+                commandStatuses=command_statuses,
+                originalCommands=_build_original_commands(
+                    command_statuses, start_lines, flow_done=True
+                ),
+                qamindStartLines=start_lines,
+            )
 
     return StreamingResponse(
         generate(),

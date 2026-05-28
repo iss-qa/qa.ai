@@ -164,10 +164,15 @@ async def _ensure_maestro_apks(udid: str) -> None:
     'INSTRUMENTATION_FAILED: Unable to find instrumentation info'.
     Re-installing with `adb install -t` fixes this.
 
-    This is safe to call on every run; if the APKs are already correctly
-    installed, `pm list instrumentation | grep maestro` returns immediately.
+    Cached per-device per daemon lifecycle: once we've confirmed the
+    instrumentation runner is registered for a UDID, subsequent runs skip
+    the `pm list instrumentation` query (~500ms saved per Run Test click).
+    Cache is invalidated when we reinstall the APK below.
     """
     import shutil as _shutil
+
+    if udid in state.mss_apks_verified:
+        return  # cached: this device's driver was verified earlier this session
 
     # Fast check: instrumentation already registered AND test APK installed with -t?
     # Checking via `pm list instrumentation` is the authoritative indicator.
@@ -177,6 +182,7 @@ async def _ensure_maestro_apks(udid: str) -> None:
     )
     out, _ = await asyncio.wait_for(p.communicate(), timeout=5)
     if b"dev.mobile.maestro.test/androidx.test.runner.AndroidJUnitRunner" in out:
+        state.mss_apks_verified.add(udid)
         return  # already properly installed — skip reinstall
 
     logger.info(f"Maestro APKs not properly registered on {udid} — reinstalling")
@@ -228,6 +234,7 @@ async def _ensure_maestro_apks(udid: str) -> None:
         except Exception:
             pass
 
+    install_ok = True
     for cmd in [
         ["adb", "-s", udid, "install", maestro_app_apk],
         ["adb", "-s", udid, "install", "-t", maestro_server_apk],
@@ -241,9 +248,14 @@ async def _ensure_maestro_apks(udid: str) -> None:
             if "Success" in result:
                 logger.info(f"Installed {os.path.basename(cmd[-1])}")
             else:
+                install_ok = False
                 logger.warning(f"APK install may have failed: {result[:200]}")
         except Exception as e:
+            install_ok = False
             logger.warning(f"APK install error: {e}")
+
+    if install_ok:
+        state.mss_apks_verified.add(udid)
 
 
 async def _wake_and_unlock_device(udid: str) -> None:
@@ -322,8 +334,10 @@ async def _run_maestro_test_file(
     import shutil as _shutil
     maestro_bin = _shutil.which("maestro") or os.path.expanduser("~/.maestro/bin/maestro")
     if not os.path.exists(maestro_bin):
-        return False, "maestro binary not found"
+        logger.error(f"[runtest] maestro binary NOT FOUND at {maestro_bin}")
+        return False, f"Maestro CLI not found at {maestro_bin}. Install via `curl -Ls 'https://get.maestro.mobile.dev' | bash`."
 
+    logger.info(f"[runtest] preparing {file_path} for {udid} (bin={maestro_bin})")
     await _ensure_maestro_apks(udid)
     await _wake_and_unlock_device(udid)
 
@@ -335,8 +349,118 @@ async def _run_maestro_test_file(
                 run_env[k] = v
 
     async with state.test_run_lock:
-        _stop_embedded_studio()
-        return await _do_run_maestro_test(udid, cmd, run_env, file_path, step_queue)
+        import time as _time
+        t0 = _time.perf_counter()
+
+        # Only spend the 3s terminate-and-wait if there's actually a JVM up.
+        # Most Run Test clicks have no embedded studio running, so this is a
+        # pure no-op after the conditional. Pre-fix it added ~0.5-3s per run.
+        if state.mss_embedded_process and state.mss_embedded_process.poll() is None:
+            _stop_embedded_studio()
+            logger.info(f"[runtest] stopped embedded studio in {(_time.perf_counter()-t0)*1000:.0f}ms")
+
+        t1 = _time.perf_counter()
+        await _reset_maestro_driver_state(udid)
+        logger.info(f"[runtest] driver reset in {(_time.perf_counter()-t1)*1000:.0f}ms")
+
+        t2 = _time.perf_counter()
+        result = await _do_run_maestro_test(udid, cmd, run_env, file_path, step_queue)
+        logger.info(f"[runtest] maestro CLI run total {(_time.perf_counter()-t2)*1000:.0f}ms (incl. JVM start)")
+        # If it failed with the TcpForwarder timeout, the driver got stuck
+        # mid-run. Reset and retry ONCE. This is the same fix the Maestro
+        # error message itself recommends ("adb kill-server && adb start-server")
+        # but scoped to just this device's driver to avoid disrupting other ADB
+        # sessions.
+        ok, err = result
+        if (not ok) and err and "TcpForwarder" in err and "TimeoutException" in err:
+            logger.warning(f"[runtest] TcpForwarder timeout — resetting driver and retrying once")
+            await _reset_maestro_driver_state(udid, hard=True)
+            result = await _do_run_maestro_test(udid, cmd, run_env, file_path, step_queue)
+        return result
+
+
+async def _reset_maestro_driver_state(udid: str, hard: bool = False) -> None:
+    """Bring the Maestro Driver APK back to a clean state before `maestro test`.
+
+    The TcpForwarder failure (`dadb.forwarding.TcpForwarder.waitFor:153`) means
+    the host got an ADB forward but the device-side driver isn't responding to
+    `am instrument` — usually because a previous run (Insert & Run, embedded
+    studio, or aborted Run Test) left the driver instrumentation pinned, OR a
+    previous `maestro test` JVM got stopped (state `T`) mid-flight and is
+    still holding the ADB forward port on the host side.
+
+    Steps:
+    1. Kill any stale `maestro.cli.AppKt` JVMs scoped to this device. They
+       hold ADB sockets even when stopped (SIGSTOP), blocking the new run.
+    2. Clear host-side adb forwards.
+    3. Force-stop the driver APK packages so `am instrument` can start fresh.
+    4. With `hard=True`: `adb reconnect` to re-handshake without disrupting
+       the global adb server.
+    """
+    async def _adb(*args, timeout=5):
+        try:
+            p = await asyncio.create_subprocess_exec(
+                "adb", "-s", udid, *args,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(p.wait(), timeout=timeout)
+        except Exception as e:
+            logger.debug(f"[reset] adb {' '.join(args)} failed: {e}")
+
+    # 1. Kill zombie maestro JVMs targeting THIS device. Match the exact cmdline
+    #    so we don't kill a maestro run for a different UDID running in parallel.
+    try:
+        ps = await asyncio.create_subprocess_exec(
+            "ps", "-eo", "pid,command",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await asyncio.wait_for(ps.communicate(), timeout=5)
+        lines = out.decode(errors="replace").splitlines()
+        zombies = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            if "maestro.cli.AppKt" in line and udid in line:
+                parts = line.split(None, 1)
+                if parts and parts[0].isdigit():
+                    zombies.append(int(parts[0]))
+        if zombies:
+            logger.warning(f"[reset] killing {len(zombies)} stale maestro JVM(s) on {udid}: {zombies}")
+            import signal as _sig
+            import os as _os
+            for pid in zombies:
+                try:
+                    _os.kill(pid, _sig.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except Exception as e:
+                    logger.debug(f"[reset] kill {pid} failed: {e}")
+            await asyncio.sleep(0.3)
+    except Exception as e:
+        logger.debug(f"[reset] zombie scan failed: {e}")
+
+    # 2 + 3. Release host-side ADB forwards + force-stop driver APKs.
+    # These commands target the same device but the ADB daemon serialises
+    # them on the wire; firing concurrently still saves ~50% wall-time because
+    # asyncio doesn't block on each subprocess spawn.
+    await asyncio.gather(
+        _adb("forward", "--remove-all"),
+        _adb("shell", "am", "force-stop", "dev.mobile.maestro.test", timeout=3),
+        _adb("shell", "am", "force-stop", "dev.mobile.maestro", timeout=3),
+    )
+
+    if hard:
+        # 4. Nuke the adb side of this device. `reconnect` triggers re-handshake
+        #    without killing the global adb server.
+        await _adb("reconnect", timeout=5)
+        await asyncio.sleep(1.0)  # let the device re-attach
+    else:
+        # Cut settle from 400ms → 150ms. The kernel typically releases the
+        # forwarded socket within a frame; longer waits were defensive.
+        await asyncio.sleep(0.15)
+    logger.info(f"[reset] driver state cleaned on {udid} (hard={hard})")
 
 
 def _stop_embedded_studio() -> None:
@@ -368,7 +492,9 @@ async def _do_run_maestro_test(
     """
     state.adb_command_active.set()
     stderr_chunks: list = []
+    stdout_tail: list = []  # last few stdout lines for the error trailer
     proc = None
+    logger.info(f"[runtest] starting: {' '.join(cmd)} (cwd={os.path.dirname(file_path)})")
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -385,24 +511,41 @@ async def _do_run_maestro_test(
                 if not raw:
                     break
                 text = raw.decode("utf-8", errors="replace").rstrip()
+                if text:
+                    logger.info(f"[runtest stdout] {text}")
+                    stdout_tail.append(text)
+                    if len(stdout_tail) > 30:
+                        stdout_tail.pop(0)
                 if step_queue is not None and text:
                     parsed = _parse_maestro_line(text)
                     if parsed:
                         await step_queue.put(parsed)
 
         async def _drain_stderr():
-            data = await proc.stderr.read()
-            stderr_chunks.append(data)
+            while True:
+                raw = await proc.stderr.readline()
+                if not raw:
+                    break
+                stderr_chunks.append(raw)
+                text = raw.decode("utf-8", errors="replace").rstrip()
+                if text:
+                    logger.warning(f"[runtest stderr] {text}")
 
         await asyncio.wait_for(
             asyncio.gather(_drain_stdout(), _drain_stderr(), proc.wait()),
             timeout=600,
         )
 
+        logger.info(f"[runtest] exit code={proc.returncode}")
         if proc.returncode == 0:
             return True, ""
-        msg = b"".join(stderr_chunks).decode("utf-8", errors="replace").strip()
-        return False, msg or "Test failed"
+        stderr_msg = b"".join(stderr_chunks).decode("utf-8", errors="replace").strip()
+        # Prefer stderr; fall back to last stdout lines (maestro often prints
+        # the real failure on stdout, e.g. "Element not visible").
+        msg = stderr_msg
+        if not msg and stdout_tail:
+            msg = "\n".join(stdout_tail[-10:])
+        return False, msg or f"Test failed (exit {proc.returncode})"
 
     except asyncio.TimeoutError:
         if proc:

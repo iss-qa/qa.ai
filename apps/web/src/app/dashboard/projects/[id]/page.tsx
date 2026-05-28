@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Play, Plus, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, X, Download, Upload, FileUp, AlertTriangle, CheckCircle2, ScanSearch, Monitor, Square, ChevronDown, ChevronRight, MousePointerClick, Eye, Copy, Smartphone, Wand2, RefreshCw, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Play, Plus, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, X, Download, Upload, FileUp, AlertTriangle, CheckCircle2, ScanSearch, Monitor, Square, ChevronDown, ChevronRight, MousePointerClick, Eye, Copy, Smartphone, Wand2, RefreshCw, ExternalLink, MoreVertical, Clapperboard } from 'lucide-react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useDeviceStore } from '@/store/deviceStore';
 import { DevicePreview, type DevicePreviewHandle, type RecordedInteraction } from '@/components/DevicePreview';
@@ -29,6 +29,7 @@ interface TestCase {
 export default function ProjectDetailPage() {
     const params = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const projectId = params.id as string;
 
     const [project, setProject] = useState<Project | null>(null);
@@ -49,13 +50,135 @@ export default function ProjectDetailPage() {
     const [showMaestroStudio, setShowMaestroStudio] = useState(false);
     const [maestroPhase, setMaestroPhase] = useState<'starting' | 'ready' | 'error'>('starting');
     const [maestroReloadKey, setMaestroReloadKey] = useState(0);
+
+    // "Salvar como Teste" — reads the iframe's active file via postMessage bridge
+    const maestroIframeRef = useRef<HTMLIFrameElement>(null);
+    const [saveAsTestOpen, setSaveAsTestOpen] = useState(false);
+    const [saveAsTestPhase, setSaveAsTestPhase] = useState<'loading' | 'review' | 'saving' | 'error' | 'success'>('loading');
+    const [saveAsTestData, setSaveAsTestData] = useState<{ path: string; name: string; content: string; steps: any[]; appId: string | null } | null>(null);
+    const [saveAsTestName, setSaveAsTestName] = useState('');
+    const [saveAsTestError, setSaveAsTestError] = useState('');
+    const [showMoreMenu, setShowMoreMenu] = useState(false);
+    const moreMenuRef = useRef<HTMLDivElement>(null);
     // Frontend patched: "http://localhost:5050" → "http://localhost:8001/mss"
     // Cache-bust query string ensures updated polyfills/stubs load without hard refresh
     const MAESTRO_STUDIO_EMBED_URL = `/maestro-studio/index.html?v=${maestroReloadKey}`;
     const MAESTRO_STUDIO_API_URL = 'http://localhost:8001/mss';
     // unused in simple flow but kept for cleanup safety
 
-    const openMaestroStudio = () => {
+    // Open a saved test directly inside the Maestro Studio iframe.
+    // Reconstructs the YAML from app_id + maestro_command of each step,
+    // writes it to disk in the project's workspace, then opens the iframe
+    // with that file pre-opened as the active tab.
+    const openTestInMaestroStudio = async (e: React.MouseEvent, test: TestCase) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+            const { data: proj } = await supabase
+                .from('projects')
+                .select('workspace_path')
+                .eq('id', projectId)
+                .single();
+            const workspace = (proj as any)?.workspace_path || null;
+            if (!workspace) {
+                setShowMaestroStudio(false);  // close pre-opened modal if deep-linked
+                alert('Defina um workspace para este projeto antes. Clique em "Criar Teste" e escolha uma pasta no Maestro Studio.');
+                return;
+            }
+
+            // Try to get appId from the row first, else from inline `appId:` on any command.
+            const t = test as any;
+            const appIdRow = t.app_id || null;
+            const steps: any[] = Array.isArray(t.steps) ? t.steps : [];
+            let appId: string | null = appIdRow;
+            if (!appId) {
+                for (const s of steps) {
+                    const m = (s.maestro_command || '').match(/appId\s*:\s*["']?([^"'\n\r]+)["']?/);
+                    if (m && m[1]) { appId = m[1].trim(); break; }
+                }
+            }
+            if (!appId) {
+                setShowMaestroStudio(false);
+                alert('Este teste nao tem appId definido. Re-salve via "Salvar como Teste" ou edite-o e re-salve para gravar o appId.');
+                return;
+            }
+
+            const commands = steps.map(s => s.maestro_command || '').filter(Boolean).join('\n');
+            const yamlContent = `appId: ${appId}\n---\n${commands}\n`;
+
+            // Filename derived from test name (snake-case, safe chars only).
+            const safeName = (test.name || 'teste')
+                .toLowerCase()
+                .replace(/\s+/g, '_')
+                .replace(/[^a-z0-9_-]/g, '')
+                .slice(0, 80) || 'teste';
+            const fullPath = `${workspace.replace(/\/$/, '')}/${safeName}.yaml`;
+
+            // Persist the YAML to disk via the existing daemon endpoint.
+            const writeRes = await fetch(`${DAEMON}/api/maestro-studio/file/create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: fullPath, content: yamlContent }),
+            });
+            const writeData = await writeRes.json().catch(() => ({}));
+            if (!writeData?.success) {
+                console.error('Failed to write YAML for studio:', writeData);
+                setShowMaestroStudio(false);
+                alert('Falha ao escrever o YAML no workspace. Verifique o caminho e tente novamente.');
+                return;
+            }
+
+            // Pre-open the file as active tab. localStorage is shared with the
+            // iframe (same origin) so the bundle picks this up on next load.
+            localStorage.removeItem('maestro-expanded-folders');
+            localStorage.setItem('maestro-workspace-path', JSON.stringify(workspace));
+            localStorage.setItem('maestro-open-tabs', JSON.stringify([fullPath]));
+            localStorage.setItem('maestro-active-tab', JSON.stringify(fullPath));
+
+            // Cache-bust and open. We skip the workspace-resolve dance inside
+            // openMaestroStudio because we already set the right values above.
+            setMaestroReloadKey(Date.now());
+            setShowMaestroStudio(true);
+            setMaestroPhase('ready');
+        } catch (err) {
+            console.error('openTestInMaestroStudio failed:', err);
+            setShowMaestroStudio(false);
+            alert('Erro ao abrir o teste no Maestro Studio.');
+        }
+    };
+
+    // Maestro Studio bundle keeps workspace + open tabs + tree state in
+    // localStorage with global keys. Opening the iframe for a different
+    // project would inherit those values — workspace from project A would
+    // show up inside project B. We scope the state to this project by
+    // (1) loading the saved workspace_path from projects.workspace_path,
+    // (2) clearing tab/folder state on every open, and (3) saving back
+    // any new workspace the user picks (see useEffect handler below).
+    const openMaestroStudio = async () => {
+        try {
+            const { data } = await supabase
+                .from('projects')
+                .select('workspace_path')
+                .eq('id', projectId)
+                .single();
+            const ws = (data as any)?.workspace_path || null;
+
+            // Reset session-specific keys so we don't carry over the
+            // previous project's open tabs / tree expansion.
+            localStorage.removeItem('maestro-open-tabs');
+            localStorage.removeItem('maestro-active-tab');
+            localStorage.removeItem('maestro-expanded-folders');
+
+            // Apply this project's workspace (or clear it so the bundle
+            // shows the "select workspace" splash).
+            if (ws) {
+                localStorage.setItem('maestro-workspace-path', JSON.stringify(ws));
+            } else {
+                localStorage.removeItem('maestro-workspace-path');
+            }
+        } catch (e) {
+            console.warn('Failed to scope iframe state for project:', e);
+        }
         setMaestroReloadKey(Date.now()); // cache-bust on every open
         setShowMaestroStudio(true);
         setMaestroPhase('ready');
@@ -64,6 +187,205 @@ export default function ProjectDetailPage() {
     const reloadMaestroStudio = () => {
         setMaestroReloadKey(Date.now());
         setMaestroPhase('ready');
+    };
+
+    // Parse a Maestro YAML test file into the step shape used by test_cases.steps.
+    // Shared between the "Importar YAML" upload flow and "Salvar como Teste" from
+    // the Maestro Studio iframe so both produce identical row shapes.
+    //
+    // Each step's `maestro_command` preserves the FULL multi-line block (parent +
+    // indented children). The editor's "Executar Teste" rebuilds the YAML by
+    // joining these commands; if we only captured the parent line, multi-line
+    // commands like `- tapOn:\n    id: "btn"` would lose their selector and the
+    // run would fail with "no element specified".
+    const extractAppIdFromYaml = (raw: string): string | null => {
+        // YAML header: first `appId:` line before `---`. Quoted or unquoted.
+        const headerEnd = raw.indexOf('---');
+        const header = headerEnd >= 0 ? raw.slice(0, headerEnd) : raw;
+        const m = header.match(/^\s*appId\s*:\s*["']?([^"'\n\r]+)["']?\s*$/m);
+        return m ? m[1].trim() : null;
+    };
+
+    const parseMaestroYamlToSteps = (rawContent: string): any[] => {
+        const content = rawContent
+            .split('\n')
+            .filter(line => !line.trimStart().startsWith('#'))
+            .join('\n');
+        if (!content.includes('---')) return [];
+        const parts = content.split('---', 2);
+        if (!parts[0].includes('appId')) return [];
+        const lines = parts[1].split('\n');
+        const steps: any[] = [];
+        let stepNum = 0;
+
+        const trimQuotes = (s: string) => s.trim().replace(/^"|"$/g, '');
+
+        for (let i = 0; i < lines.length; i++) {
+            const raw = lines[i];
+            const line = raw.trim();
+            if (!line || line.startsWith('#')) continue;
+            if (!line.startsWith('- ')) continue;
+
+            // Accumulate any subsequent indented child lines (Maestro block form).
+            const block: string[] = [raw];
+            while (i + 1 < lines.length) {
+                const nxt = lines[i + 1];
+                if (nxt.trim() === '' || nxt.startsWith('- ') || !/^\s/.test(nxt)) break;
+                if (nxt.trim().startsWith('#')) { i++; continue; }
+                block.push(nxt);
+                i++;
+            }
+            const fullCommand = block.join('\n');
+
+            stepNum++;
+            const cmdContent = line.substring(2).trim();
+            const children: Record<string, string> = {};
+            block.slice(1).forEach(l => {
+                const m = l.trim().match(/^([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$/);
+                if (m) children[m[1]] = trimQuotes(m[2]);
+            });
+
+            let action = '', target = '', value = '';
+
+            if (cmdContent === 'launchApp') { action = 'launchApp'; target = children.appId || 'Abre o aplicativo'; }
+            else if (cmdContent === 'clearState') { action = 'clearState'; target = 'Limpa estado do app'; }
+            else if (cmdContent === 'waitForAnimationToEnd') { action = 'waitForAnimationToEnd'; target = children.timeout || 'Aguarda transicao'; }
+            else if (cmdContent === 'hideKeyboard') { action = 'hideKeyboard'; target = 'Esconde teclado'; }
+            else if (cmdContent === 'back') { action = 'back'; target = 'Volta'; }
+            else if (cmdContent === 'scroll') { action = 'scroll'; target = 'Rola a tela'; }
+            else if (cmdContent.startsWith('launchApp:')) {
+                action = 'launchApp';
+                const inline = trimQuotes(cmdContent.replace('launchApp:', ''));
+                target = inline || children.appId || 'Abre o aplicativo';
+            }
+            else if (cmdContent === 'tapOn:' || cmdContent.startsWith('tapOn:')) {
+                action = 'tapOn';
+                const inline = trimQuotes(cmdContent.replace('tapOn:', ''));
+                target = inline || children.id || children.text || children.point || '';
+            }
+            else if (cmdContent === 'inputText:' || cmdContent.startsWith('inputText:')) {
+                action = 'inputText';
+                value = trimQuotes(cmdContent.replace('inputText:', '')) || children.text || '';
+                target = value ? `Digita: ${value}` : 'Digita texto';
+            }
+            else if (cmdContent === 'assertVisible:' || cmdContent.startsWith('assertVisible:')) {
+                action = 'assertVisible';
+                const inline = trimQuotes(cmdContent.replace('assertVisible:', ''));
+                target = inline || children.id || children.text || '';
+            }
+            else if (cmdContent.startsWith('extendedWaitUntil:')) {
+                action = 'extendedWaitUntil';
+                target = children.visible || '';
+                value = children.timeout || '5000';
+            }
+            else {
+                action = cmdContent.split(':')[0] || cmdContent;
+                target = Object.values(children).filter(Boolean).join(' ') || trimQuotes(cmdContent.split(':').slice(1).join(':')) || cmdContent;
+            }
+
+            steps.push({
+                id: String(stepNum),
+                num: stepNum,
+                action,
+                target,
+                value,
+                engine: 'maestro',
+                maestro_command: fullCommand,
+            });
+        }
+        return steps;
+    };
+
+    const openSaveAsTest = () => {
+        setSaveAsTestOpen(true);
+        setSaveAsTestPhase('loading');
+        setSaveAsTestError('');
+        setSaveAsTestData(null);
+        const iframe = maestroIframeRef.current;
+        if (!iframe || !iframe.contentWindow) {
+            setSaveAsTestPhase('error');
+            setSaveAsTestError('Iframe nao acessivel.');
+            return;
+        }
+        const requestId = `req-${Date.now()}`;
+        const handler = (e: MessageEvent) => {
+            const msg = e.data;
+            if (!msg || msg.type !== 'qamind:active-file' || msg.requestId !== requestId) return;
+            window.removeEventListener('message', handler);
+            const file = msg.file;
+            if (!file || !file.path || !file.content) {
+                setSaveAsTestPhase('error');
+                setSaveAsTestError('Nenhum arquivo aberto no editor.');
+                return;
+            }
+            const steps = parseMaestroYamlToSteps(file.content);
+            if (steps.length === 0) {
+                setSaveAsTestPhase('error');
+                setSaveAsTestError('Arquivo nao contem comandos Maestro validos (precisa de appId + --- + comandos).');
+                return;
+            }
+            const appId = extractAppIdFromYaml(file.content);
+            const defaultName = String(file.name || '').replace(/\.(ya?ml)$/i, '').replace(/_/g, ' ');
+            setSaveAsTestData({ path: file.path, name: file.name, content: file.content, steps, appId });
+            setSaveAsTestName(defaultName);
+            setSaveAsTestPhase('review');
+        };
+        window.addEventListener('message', handler);
+        iframe.contentWindow.postMessage({ type: 'qamind:get-active-file', requestId }, '*');
+        setTimeout(() => {
+            window.removeEventListener('message', handler);
+            setSaveAsTestPhase(p => (p === 'loading' ? 'error' : p));
+            setSaveAsTestError(prev => prev || 'Tempo esgotado esperando o iframe responder.');
+        }, 4000);
+    };
+
+    const confirmSaveAsTest = async () => {
+        if (!saveAsTestData) return;
+        const name = saveAsTestName.trim();
+        if (!name) return;
+        setSaveAsTestPhase('saving');
+        try {
+            const baseRow: Record<string, unknown> = {
+                name,
+                description: `Salvo do Maestro Studio: ${saveAsTestData.name}`,
+                steps: saveAsTestData.steps,
+                tags: ['maestro', 'studio'],
+                project_id: projectId,
+                is_active: true,
+                app_id: saveAsTestData.appId,
+            };
+
+            // Update if a test with this name already exists in the project,
+            // otherwise insert. Prevents duplicates from "Salvar como Teste"
+            // followed by a same-name save from the editor (or vice versa).
+            const { data: existing, error: lookupErr } = await supabase
+                .from('test_cases')
+                .select('id')
+                .eq('project_id', projectId)
+                .eq('name', name)
+                .order('created_at', { ascending: false })
+                .limit(1);
+            if (lookupErr) throw lookupErr;
+
+            if (existing && existing.length > 0) {
+                const { error } = await supabase
+                    .from('test_cases')
+                    .update(baseRow)
+                    .eq('id', existing[0].id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase
+                    .from('test_cases')
+                    .insert({ ...baseRow, version: 1 });
+                if (error) throw error;
+            }
+            setSaveAsTestPhase('success');
+            fetchProject();
+            setTimeout(() => setSaveAsTestOpen(false), 1500);
+        } catch (e: any) {
+            setSaveAsTestPhase('error');
+            setSaveAsTestError(`Erro ao salvar: ${e.message || e}`);
+        }
     };
 
     // Scanner (Scanear Aplicacao) state
@@ -99,10 +421,151 @@ export default function ProjectDetailPage() {
             .catch(() => {});
     }, [projectId]);
 
+    // Close kebab menu when clicking outside
+    useEffect(() => {
+        if (!showMoreMenu) return;
+        const handler = (e: MouseEvent) => {
+            if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+                setShowMoreMenu(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [showMoreMenu]);
+
     // Also update from deviceStore if available
     useEffect(() => {
         if (connectedDevice?.udid) setAvailableDeviceUdid(connectedDevice.udid);
     }, [connectedDevice]);
+
+    // Persist the workspace the user picks inside the iframe so the next
+    // time they open Maestro Studio for THIS project, that folder is
+    // pre-loaded instead of leaking from another project.
+    useEffect(() => {
+        const onMessage = async (e: MessageEvent) => {
+            const msg = e.data;
+            if (!msg || typeof msg !== 'object') return;
+            if (msg.type !== 'qamind:workspace-picked') return;
+            const path: string = msg.path || '';
+            if (!path) return;
+            try {
+                await supabase.from('projects').update({ workspace_path: path }).eq('id', projectId);
+            } catch (err) {
+                console.error('workspace_path persist failed:', err);
+            }
+        };
+        window.addEventListener('message', onMessage);
+        return () => window.removeEventListener('message', onMessage);
+    }, [projectId]);
+
+    // Listen for the bundle iframe's "flow-finished" postMessage so the test
+    // list reflects iframe-triggered Run Test results. Match test_cases by
+    // file basename within THIS project — we don't store the YAML path on
+    // test_cases, so name-based lookup is the only signal we have.
+    //
+    // We track when each flow STARTED (on `qamind:flow-started`, emitted by
+    // the bundle's SSE bridge) so the test_runs row can carry a real
+    // duration_ms instead of a 0 fallback.
+    const flowStartTimes = useRef<Record<string, number>>({});
+    useEffect(() => {
+        const onMessage = async (e: MessageEvent) => {
+            const msg = e.data;
+            if (!msg || typeof msg !== 'object') return;
+
+            if (msg.type === 'qamind:flow-started') {
+                if (msg.filepath) flowStartTimes.current[msg.filepath] = Date.now();
+                return;
+            }
+
+            if (msg.type !== 'qamind:flow-finished') return;
+            const filepath: string = msg.filepath || '';
+            const flowStatus: string = msg.flowStatus;
+            const status: string = flowStatus === 'COMPLETED' ? 'passed' : 'failed';
+            if (!filepath) return;
+            const basename = filepath.split('/').pop() || '';
+            const testName = basename.replace(/\.(ya?ml)$/i, '').replace(/_/g, ' ');
+            const startedMs = flowStartTimes.current[filepath];
+            const endedAt = new Date();
+            const startedAt = startedMs ? new Date(startedMs) : endedAt;
+            const durationMs = startedMs ? endedAt.getTime() - startedMs : null;
+            delete flowStartTimes.current[filepath];
+
+            try {
+                const { data, error } = await supabase
+                    .from('test_cases')
+                    .select('id')
+                    .eq('project_id', projectId)
+                    .eq('name', testName)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+                if (error) throw error;
+                const row = (data || [])[0];
+                if (!row) {
+                    // No matching test_cases row yet — user ran a workspace YAML
+                    // that wasn't saved as a test. Silent no-op.
+                    return;
+                }
+
+                await supabase.from('test_cases').update({
+                    last_run_at: endedAt.toISOString(),
+                    status,
+                }).eq('id', row.id);
+
+                // History row so the dashboard can compute real metrics.
+                let testRunId: string | null = null;
+                try {
+                    const insertRes = await supabase.from('test_runs').insert({
+                        test_case_id: row.id,
+                        project_id: projectId,
+                        status,
+                        started_at: startedAt.toISOString(),
+                        ended_at: endedAt.toISOString(),
+                        duration_ms: durationMs,
+                        device_udid: availableDeviceUdid || null,
+                        error_message: msg.error || (status === 'failed' ? 'Flow failed' : null),
+                        steps_total: typeof msg.stepCount === 'number' ? msg.stepCount : null,
+                        triggered_by: 'maestro_studio',
+                    }).select('id').single();
+                    testRunId = insertRes.data?.id || null;
+                } catch (e) {
+                    console.error('test_runs insert failed:', e);
+                }
+
+                // Auto-create a bug_report when the iframe Run Test failed,
+                // so the Bug Tracker reflects the same incident.
+                if (status === 'failed') {
+                    try {
+                        await supabase.from('bug_reports').insert({
+                            title: `Falha em ${testName} — Run Test (Maestro Studio)`,
+                            severity: 'medium',
+                            description: [
+                                `Captura automática durante execução no Maestro Studio.`,
+                                ``,
+                                `**Erro:** ${msg.error || 'sem mensagem'}`,
+                                ``,
+                                `**Arquivo:** ${filepath}`,
+                                typeof msg.stepCount === 'number' ? `**Passos executados:** ${msg.stepCount}` : '',
+                            ].filter(Boolean).join('\n'),
+                            project_id: projectId,
+                            test_case_id: row.id,
+                            test_run_id: testRunId,
+                            status: 'open',
+                            source: 'automation',
+                        });
+                    } catch (e) {
+                        // bug_reports may not exist yet (migration pending).
+                        console.warn('auto bug_report insert failed:', e);
+                    }
+                }
+
+                fetchProject();  // refresh the table to show new badge + timestamp
+            } catch (err) {
+                console.error('flow-finished persist failed:', err);
+            }
+        };
+        window.addEventListener('message', onMessage);
+        return () => window.removeEventListener('message', onMessage);
+    }, [projectId, availableDeviceUdid]);
 
     // When user taps on DevicePreview during "select_app" phase,
     // wait for the app to open, then detect the foreground package
@@ -348,21 +811,26 @@ export default function ProjectDetailPage() {
 
     const confirmDeleteTest = async () => {
         if (!deletingTestId) return;
+        // Capture and close the modal IMMEDIATELY. Otherwise the modal keeps
+        // rendering during the async work, and between `setTests` (which drops
+        // the row) and `setDeletingTestId(null)` (which closes the modal) the
+        // confirmation reads `tests.find(...).name` as undefined and re-paints
+        // with an empty title — looks like a second prompt.
+        const targetId = deletingTestId;
+        setDeletingTestId(null);
         try {
-            const { error } = await supabase.from('test_cases').delete().eq('id', deletingTestId);
+            const { error } = await supabase.from('test_cases').delete().eq('id', targetId);
             if (error) throw error;
-            setTests(prev => prev.filter(t => t.id !== deletingTestId));
+            setTests(prev => prev.filter(t => t.id !== targetId));
 
             // Also delete local file if it exists
             const DAEMON = process.env.NEXT_PUBLIC_DAEMON_URL || 'http://localhost:8001';
             try {
-                await fetch(`${DAEMON}/api/tests/${deletingTestId}`, { method: 'DELETE' });
+                await fetch(`${DAEMON}/api/tests/${targetId}`, { method: 'DELETE' });
             } catch { /* local delete is best-effort */ }
         } catch (error) {
             console.error('Error deleting test:', error);
             alert('Erro ao excluir teste.');
-        } finally {
-            setDeletingTestId(null);
         }
     };
 
@@ -463,21 +931,42 @@ export default function ProjectDetailPage() {
                 return;
             }
 
-            // Save to Supabase
+            // Save to Supabase — upsert by name so re-importing the same YAML
+            // refreshes the existing row instead of creating a duplicate entry.
             const testName = file.name.replace('.yaml', '').replace('.yml', '').replace(/_/g, ' ');
-            const { error } = await supabase.from('test_cases').insert({
+            const importedAppId = extractAppIdFromYaml(rawContent);
+            const baseRow: Record<string, unknown> = {
                 name: testName,
                 description: `Importado de ${file.name} (${steps.length} passos)`,
                 steps,
                 tags: ['maestro', 'imported'],
                 project_id: projectId,
                 is_active: true,
-                version: 1,
-            }).select().single();
+                app_id: importedAppId,
+            };
+            const { data: existingImport, error: lookupErr } = await supabase
+                .from('test_cases')
+                .select('id')
+                .eq('project_id', projectId)
+                .eq('name', testName)
+                .order('created_at', { ascending: false })
+                .limit(1);
+            if (lookupErr) throw lookupErr;
 
-            if (error) throw error;
-
-            setImportStatus({ type: 'success', message: `"${testName}" importado com ${steps.length} passos!` });
+            if (existingImport && existingImport.length > 0) {
+                const { error } = await supabase
+                    .from('test_cases')
+                    .update(baseRow)
+                    .eq('id', existingImport[0].id);
+                if (error) throw error;
+                setImportStatus({ type: 'success', message: `"${testName}" atualizado com ${steps.length} passos!` });
+            } else {
+                const { error } = await supabase
+                    .from('test_cases')
+                    .insert({ ...baseRow, version: 1 });
+                if (error) throw error;
+                setImportStatus({ type: 'success', message: `"${testName}" importado com ${steps.length} passos!` });
+            }
             // Refresh tests list
             fetchProject();
 
@@ -535,6 +1024,46 @@ export default function ProjectDetailPage() {
     useEffect(() => {
         fetchProject();
     }, [projectId]);
+
+    // Deep-link from /dashboard/tests: ?openStudioFor=<id>.
+    // We split this into two effects so the modal opens INSTANTLY on mount
+    // (covers the project page so the user doesn't see it flash), while the
+    // actual YAML write + iframe load runs once `tests` is populated.
+    const studioAutoOpenedRef = useRef<string | null>(null);
+
+    // (1) On first mount, if the deep-link param is present, raise the modal
+    //     in 'starting' phase immediately. The user goes from click in /tests
+    //     straight to the Maestro Studio loading spinner — no project-page flash.
+    useEffect(() => {
+        if (searchParams?.get('openStudioFor')) {
+            setShowMaestroStudio(true);
+            setMaestroPhase('starting');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // (2) Once tests are loaded, find the target and trigger the real handler.
+    useEffect(() => {
+        const target = searchParams?.get('openStudioFor');
+        if (!target) return;
+        if (studioAutoOpenedRef.current === target) return;
+        if (!tests || tests.length === 0) return;
+        const test = tests.find(t => t.id === target);
+        if (!test) {
+            // Target id missing from this project — fall back to closing the
+            // pre-opened modal so the project page is usable.
+            studioAutoOpenedRef.current = target;
+            setShowMaestroStudio(false);
+            return;
+        }
+        studioAutoOpenedRef.current = target;
+        const fakeEvt = { preventDefault: () => {}, stopPropagation: () => {} } as unknown as React.MouseEvent;
+        openTestInMaestroStudio(fakeEvt, test as TestCase);
+        // Strip the param so a manual reload doesn't reopen.
+        const url = new URL(window.location.href);
+        url.searchParams.delete('openStudioFor');
+        window.history.replaceState({}, '', url.toString());
+    }, [tests, searchParams]);
 
     const handleSaveEdit = async () => {
         if (!formData.name.trim()) return;
@@ -662,55 +1191,80 @@ export default function ProjectDetailPage() {
             {/* Tests List */}
             <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
                 <div className="p-4 border-b border-white/10 flex items-center justify-between">
-                    <span className="text-sm font-bold text-white flex items-center gap-2">
-                        <FlaskConical className="w-4 h-4 text-brand" />
-                        Testes do Projeto ({tests.length})
-                    </span>
                     <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => { setShowScannerModal(true); setScannerPhase('select_app'); setScanResults(null); }}
-                            className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 border-cyan-500/30 text-cyan-400 bg-cyan-500/5 hover:bg-cyan-500/10 hover:border-cyan-500/50"
-                        >
-                            <ScanSearch className="w-3.5 h-3.5" /> Scanear Aplicacao
-                        </button>
-                        {hasElementMap && (
+                        {/* Kebab menu (left) — secondary actions: scanner / map / import YAML */}
+                        <div className="relative" ref={moreMenuRef}>
                             <button
-                                onClick={async () => {
-                                    try {
-                                        const res = await fetch(`${DAEMON}/api/projects/${projectId}/element-map`);
-                                        if (res.ok) {
-                                            const data = await res.json();
-                                            setScanResults(data);
-                                            setScannerPhase('results');
-                                            setShowScannerModal(true);
-                                            const screens = Object.keys(data.screens || {});
-                                            if (screens.length > 0) setExpandedScreens({ [screens[0]]: true });
-                                        }
-                                    } catch (e) { console.error('Failed to load element map:', e); }
-                                }}
-                                className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 border-cyan-500/20 text-cyan-400/70 bg-cyan-500/5 hover:bg-cyan-500/10"
+                                onClick={() => setShowMoreMenu(v => !v)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                                title="Mais ações"
+                                aria-haspopup="menu"
+                                aria-expanded={showMoreMenu}
                             >
-                                <Eye className="w-3.5 h-3.5" /> Ver Mapa
+                                <MoreVertical className="w-4 h-4" />
                             </button>
-                        )}
-                        <button
-                            onClick={() => setShowImportModal(true)}
-                            className="px-3 py-1.5 rounded-lg text-xs font-bold border border-amber-500/30 text-amber-400 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500/50 transition-all flex items-center gap-1.5"
-                        >
-                            <Upload className="w-3.5 h-3.5" /> Importar YAML
-                        </button>
+                            {showMoreMenu && (
+                                <div className="absolute left-0 top-full mt-1 w-56 bg-[#0A0C14] border border-white/10 rounded-lg shadow-2xl z-30 py-1">
+                                    <button
+                                        onClick={() => {
+                                            setShowMoreMenu(false);
+                                            setShowScannerModal(true);
+                                            setScannerPhase('select_app');
+                                            setScanResults(null);
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-xs font-medium text-cyan-300 hover:bg-white/5 flex items-center gap-2"
+                                    >
+                                        <ScanSearch className="w-3.5 h-3.5" /> Scanear Aplicação
+                                    </button>
+                                    {hasElementMap && (
+                                        <button
+                                            onClick={async () => {
+                                                setShowMoreMenu(false);
+                                                try {
+                                                    const res = await fetch(`${DAEMON}/api/projects/${projectId}/element-map`);
+                                                    if (res.ok) {
+                                                        const data = await res.json();
+                                                        setScanResults(data);
+                                                        setScannerPhase('results');
+                                                        setShowScannerModal(true);
+                                                        const screens = Object.keys(data.screens || {});
+                                                        if (screens.length > 0) setExpandedScreens({ [screens[0]]: true });
+                                                    }
+                                                } catch (e) { console.error('Failed to load element map:', e); }
+                                            }}
+                                            className="w-full text-left px-3 py-2 text-xs font-medium text-cyan-300/80 hover:bg-white/5 flex items-center gap-2"
+                                        >
+                                            <Eye className="w-3.5 h-3.5" /> Ver Mapa
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => { setShowMoreMenu(false); setShowImportModal(true); }}
+                                        className="w-full text-left px-3 py-2 text-xs font-medium text-amber-300 hover:bg-white/5 flex items-center gap-2"
+                                    >
+                                        <Upload className="w-3.5 h-3.5" /> Importar YAML
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        <span className="text-sm font-bold text-white flex items-center gap-2">
+                            <FlaskConical className="w-4 h-4 text-brand" />
+                            Testes do Projeto ({tests.length})
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-2">
                         <button
                             onClick={openMaestroStudio}
                             className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 border-violet-500/40 text-violet-300 bg-violet-500/10 hover:bg-violet-500/20 hover:border-violet-500/60"
-                            title="Abrir Maestro Studio integrado"
+                            title="Abrir Maestro Studio integrado para criar um novo teste"
                         >
-                            <Wand2 className="w-3.5 h-3.5" /> Novo Teste com Maestro Studio
+                            <Wand2 className="w-3.5 h-3.5" /> Criar Teste
                         </button>
                         <Link
                             href={`/dashboard/tests/editor?projectId=${projectId}`}
                             className="bg-brand text-black px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-brand/90 transition-all flex items-center gap-1.5"
+                            title="Abrir o editor de testes para gravar passos"
                         >
-                            <Plus className="w-3 h-3" /> Novo Teste
+                            <Clapperboard className="w-3.5 h-3.5" /> Gravar Teste
                         </Link>
                     </div>
                 </div>
@@ -753,9 +1307,17 @@ export default function ProjectDetailPage() {
                                     >
                                         <Download className="w-4 h-4" />
                                     </button>
-                                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-brand/10 hover:bg-brand/20 text-brand rounded-lg transition-colors border border-brand/20" title="Abrir no editor">
+                                    <button
+                                        onClick={(e) => openTestInMaestroStudio(e, test)}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 rounded-lg transition-colors border border-violet-500/20"
+                                        title="Abrir no Maestro Studio (edita o YAML com preview do device)"
+                                    >
+                                        <Wand2 className="w-3.5 h-3.5" />
+                                        <span className="text-[11px] font-bold">Studio</span>
+                                    </button>
+                                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-brand/10 hover:bg-brand/20 text-brand rounded-lg transition-colors border border-brand/20" title="Abrir no editor de passos">
                                         <Play className="w-3.5 h-3.5 fill-current" />
-                                        <span className="text-[11px] font-bold">Abrir</span>
+                                        <span className="text-[11px] font-bold">Editor</span>
                                     </div>
                                 </div>
                             </Link>
@@ -1154,42 +1716,47 @@ export default function ProjectDetailPage() {
             {/* Maestro Studio Webview Modal */}
             {showMaestroStudio && (
                 <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
-                    {/* Header */}
-                    <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 bg-[#0A0C14] shrink-0">
-                        <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-xl bg-violet-500/10 flex items-center justify-center">
-                                <Wand2 className="w-4 h-4 text-violet-400" />
-                            </div>
-                            <div>
-                                <h2 className="text-base font-bold text-white">Maestro Studio</h2>
-                                <p className="text-xs text-slate-400 font-mono flex items-center gap-1.5">
-                                    {MAESTRO_STUDIO_API_URL}
-                                    {maestroPhase === 'ready' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block animate-pulse" />}
-                                </p>
-                            </div>
+                    {/* Header — compact single-line bar */}
+                    <div className="flex items-center justify-between px-4 h-9 border-b border-white/10 bg-[#0A0C14] shrink-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <Wand2 className="w-3.5 h-3.5 text-violet-400 shrink-0" />
+                            <h2 className="text-xs font-bold text-white whitespace-nowrap">Maestro Studio</h2>
+                            <span className="text-[10px] text-slate-500 font-mono truncate flex items-center gap-1.5">
+                                {MAESTRO_STUDIO_API_URL}
+                                {maestroPhase === 'ready' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block animate-pulse" />}
+                            </span>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={openSaveAsTest}
+                                className="px-2.5 h-7 text-xs font-semibold text-white bg-violet-500 hover:bg-violet-600 rounded-md transition-colors flex items-center gap-1.5 mr-1"
+                                title="Salvar o arquivo aberto no editor como um teste do projeto"
+                            >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                Salvar como Teste
+                            </button>
                             <button
                                 onClick={reloadMaestroStudio}
-                                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+                                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-white/5 transition-colors"
                                 title="Recarregar"
                             >
-                                <RefreshCw className="w-4 h-4" />
+                                <RefreshCw className="w-3.5 h-3.5" />
                             </button>
                             <a
                                 href={MAESTRO_STUDIO_EMBED_URL}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+                                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-white/5 transition-colors"
                                 title="Abrir em nova aba (tela cheia)"
                             >
-                                <ExternalLink className="w-4 h-4" />
+                                <ExternalLink className="w-3.5 h-3.5" />
                             </a>
                             <button
                                 onClick={() => setShowMaestroStudio(false)}
-                                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+                                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-white/5 transition-colors"
+                                title="Fechar"
                             >
-                                <X className="w-5 h-5" />
+                                <X className="w-4 h-4" />
                             </button>
                         </div>
                     </div>
@@ -1226,6 +1793,7 @@ export default function ProjectDetailPage() {
                         {/* ── READY: render the embedded Maestro Studio frontend ── */}
                         {maestroPhase === 'ready' && (
                             <iframe
+                                ref={maestroIframeRef}
                                 key={maestroReloadKey}
                                 src={MAESTRO_STUDIO_EMBED_URL}
                                 className="w-full h-full border-0"
@@ -1233,6 +1801,101 @@ export default function ProjectDetailPage() {
                                 title="Maestro Studio"
                             />
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* "Salvar como Teste" Modal */}
+            {saveAsTestOpen && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+                    <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl">
+                        <div className="p-6 border-b border-white/10 flex items-center justify-between">
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                <CheckCircle2 className="w-5 h-5 text-violet-400" /> Salvar como Teste
+                            </h3>
+                            <button
+                                onClick={() => setSaveAsTestOpen(false)}
+                                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-white/5"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="p-6">
+                            {saveAsTestPhase === 'loading' && (
+                                <div className="flex items-center gap-3 text-slate-300 text-sm">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Lendo arquivo aberto no editor...
+                                </div>
+                            )}
+
+                            {saveAsTestPhase === 'error' && (
+                                <div className="flex flex-col gap-3">
+                                    <div className="flex items-start gap-2 text-red-400 text-sm">
+                                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                                        <span>{saveAsTestError}</span>
+                                    </div>
+                                    <p className="text-xs text-slate-500">
+                                        Abra um arquivo .yaml no editor do Maestro Studio antes de salvar.
+                                    </p>
+                                </div>
+                            )}
+
+                            {saveAsTestPhase === 'review' && saveAsTestData && (
+                                <div className="flex flex-col gap-4">
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Arquivo</label>
+                                        <div className="text-xs text-slate-300 font-mono truncate">{saveAsTestData.path}</div>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Nome do teste</label>
+                                        <input
+                                            type="text"
+                                            value={saveAsTestName}
+                                            onChange={(e) => setSaveAsTestName(e.target.value)}
+                                            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-brand/50"
+                                            autoFocus
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 font-bold">{saveAsTestData.steps.length} passos</span>
+                                        <span>parseados do YAML</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {saveAsTestPhase === 'saving' && (
+                                <div className="flex items-center gap-3 text-slate-300 text-sm">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Salvando no projeto...
+                                </div>
+                            )}
+
+                            {saveAsTestPhase === 'success' && (
+                                <div className="flex items-center gap-2 text-green-400 text-sm">
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    Teste salvo. Atualizando lista...
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="p-6 pt-2 flex gap-3 justify-end border-t border-white/10">
+                            <button
+                                onClick={() => setSaveAsTestOpen(false)}
+                                className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+                            >
+                                {saveAsTestPhase === 'success' ? 'Fechar' : 'Cancelar'}
+                            </button>
+                            {saveAsTestPhase === 'review' && (
+                                <button
+                                    onClick={confirmSaveAsTest}
+                                    disabled={!saveAsTestName.trim()}
+                                    className="px-5 py-2 bg-violet-500 text-white text-sm font-bold rounded-lg hover:bg-violet-600 disabled:opacity-50 transition-all flex items-center gap-2"
+                                >
+                                    <CheckCircle2 className="w-4 h-4" /> Salvar teste
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

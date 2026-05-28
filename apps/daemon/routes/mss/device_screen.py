@@ -269,8 +269,10 @@ async def mss_device_screen_new(instanceId: str = ""):
                     }
                     yield f"data: {json.dumps(event)}\n\n"
 
-                # Poll the cache at 50ms intervals — much faster than the screencap
-                # cycle, so new frames are delivered within one poll tick of capture.
+                # Poll the cache at 50ms intervals — fast enough to deliver
+                # frames within one tick of being captured (screencap is the
+                # bottleneck at 150-250ms) and slow enough to avoid starving
+                # the maestro subprocess's stdout drain task on Run Test.
                 await asyncio.sleep(0.05)
 
         finally:

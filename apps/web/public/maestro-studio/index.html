@@ -355,17 +355,32 @@
               // Workspace / Files — real filesystem via daemon
               'get-recent-workspaces':     [],
 
-              // Native folder picker → returns selected path string
+              // Native folder picker → returns selected path string.
+              // Also announces the pick to the parent window so the QAMind
+              // project page can persist it on the project row (per-project
+              // workspace, instead of a single global localStorage value).
               'create-workspace': function() {
                 return fetch('http://localhost:8001/api/maestro-studio/pick-directory')
                   .then(function(r) { return r.json(); })
-                  .then(function(d) { return (d && d.path) ? d.path : null; })
+                  .then(function(d) {
+                    var path = (d && d.path) ? d.path : null;
+                    if (path) {
+                      try { window.parent.postMessage({ type: 'qamind:workspace-picked', path: path }, '*'); } catch (e) {}
+                    }
+                    return path;
+                  })
                   .catch(function() { return null; });
               },
               'open-workspace-invoke': function() {
                 return fetch('http://localhost:8001/api/maestro-studio/pick-directory')
                   .then(function(r) { return r.json(); })
-                  .then(function(d) { return (d && d.path) ? d.path : null; })
+                  .then(function(d) {
+                    var path = (d && d.path) ? d.path : null;
+                    if (path) {
+                      try { window.parent.postMessage({ type: 'qamind:workspace-picked', path: path }, '*'); } catch (e) {}
+                    }
+                    return path;
+                  })
                   .catch(function() { return null; });
               },
 
@@ -375,7 +390,13 @@
                 return fetch('http://localhost:8001/api/maestro-studio/file/create', {
                   method: 'POST', headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ path: a.path || '', content: a.content || '' })
-                }).then(function(r) { return r.json(); }).catch(function() { return { success: false }; });
+                }).then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    // Refresh tree so the new file appears immediately under its folder.
+                    if (d && d.success && window.__qamindIpc) window.__qamindIpc.refreshWorkspace();
+                    return d;
+                  })
+                  .catch(function() { return { success: false }; });
               },
               'save-file': function(args) {
                 var a = (args && args[0]) || args || {};
@@ -410,24 +431,126 @@
                 return fetch('http://localhost:8001/api/maestro-studio/file/create', {
                   method: 'POST', headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ path: (a.path||'') + '/.gitkeep', content: '' })
-                }).then(function(r) { return r.json(); }).catch(function() { return { success: false }; });
+                }).then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    if (d && d.success && window.__qamindIpc) window.__qamindIpc.refreshWorkspace();
+                    return d;
+                  })
+                  .catch(function() { return { success: false }; });
               },
               'delete-file-or-directory': function(args) {
                 var path = (args && (args.path || args[0])) || '';
                 return fetch('http://localhost:8001/api/maestro-studio/file/delete', {
                   method: 'POST', headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ path: path })
-                }).then(function(r) { return r.json(); }).catch(function() { return { success: false }; });
+                }).then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    if (d && d.success && window.__qamindIpc) window.__qamindIpc.refreshWorkspace();
+                    return d;
+                  })
+                  .catch(function() { return { success: false }; });
               },
               'rename-file-or-directory': function(args) {
                 var a = (args && args[0]) || args || {};
                 return fetch('http://localhost:8001/api/maestro-studio/file/rename', {
                   method: 'POST', headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ oldPath: a.oldPath || a.path || '', newPath: a.newPath || a.newName || '' })
-                }).then(function(r) { return r.json(); }).catch(function() { return { success: false }; });
+                }).then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    if (d && d.success && window.__qamindIpc) {
+                      window.__qamindIpc.refreshWorkspace();
+                    }
+                    return d;
+                  })
+                  .catch(function() { return { success: false }; });
               },
-              'duplicate-file':            { success: true },
-              'move-files':                { success: true },
+              'duplicate-file': function(args) {
+                // Bundle calls duplicate-file({sourcePath, destPath}) or ({path, newPath}).
+                // Implement as read+create so drag-with-Alt or "Duplicate" menu works.
+                var a = (args && args[0]) || args || {};
+                var src = a.sourcePath || a.source || a.path || a.oldPath || '';
+                var dst = a.destPath || a.newPath || a.target || '';
+                if (!src || !dst) return Promise.resolve({ success: false, error: 'missing path' });
+                return fetch('http://localhost:8001/api/maestro-studio/file/read?path=' + encodeURIComponent(src))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    return fetch('http://localhost:8001/api/maestro-studio/file/create', {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ path: dst, content: d.content || '' })
+                    }).then(function(r) { return r.json(); });
+                  })
+                  .catch(function(e) { return { success: false, error: String(e) }; });
+              },
+              'move': function(args) {
+                // Single-item drag-drop. Bundle sends {sourcePath, targetPath} or
+                // similar variations. Reuse move-files via single-item list.
+                var a = (args && args[0]) || args || {};
+                var src = a.sourcePath || a.source || a.oldPath || a.path || '';
+                var dst = a.targetPath || a.destPath || a.newPath || '';
+                if (src && a.targetDir && !dst) {
+                  var name = String(src).split('/').pop();
+                  dst = (a.targetDir.replace(/\/$/, '')) + '/' + name;
+                }
+                if (!src || !dst) {
+                  console.warn('[ipc] move: missing src/dst', a);
+                  return Promise.resolve({ success: false, error: 'missing path' });
+                }
+                return fetch('http://localhost:8001/api/maestro-studio/file/rename', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ oldPath: src, newPath: dst })
+                }).then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    if (d && d.success && window.__qamindIpc) {
+                      window.__qamindIpc.refreshWorkspace();
+                    }
+                    return d;
+                  })
+                  .catch(function(e) { return { success: false, error: String(e) }; });
+              },
+              'move-files': function(args) {
+                // Bundle invokes move-files with various shapes depending on whether the
+                // user drag-drops one or many items. Normalize to a list of rename ops.
+                var a = (args && args[0]) || args || {};
+                var ops = [];
+                if (Array.isArray(a)) {
+                  ops = a;
+                } else if (Array.isArray(a.files)) {
+                  // {files: [{oldPath, newPath}], targetDir?}
+                  ops = a.files;
+                } else if (Array.isArray(a.sources) && a.targetDir) {
+                  // {sources: [...], targetDir}
+                  ops = a.sources.map(function(p) {
+                    var name = String(p).split('/').pop();
+                    return { oldPath: p, newPath: (a.targetDir.replace(/\/$/, '')) + '/' + name };
+                  });
+                } else if (a.oldPath && a.newPath) {
+                  ops = [{ oldPath: a.oldPath, newPath: a.newPath }];
+                } else if (a.sourcePath && a.destPath) {
+                  ops = [{ oldPath: a.sourcePath, newPath: a.destPath }];
+                } else if (a.path && a.newPath) {
+                  ops = [{ oldPath: a.path, newPath: a.newPath }];
+                } else if (a.path && a.targetDir) {
+                  var name = String(a.path).split('/').pop();
+                  ops = [{ oldPath: a.path, newPath: (a.targetDir.replace(/\/$/, '')) + '/' + name }];
+                }
+                if (!ops.length) {
+                  console.warn('[ipc] move-files: unrecognized args shape', a);
+                  return Promise.resolve({ success: false, error: 'unrecognized args' });
+                }
+                return Promise.all(ops.map(function(op) {
+                  return fetch('http://localhost:8001/api/maestro-studio/file/rename', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ oldPath: op.oldPath, newPath: op.newPath })
+                  }).then(function(r) { return r.json(); })
+                    .catch(function(e) { return { success: false, error: String(e) }; });
+                })).then(function(results) {
+                  var allOk = results.every(function(r) { return r && r.success; });
+                  if (allOk && window.__qamindIpc) {
+                    window.__qamindIpc.refreshWorkspace();
+                  }
+                  return { success: allOk, results: results };
+                });
+              },
               'directory-contents':        [],
               'open-file':                 null,
               'pick-app-file':             null,
@@ -548,6 +671,25 @@
               },
             };
 
+            // Expose dispatcher + workspace refresh so the QAMind "New file in
+            // folder" FAB can refresh the tree without reloading the iframe.
+            window.__qamindIpc = {
+              dispatch: _ipcDispatch,
+              refreshWorkspace: function(path) {
+                if (!path) {
+                  try { path = JSON.parse(localStorage.getItem('maestro-workspace-path') || 'null'); } catch (e) {}
+                }
+                if (!path) return;
+                fetch('http://localhost:8001/api/maestro-studio/file/list?path=' + encodeURIComponent(path))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    var children = (d && d.tree && d.tree.children) ? d.tree.children : [];
+                    _ipcDispatch('file-system-data', children);
+                    _ipcDispatch('directory-contents', path, children);
+                  });
+              },
+            };
+
             return {
               ipcRenderer: {
                 send: function(channel) {
@@ -662,6 +804,460 @@
           return {};
         };
       }
+    </script>
+
+    <!-- QAMind flowStatus SSE consumer: auto-scroll editor to active line +
+         tab status dot. Wraps EventSource so we don't fight the bundle's own
+         SSE listener — the bundle still gets every event untouched. -->
+    <script>
+      (function() {
+        const OrigES = window.EventSource;
+        if (!OrigES || OrigES.__qamindWrapped) return;
+
+        let lastActiveLine = null;
+        let lastTabKey = null;
+
+        function findMonacoEditor() {
+          if (!window.monaco || !window.monaco.editor) return null;
+          const eds = window.monaco.editor.getEditors ? window.monaco.editor.getEditors() : [];
+          for (const ed of eds) {
+            try {
+              if (ed.getModel && ed.getModel() && ed.getDomNode && ed.getDomNode().offsetParent) return ed;
+            } catch (e) {}
+          }
+          return eds[0] || null;
+        }
+
+        function autoScroll(line) {
+          if (!line || line === lastActiveLine) return;
+          lastActiveLine = line;
+          const ed = findMonacoEditor();
+          if (!ed) return;
+          try { ed.revealLineInCenterIfOutsideViewport(line, 1); } catch (e) {}
+        }
+
+        function updateTabDot(filepath, flowStatus) {
+          if (!filepath || (flowStatus !== 'COMPLETED' && flowStatus !== 'FAILED')) return;
+          const key = filepath + '|' + flowStatus;
+          if (key === lastTabKey) return;
+          lastTabKey = key;
+
+          const filename = filepath.split('/').pop();
+          if (!filename) return;
+
+          const candidates = document.querySelectorAll(
+            '[role="tab"], button[class*="tab" i], [class*="EditorTab"], div[class*="tab" i]'
+          );
+          const matches = [];
+          candidates.forEach(el => {
+            const txt = (el.textContent || '').trim();
+            if (txt && txt.indexOf(filename) !== -1) matches.push(el);
+          });
+          if (matches.length === 0) return;
+          matches.sort((a, b) => (a.textContent || '').length - (b.textContent || '').length);
+          const tab = matches[0];
+
+          const color = flowStatus === 'COMPLETED' ? '#22c55e' : '#ef4444';
+          let dot = tab.querySelector('.qamind-tab-status-dot');
+          if (!dot) {
+            dot = document.createElement('span');
+            dot.className = 'qamind-tab-status-dot';
+            dot.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;flex-shrink:0;box-shadow:0 0 6px currentColor;';
+            tab.insertBefore(dot, tab.firstChild);
+          }
+          dot.style.background = color;
+          dot.style.color = color;
+          dot.title = flowStatus === 'COMPLETED' ? 'Last run: PASS' : 'Last run: FAIL';
+        }
+
+        // ── Status banner ─────────────────────────────────────────────────
+        // Overlay shown on top of the device-screen area while a flow is
+        // running. The bundle's generic "Let's get you back on track" popup
+        // hides the real error from the SSE — this surfaces it so the user
+        // can diagnose Run Test failures without opening the daemon log.
+        let banner = null;
+        let bannerHideTimer = null;
+
+        function ensureBanner() {
+          if (banner) return banner;
+          banner = document.createElement('div');
+          banner.id = 'qm-flow-banner';
+          // Bottom-center, above the bundle's footer (Run Test / Run All Tests
+          // controls). RUNNING is a slim single-line pill; FAILED expands
+          // upward to fit the stack trace + copy button.
+          banner.style.cssText = 'position:fixed;bottom:72px;left:50%;transform:translateX(-50%);z-index:99996;min-width:320px;max-width:min(640px, 80vw);padding:10px 14px;border-radius:10px;font-family:system-ui,sans-serif;font-size:12px;line-height:1.45;color:#fff;background:#1c1f24;border:1px solid #3a3f47;box-shadow:0 8px 32px rgba(0,0,0,0.6);transition:opacity .25s, transform .25s;opacity:0;pointer-events:none;';
+          banner.innerHTML =
+            '<div style="display:flex;align-items:center;gap:10px;">' +
+              '<div id="qm-fb-head" style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;flex-shrink:0;"></div>' +
+              '<div id="qm-fb-step" style="color:#cbd5e1;font-family:ui-monospace,monospace;font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>' +
+              '<button id="qm-fb-close" title="Fechar" style="display:none;background:transparent;border:0;color:#9aa0a6;cursor:pointer;font-size:16px;line-height:1;padding:0 2px;flex-shrink:0;">×</button>' +
+            '</div>' +
+            '<div id="qm-fb-err-wrap" style="display:none;margin-top:10px;">' +
+              '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;">' +
+                '<span style="color:#fca5a5;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Erro do Maestro</span>' +
+                '<button id="qm-fb-copy" style="padding:4px 10px;background:#5b8def;color:#fff;border:0;border-radius:4px;cursor:pointer;font-size:11px;font-weight:500;display:inline-flex;align-items:center;gap:4px;">📋 Copiar</button>' +
+              '</div>' +
+              '<pre id="qm-fb-err" style="margin:0;padding:10px;background:#0f1115;border:1px solid #3a3f47;border-radius:6px;color:#fca5a5;font-family:ui-monospace,monospace;font-size:11px;line-height:1.4;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto;"></pre>' +
+            '</div>';
+          document.body.appendChild(banner);
+
+          const closeBtn = banner.querySelector('#qm-fb-close');
+          closeBtn.onclick = () => { banner.style.opacity = '0'; banner.style.pointerEvents = 'none'; };
+
+          const copyBtn = banner.querySelector('#qm-fb-copy');
+          copyBtn.onclick = async () => {
+            const text = banner.querySelector('#qm-fb-err').textContent || '';
+            try {
+              await navigator.clipboard.writeText(text);
+              copyBtn.textContent = '✓ Copiado';
+              copyBtn.style.background = '#22c55e';
+              setTimeout(() => {
+                copyBtn.textContent = '📋 Copiar';
+                copyBtn.style.background = '#5b8def';
+              }, 1500);
+            } catch (e) {
+              // Clipboard API may be blocked in iframe — fall back to selection.
+              const r = document.createRange();
+              r.selectNodeContents(banner.querySelector('#qm-fb-err'));
+              const sel = window.getSelection();
+              sel.removeAllRanges();
+              sel.addRange(r);
+              copyBtn.textContent = 'Selecionado · Cmd+C';
+              setTimeout(() => { copyBtn.textContent = '📋 Copiar'; }, 2000);
+            }
+          };
+          return banner;
+        }
+
+        function paintBanner(state) {
+          const el = ensureBanner();
+          const head = el.querySelector('#qm-fb-head');
+          const stepEl = el.querySelector('#qm-fb-step');
+          const errWrap = el.querySelector('#qm-fb-err-wrap');
+          const errEl = el.querySelector('#qm-fb-err');
+          const closeBtn = el.querySelector('#qm-fb-close');
+
+          const dotColor =
+            state.status === 'FAILED' ? '#ef4444' :
+            state.status === 'COMPLETED' ? '#22c55e' :
+            '#fbbf24';
+          const label =
+            state.status === 'FAILED' ? 'Teste falhou' :
+            state.status === 'COMPLETED' ? 'Teste concluído' :
+            state.spinner ? 'Iniciando teste…' : 'Executando…';
+
+          head.innerHTML =
+            '<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + dotColor + ';box-shadow:0 0 10px ' + dotColor + ';' + (state.status === 'RUNNING' ? 'animation:qmpulse 1.2s ease-in-out infinite;' : '') + '"></span>' +
+            '<span>' + label + (state.stepIdx >= 0 && state.totalSteps ? ' · passo ' + (state.stepIdx + 1) + '/' + state.totalSteps : '') + '</span>';
+          stepEl.textContent = state.stepText || '';
+          if (state.error) {
+            errWrap.style.display = 'block';
+            errEl.textContent = state.error;
+          } else {
+            errWrap.style.display = 'none';
+            errEl.textContent = '';
+          }
+          el.style.opacity = '1';
+
+          if (bannerHideTimer) { clearTimeout(bannerHideTimer); bannerHideTimer = null; }
+
+          if (state.status === 'COMPLETED') {
+            // Auto-hide success; allow click-to-dismiss too.
+            closeBtn.style.display = 'inline-block';
+            el.style.pointerEvents = 'auto';
+            bannerHideTimer = setTimeout(() => { if (banner) { banner.style.opacity = '0'; banner.style.pointerEvents = 'none'; } }, 5000);
+          } else if (state.status === 'FAILED') {
+            // Keep visible until user dismisses.
+            closeBtn.style.display = 'inline-block';
+            el.style.pointerEvents = 'auto';
+          } else {
+            // RUNNING — non-interactive, no close button.
+            closeBtn.style.display = 'none';
+            el.style.pointerEvents = 'none';
+          }
+        }
+
+        // Inject keyframes once
+        if (!document.getElementById('qm-pulse-kf')) {
+          const st = document.createElement('style');
+          st.id = 'qm-pulse-kf';
+          st.textContent = '@keyframes qmpulse{0%,100%{transform:scale(1);opacity:1;}50%{transform:scale(1.25);opacity:.6;}}';
+          document.head.appendChild(st);
+        }
+
+        // Track which filepaths have already had a `flow-started` posted so
+        // we don't emit one on every SSE heartbeat (only on the first event
+        // that carries a usable filepath).
+        const announcedStartFor = new Set();
+
+        // Auto-scroll the bundle's bottom progress list to keep the running
+        // step in view. The bundle renders each step as a row containing
+        // strings like "Tap on id: ...", "Assert that ... is visible",
+        // "Input text ...". We locate the Nth such row that matches the
+        // current `commandStatuses` index and `scrollIntoView()` it.
+        let lastScrolledIdx = -1;
+        function scrollBundleProgressTo(idx, totalSteps) {
+          if (idx < 0 || idx === lastScrolledIdx) return;
+          // Heuristic: bundle progress rows always contain a leading check/x
+          // glyph + a description starting with one of these verbs.
+          const allRows = document.querySelectorAll('div, li, tr');
+          const rows = [];
+          for (const el of allRows) {
+            // Skip if it has interactive descendants — these are typically
+            // wrapper containers, not the row itself.
+            const txt = (el.textContent || '').trim();
+            if (!txt) continue;
+            if (txt.length > 200) continue; // too long to be a single step row
+            // Match plain-text step rows from `commandStatuses[i].description`
+            if (/^(Tap on|Assert that|Input text|Launch app|Press key|Scroll|Back|Wait|Hide keyboard|Swipe|Take screenshot|Run flow|Run script)/i.test(txt)
+                && el.children.length <= 4 /* avoid nesting */) {
+              rows.push(el);
+            }
+          }
+          // De-dup parents whose first child is also a match (keep the leaf).
+          const leaves = rows.filter(r => !rows.some(o => o !== r && r.contains(o)));
+          if (idx < leaves.length) {
+            try {
+              leaves[idx].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+              lastScrolledIdx = idx;
+            } catch (e) {}
+          }
+        }
+
+        function handleSse(data) {
+          if (!data) return;
+          const cs = data.commandStatuses || [];
+          const lines = data.qamindStartLines || [];
+          let idx = -1;
+          for (let i = 0; i < cs.length; i++) {
+            if (cs[i] && cs[i].status === 'FAILED') { idx = i; break; }
+          }
+          if (idx === -1) {
+            for (let i = cs.length - 1; i >= 0; i--) {
+              if (cs[i] && cs[i].status === 'RUNNING') { idx = i; break; }
+            }
+          }
+          if (idx >= 0 && idx < lines.length) autoScroll(lines[idx]);
+          updateTabDot(data.filepath, data.flowStatus);
+
+          // First RUNNING event with a usable filepath → announce start to parent.
+          if (data.flowStatus === 'RUNNING' && data.filepath && !announcedStartFor.has(data.filepath)) {
+            announcedStartFor.add(data.filepath);
+            try {
+              window.parent.postMessage({
+                type: 'qamind:flow-started',
+                filepath: data.filepath,
+              }, '*');
+            } catch (e) {}
+          }
+
+          // Keep the bundle's progress list focused on the running step.
+          if (idx >= 0) scrollBundleProgressTo(idx, cs.length);
+          // Reset cursor when flow ends so the next run starts fresh
+          if (data.flowStatus === 'COMPLETED' || data.flowStatus === 'FAILED') {
+            lastScrolledIdx = -1;
+            announcedStartFor.delete(data.filepath || '');
+            // Tell the parent window (QAMind project page) that a flow finished
+            // so it can update the test_cases row's last_run_at + status. The
+            // bundle can't write to Supabase directly (no creds), so the parent
+            // matches by filepath basename within the current project.
+            try {
+              window.parent.postMessage({
+                type: 'qamind:flow-finished',
+                filepath: data.filepath || '',
+                flowStatus: data.flowStatus,
+                error: data.error || '',
+                stepCount: (data.commandStatuses || []).length,
+              }, '*');
+            } catch (e) {}
+          }
+
+          // Live banner — shows phase + real error
+          const activeCs = idx >= 0 ? cs[idx] : null;
+          const stepText = activeCs ? (activeCs.description || activeCs.command || '') : (data.output || '');
+          paintBanner({
+            status: data.flowStatus || 'RUNNING',
+            spinner: data.flowStatus === 'RUNNING' && cs.length === 0,
+            stepIdx: idx,
+            totalSteps: cs.length || (lines && lines.length) || 0,
+            stepText: stepText,
+            error: data.error || '',
+          });
+        }
+
+        function WrappedES(url, opts) {
+          const es = new OrigES(url, opts);
+          if (typeof url === 'string' && url.indexOf('/flowStatus/sse') !== -1) {
+            es.addEventListener('message', (e) => {
+              try { handleSse(JSON.parse(e.data)); } catch (err) {}
+            });
+          }
+          return es;
+        }
+        WrappedES.prototype = OrigES.prototype;
+        ['CONNECTING', 'OPEN', 'CLOSED'].forEach(k => { WrappedES[k] = OrigES[k]; });
+        Object.defineProperty(WrappedES, '__qamindWrapped', { value: true });
+        window.EventSource = WrappedES;
+      })();
+    </script>
+
+    <!-- QAMind: "New file in folder" FAB. The bundled file tree only exposes
+         a single root-level "+" button. This adds a floating button that lets
+         the user pick any folder (from the cached workspace list) and creates
+         a file inside it via the same create-file IPC. -->
+    <script>
+      (function() {
+        const DAEMON = 'http://localhost:8001';
+        let workspaceTree = null;
+
+        async function refreshTree() {
+          try {
+            const wsRaw = localStorage.getItem('maestro-workspace-path');
+            if (!wsRaw) return;
+            const ws = JSON.parse(wsRaw);
+            if (!ws) return;
+            const r = await fetch(DAEMON + '/api/maestro-studio/file/list?path=' + encodeURIComponent(ws));
+            const d = await r.json();
+            workspaceTree = d.tree || null;
+          } catch (e) {}
+        }
+
+        function listFolders() {
+          const out = [];
+          function walk(node, depth) {
+            if (!node || node.type !== 'directory') return;
+            out.push({ path: node.path, label: '  '.repeat(depth) + (node.name || node.path.split('/').pop() || '/') });
+            (node.children || []).forEach(c => walk(c, depth + 1));
+          }
+          walk(workspaceTree, 0);
+          return out;
+        }
+
+        function openDialog() {
+          refreshTree();
+          const folders = listFolders();
+          if (!folders.length) {
+            alert('Selecione um workspace primeiro.');
+            return;
+          }
+
+          const backdrop = document.createElement('div');
+          backdrop.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:99998;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;';
+
+          const card = document.createElement('div');
+          card.style.cssText = 'background:#1c1f24;color:#e8eaed;border:1px solid #2e3236;border-radius:8px;padding:18px 20px;min-width:380px;max-width:560px;box-shadow:0 12px 40px rgba(0,0,0,0.6);';
+          card.innerHTML =
+            '<div style="font-size:14px;font-weight:600;margin-bottom:12px;">Novo arquivo de teste</div>' +
+            '<label style="display:block;font-size:11px;color:#9aa0a6;margin-bottom:4px;">Pasta</label>' +
+            '<select id="qm-nf-dir" style="width:100%;padding:7px 9px;background:#15171a;color:#e8eaed;border:1px solid #2e3236;border-radius:4px;font-family:ui-monospace,monospace;font-size:12px;margin-bottom:12px;"></select>' +
+            '<label style="display:block;font-size:11px;color:#9aa0a6;margin-bottom:4px;">Nome do arquivo</label>' +
+            '<input id="qm-nf-name" type="text" placeholder="login.yaml" style="width:100%;padding:7px 9px;background:#15171a;color:#e8eaed;border:1px solid #2e3236;border-radius:4px;font-family:ui-monospace,monospace;font-size:12px;margin-bottom:16px;">' +
+            '<div style="display:flex;justify-content:flex-end;gap:8px;">' +
+              '<button id="qm-nf-cancel" style="padding:7px 14px;background:transparent;color:#e8eaed;border:1px solid #2e3236;border-radius:4px;cursor:pointer;font-size:12px;">Cancelar</button>' +
+              '<button id="qm-nf-ok" style="padding:7px 14px;background:#5b8def;color:#fff;border:0;border-radius:4px;cursor:pointer;font-size:12px;font-weight:500;">Criar</button>' +
+            '</div>';
+          backdrop.appendChild(card);
+          document.body.appendChild(backdrop);
+
+          const sel = card.querySelector('#qm-nf-dir');
+          folders.forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f.path;
+            opt.textContent = f.label;
+            sel.appendChild(opt);
+          });
+
+          const close = () => backdrop.remove();
+          card.querySelector('#qm-nf-cancel').onclick = close;
+          backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+
+          const nameInput = card.querySelector('#qm-nf-name');
+          nameInput.focus();
+
+          const create = async () => {
+            const dir = sel.value;
+            let name = (nameInput.value || '').trim();
+            if (!name) return nameInput.focus();
+            if (!/\.(ya?ml)$/i.test(name)) name += '.yaml';
+            const fullPath = dir.replace(/\/$/, '') + '/' + name;
+            try {
+              const r = await fetch(DAEMON + '/api/maestro-studio/file/create', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: fullPath, content: 'appId: br.com.foxbit.foxbitandroid\n---\n- launchApp:\n    clearState: true\n' })
+              });
+              const d = await r.json();
+              if (!d.success) { alert('Erro: ' + (d.error || 'desconhecido')); return; }
+              close();
+              if (window.__qamindIpc && window.__qamindIpc.refreshWorkspace) {
+                window.__qamindIpc.refreshWorkspace();
+              }
+            } catch (e) {
+              alert('Falha ao criar: ' + e);
+            }
+          };
+          card.querySelector('#qm-nf-ok').onclick = create;
+          nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') create(); });
+        }
+
+        function mountFab() {
+          if (document.getElementById('qm-newfile-fab')) return;
+          const fab = document.createElement('button');
+          fab.id = 'qm-newfile-fab';
+          fab.title = 'Novo arquivo em pasta';
+          fab.textContent = '+ Arquivo em pasta';
+          fab.style.cssText = 'position:fixed;bottom:18px;right:18px;padding:9px 14px;background:#5b8def;color:#fff;border:0;border-radius:20px;cursor:pointer;font-family:system-ui,sans-serif;font-size:12px;font-weight:500;box-shadow:0 4px 16px rgba(0,0,0,0.4);z-index:99997;';
+          fab.onmouseenter = () => { fab.style.background = '#6f9bf2'; };
+          fab.onmouseleave = () => { fab.style.background = '#5b8def'; };
+          fab.onclick = openDialog;
+          document.body.appendChild(fab);
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', mountFab);
+        } else {
+          mountFab();
+        }
+        // Re-mount if the React app remounts the body
+        new MutationObserver(mountFab).observe(document.documentElement, { childList: true, subtree: false });
+      })();
+    </script>
+
+    <!-- QAMind: parent-window bridge. Lets the QAMind project page read which
+         file is open in the editor (postMessage 'qamind:get-active-file') and
+         persist that as a test_case row without copy-pasting. -->
+    <script>
+      (function() {
+        const DAEMON = 'http://localhost:8001';
+
+        async function getActiveFile() {
+          try {
+            const activePath = JSON.parse(localStorage.getItem('maestro-active-tab') || 'null');
+            if (!activePath || typeof activePath !== 'string') return null;
+            const r = await fetch(DAEMON + '/api/maestro-studio/file/read?path=' + encodeURIComponent(activePath));
+            const d = await r.json();
+            return { path: activePath, name: activePath.split('/').pop(), content: d.content || '' };
+          } catch (e) {
+            return null;
+          }
+        }
+
+        window.addEventListener('message', async (e) => {
+          const msg = e.data;
+          if (!msg || typeof msg !== 'object') return;
+          if (msg.type === 'qamind:get-active-file') {
+            const file = await getActiveFile();
+            (e.source || window.parent).postMessage(
+              { type: 'qamind:active-file', requestId: msg.requestId, file },
+              e.origin || '*'
+            );
+          }
+        });
+
+        // Announce ready so parent knows the bridge is live
+        try {
+          window.parent.postMessage({ type: 'qamind:bridge-ready' }, '*');
+        } catch (e) {}
+      })();
     </script>
 
     <script type="module" crossorigin src="./assets/index-UODQPoio.js"></script>

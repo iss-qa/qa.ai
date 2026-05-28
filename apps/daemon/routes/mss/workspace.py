@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re as _re
 import subprocess
 from pathlib import Path
 
@@ -106,11 +107,36 @@ async def mss_file_delete(req: _MSSFileDelete):
         return {"success": False, "error": str(e)}
 
 
+def _normalize_fs_path(raw: str) -> str:
+    """Strip duplicate leading slashes ("//Users/..." -> "/Users/...") that the
+    Maestro Studio bundle generates when concatenating workspace + relative path.
+    POSIX treats them as equivalent, but downstream string comparisons and the
+    UI dialog look broken without normalization."""
+    if not raw:
+        return raw
+    # Preserve POSIX "//" semantics only for explicit `///` start (UNC-like). The
+    # bundle's bug is concatenating "/workspace" + "/file" → "/workspace//file".
+    normalized = _re.sub(r"/{2,}", "/", raw)
+    return normalized
+
+
 @router.post("/api/maestro-studio/file/rename")
 async def mss_file_rename(req: _MSSFileRename):
+    """Rename or move a file. Used by Maestro Studio's drag-drop and rename UI.
+
+    Hardened against the bundle's path bugs: leading "//" from string concat,
+    and missing destination directory (drag into a folder that doesn't exist
+    yet on disk shouldn't fail silently)."""
     try:
-        Path(req.oldPath).rename(req.newPath)
-        return {"success": True}
+        src = Path(_normalize_fs_path(req.oldPath))
+        dst = Path(_normalize_fs_path(req.newPath))
+        if not src.exists():
+            return {"success": False, "error": f"Source does not exist: {src}"}
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if dst.exists() and src.resolve() != dst.resolve():
+            return {"success": False, "error": f"Destination already exists: {dst}"}
+        src.rename(dst)
+        return {"success": True, "oldPath": str(src), "newPath": str(dst)}
     except Exception as e:
         return {"success": False, "error": str(e)}
 

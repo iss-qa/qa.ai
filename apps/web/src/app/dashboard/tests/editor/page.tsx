@@ -70,7 +70,7 @@ function SortableStepItem({
     const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 
     return (
-        <div ref={setNodeRef} style={style} className={`bg-white/5 border ${step.status === 'error' ? 'border-red-500/50' : 'border-white/10'} rounded-lg p-3 hover:bg-white/10 transition-colors group relative ${isDragging ? 'shadow-2xl ring-2 ring-brand' : ''}`}>
+        <div ref={setNodeRef} data-step-idx={index} style={style} className={`bg-white/5 border ${step.status === 'error' ? 'border-red-500/50' : step.status === 'running' ? 'border-brand/60' : 'border-white/10'} rounded-lg p-3 hover:bg-white/10 transition-colors group relative ${isDragging ? 'shadow-2xl ring-2 ring-brand' : ''} ${step.status === 'running' ? 'ring-1 ring-brand/40' : ''}`}>
 
             {!isExecuting && !isEditing && (
                 <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity z-10 bg-[#0A0C14]/80 p-0.5 rounded backdrop-blur-sm border border-white/5 shadow-xl">
@@ -409,6 +409,11 @@ export default function TestEditorPage() {
     const [selectedEngine, setSelectedEngine] = useState<'uiautomator2' | 'maestro'>('uiautomator2');
     const [maestroYaml, setMaestroYaml] = useState<string>('');
     const [maestroYamlPath, setMaestroYamlPath] = useState<string>('');
+    // appId of the app under test, loaded from test_cases.app_id. Used when
+    // building the YAML for Executar Teste so the correct app launches. Was
+    // hardcoded to 'br.com.foxbit.foxbitandroid' which made every test open
+    // the Foxbit app regardless of project.
+    const [testAppId, setTestAppId] = useState<string | null>(null);
     const [envVarsNeeded, setEnvVarsNeeded] = useState<string[]>([]);
     const [confidenceReport, setConfidenceReport] = useState<{
         high_confidence_steps: number[];
@@ -460,10 +465,14 @@ export default function TestEditorPage() {
     // Load existing test when testId is in URL
     useEffect(() => {
         if (!testIdParam) return;
+        // Always reset state when switching tests so a stale appId from the
+        // previous test doesn't leak into the next Executar Teste.
+        setTestAppId(null);
         supabase.from('test_cases').select('*').eq('id', testIdParam).single()
             .then(({ data, error }) => {
                 if (error || !data) return;
                 setTestName(data.name || '');
+                setTestAppId(data.app_id || null);
                 const loadedSteps = (data.steps || []).map((s: any, idx: number) => ({
                     id: s.id || String(idx + 1),
                     action: s.action || '',
@@ -791,7 +800,8 @@ export default function TestEditorPage() {
     };
 
     const handleSaveTest = async (name: string) => {
-        if (!name.trim() || steps.length === 0) return;
+        const trimmed = name.trim();
+        if (!trimmed || steps.length === 0) return;
         setIsSaving(true);
         try {
             const stepsForDb = steps.map((s, idx) => ({
@@ -805,35 +815,54 @@ export default function TestEditorPage() {
                 confidence: s.confidence || '',
                 confidence_comment: s.confidence_comment || '',
             }));
-            const payload: Record<string, unknown> = {
-                name: name.trim(),
+            const baseRow: Record<string, unknown> = {
+                name: trimmed,
                 description: `Teste com ${steps.length} passos`,
                 steps: stepsForDb,
                 tags: [selectedEngine === 'maestro' ? 'maestro' : 'u2'],
                 is_active: true,
-                version: 1,
             };
-            if (currentProjectId) payload.project_id = currentProjectId;
+            if (currentProjectId) baseRow.project_id = currentProjectId;
+            // Preserve the appId that was loaded with the test so re-saving
+            // (rename, edit, mark green/red after a run) doesn't blank it.
+            if (testAppId) baseRow.app_id = testAppId;
 
-            const res = await fetch(`${DAEMON_URL}/api/tests/save`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({ detail: res.statusText }));
-                alert('Erro ao salvar: ' + (err.detail || res.statusText));
-                return;
+            // Resolve which row to UPDATE so saving with the same name doesn't
+            // multiply rows on the project page and /dashboard/tests.
+            // Priority:
+            //   1. testIdParam (the row we loaded into the editor) — always wins.
+            //   2. Existing row in this project with the same name → update it.
+            //   3. Otherwise → insert a new row.
+            let targetId: string | null = testIdParam || null;
+            if (!targetId && currentProjectId) {
+                const { data: existing, error: lookupErr } = await supabase
+                    .from('test_cases')
+                    .select('id')
+                    .eq('project_id', currentProjectId)
+                    .eq('name', trimmed)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+                if (lookupErr) throw lookupErr;
+                if (existing && existing.length > 0) targetId = existing[0].id as string;
             }
-            const result = await res.json();
-            if (result.warning) {
-                console.warn('Save warning:', result.warning);
+
+            if (targetId) {
+                const { error } = await supabase
+                    .from('test_cases')
+                    .update(baseRow)
+                    .eq('id', targetId);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase
+                    .from('test_cases')
+                    .insert({ ...baseRow, version: 1 });
+                if (error) throw error;
             }
-            setTestName(name.trim());
+            setTestName(trimmed);
             setShowSaveDialog(false);
-        } catch (e) {
+        } catch (e: any) {
             console.error('Save failed:', e);
-            alert('Erro ao salvar teste.');
+            alert('Erro ao salvar teste: ' + (e?.message || e));
         } finally {
             setIsSaving(false);
         }
@@ -1176,6 +1205,256 @@ export default function TestEditorPage() {
         setRunId(newRunId);
     };
 
+    // Execute a saved Maestro YAML via the Maestro Studio Server pipeline —
+    // the same SSE-driven flow the MSS embed uses for its Run Test button.
+    // Avoids the /api/runs WebSocket race condition that was leaving the
+    // EXECUTAR TESTE button stuck in EXECUTANDO state.
+    //
+    // Step status updates arrive via SSE `commandStatuses`, mapped by index
+    // (each step's `maestro_command` corresponds 1:1 to a YAML command).
+    const executeViaMaestroStudio = useCallback(async (yamlPath: string, env: Record<string, string>) => {
+        if (!yamlPath) {
+            setIsExecuting(false);
+            alert('YAML não foi salvo antes da execução.');
+            return;
+        }
+        if (!connectedDevice) return;
+
+        const mapStatus = (s: string): TestStep['status'] => {
+            switch (s) {
+                case 'RUNNING':   return 'running';
+                case 'COMPLETED': return 'success';
+                case 'FAILED':    return 'error';
+                case 'WARNED':    return 'success';
+                case 'SKIPPED':   return 'idle';
+                default:          return 'idle';
+            }
+        };
+
+        const flowId = `flow-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        const sseUrl = `${DAEMON_URL}/mss/api/devices/flowStatus/sse`
+            + `?flowId=${encodeURIComponent(flowId)}`
+            + `&filepath=${encodeURIComponent(yamlPath)}`;
+
+        let finished = false;
+        const runStartedAt = new Date();
+        // Persist:
+        //  - test_cases (last_run_at + status) so list views show fresh state
+        //  - test_runs (full history row) so the dashboard can compute real
+        //    duration / per-day charts / recent runs from execution history
+        //    instead of relying on the single "latest" snapshot on test_cases.
+        const persistRunResult = async (passed: boolean, finalSteps: TestStep[]) => {
+            if (!testIdParam) return;
+            const endedAt = new Date();
+            const durationMs = endedAt.getTime() - runStartedAt.getTime();
+            const stepsTotal = finalSteps.length;
+            const stepsPassed = finalSteps.filter(s => s.status === 'success').length;
+            const stepsFailed = finalSteps.filter(s => s.status === 'error').length;
+            const errorMessage = finalSteps.find(s => s.status === 'error' && s.error_message)?.error_message
+                || (passed ? null : 'Test failed');
+
+            try {
+                await supabase.from('test_cases').update({
+                    last_run_at: endedAt.toISOString(),
+                    status: passed ? 'passed' : 'failed',
+                }).eq('id', testIdParam);
+            } catch (e) {
+                console.error('test_cases update failed:', e);
+            }
+
+            let testRunId: string | null = null;
+            try {
+                const { data, error } = await supabase.from('test_runs').insert({
+                    test_case_id: testIdParam,
+                    project_id: currentProjectId || null,
+                    status: passed ? 'passed' : 'failed',
+                    started_at: runStartedAt.toISOString(),
+                    ended_at: endedAt.toISOString(),
+                    duration_ms: durationMs,
+                    device_udid: connectedDevice?.udid || null,
+                    error_message: errorMessage,
+                    steps_total: stepsTotal,
+                    steps_passed: stepsPassed,
+                    steps_failed: stepsFailed,
+                    triggered_by: 'editor',
+                }).select('id').single();
+                if (error) throw error;
+                testRunId = data?.id || null;
+            } catch (e) {
+                console.error('test_runs insert failed:', e);
+            }
+
+            // Auto-create a bug report when the run failed. Severity is picked
+            // from how many steps actually failed — a single-step failure is
+            // usually a regression on one assertion (medium); multiple failed
+            // steps point to a broader breakage (high).
+            if (!passed) {
+                const failedStep = finalSteps.find(s => s.status === 'error');
+                const severity = stepsFailed >= 3 ? 'high' : stepsFailed === 0 ? 'high' : 'medium';
+                const stepDesc = failedStep
+                    ? `Passo ${(finalSteps.indexOf(failedStep) + 1)}: ${failedStep.action} ${failedStep.target || ''}`.trim()
+                    : 'Sem detalhe do passo';
+                try {
+                    await supabase.from('bug_reports').insert({
+                        title: `Falha em ${testName || 'teste'} — ${stepDesc.slice(0, 80)}`,
+                        severity,
+                        description: [
+                            `Captura automática durante execução no editor.`,
+                            ``,
+                            `**Erro:** ${errorMessage || 'sem mensagem'}`,
+                            ``,
+                            `**Passos:** ${stepsPassed} ✓ / ${stepsFailed} ✗ / ${stepsTotal} total`,
+                            failedStep ? `**Primeiro passo que falhou:** ${stepDesc}` : '',
+                        ].filter(Boolean).join('\n'),
+                        project_id: currentProjectId || null,
+                        test_case_id: testIdParam,
+                        test_run_id: testRunId,
+                        status: 'open',
+                        source: 'automation',
+                    });
+                } catch (e) {
+                    // bug_reports may not exist yet (migration pending). Don't
+                    // break the editor — log and move on.
+                    console.warn('auto bug_report insert failed:', e);
+                }
+            }
+        };
+
+        const finish = (passed: boolean) => {
+            if (finished) return;
+            finished = true;
+            if (executionTimeoutRef.current) {
+                clearTimeout(executionTimeoutRef.current);
+                executionTimeoutRef.current = null;
+            }
+            // Step labeling on flow end:
+            // - COMPLETED: all idle/running steps actually ran (Maestro sometimes
+            //   doesn't emit a COMPLETED line for the last step). Mark them success.
+            // - FAILED: keep idle steps as idle (gray, "skipped"). Convert any
+            //   leftover 'running' step to 'error' — that's the one Maestro
+            //   aborted on. Earlier 'success' entries stay green.
+            let finalSteps: TestStep[] = [];
+            setSteps(prev => {
+                const next = prev.map(s => {
+                    if (passed) {
+                        if (s.status === 'idle' || s.status === 'running') {
+                            return { ...s, status: 'success' };
+                        }
+                        return s;
+                    } else {
+                        if (s.status === 'running') {
+                            return { ...s, status: 'error', error_message: s.error_message || 'Passo abortado' };
+                        }
+                        return s;  // leave idle/success/error untouched
+                    }
+                });
+                finalSteps = next;
+                return next;
+            });
+            setIsExecuting(false);
+            setShowExecutionOverlay(false);
+            try { es.close(); } catch {}
+            // Fire-and-forget Supabase update — don't block the UI. Defer one
+            // tick so the setSteps closure has actually run and finalSteps is
+            // populated with the corrected statuses.
+            setTimeout(() => persistRunResult(passed, finalSteps), 0);
+        };
+
+        // Auto-scroll the editor's step list to follow the running step.
+        // `block: 'center'` keeps the active row in the middle of the viewport
+        // so the user simultaneously sees a couple of completed steps above
+        // and the upcoming ones below. `nearest` would only scroll when the
+        // step went off-screen — that's why the panel stayed pinned at the
+        // top while steps 6+ executed out of view.
+        const scrollToStep = (idx: number) => {
+            if (idx < 0) return;
+            const el = document.querySelector('[data-step-idx="' + idx + '"]') as HTMLElement | null;
+            if (el) {
+                try { el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' }); } catch {}
+            }
+        };
+        let lastScrolledIdx = -1;
+
+        const es = new EventSource(sseUrl);
+
+        es.onmessage = (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                const cs: Array<{ status: string }> = data.commandStatuses || [];
+
+                if (cs.length > 0) {
+                    setShowExecutionOverlay(false);
+                    setSteps(prev => prev.map((s, i) => {
+                        if (i >= cs.length) return s;
+                        const next = mapStatus(cs[i].status);
+                        return next === s.status ? s : { ...s, status: next };
+                    }));
+                    // Locate the active (last RUNNING, or first FAILED) step and scroll.
+                    let activeIdx = -1;
+                    for (let i = 0; i < cs.length; i++) {
+                        if (cs[i].status === 'FAILED') { activeIdx = i; break; }
+                    }
+                    if (activeIdx === -1) {
+                        for (let i = cs.length - 1; i >= 0; i--) {
+                            if (cs[i].status === 'RUNNING') { activeIdx = i; break; }
+                        }
+                    }
+                    if (activeIdx !== -1 && activeIdx !== lastScrolledIdx) {
+                        lastScrolledIdx = activeIdx;
+                        // Defer to next paint so the row has the new status class applied.
+                        requestAnimationFrame(() => scrollToStep(activeIdx));
+                    }
+                }
+
+                if (data.flowStatus === 'COMPLETED') {
+                    finish(true);
+                } else if (data.flowStatus === 'FAILED') {
+                    if (data.error) {
+                        console.error('MSS flow FAILED:', data.error);
+                    }
+                    finish(false);
+                }
+            } catch (err) {
+                console.error('MSS SSE parse error', err);
+            }
+        };
+
+        es.onerror = () => {
+            // Browser auto-reconnects on transient errors. Only escalate when
+            // the flow already wrapped up — otherwise let the heartbeat resume.
+            if (finished) try { es.close(); } catch {}
+        };
+
+        // Give the SSE handler a moment to connect and send the initial
+        // RUNNING heartbeat — otherwise the bundle's `Flow not found` poll
+        // window can elapse before the POST registers the flow.
+        await new Promise(resolve => setTimeout(resolve, 250));
+
+        try {
+            const res = await fetch(`${DAEMON_URL}/mss/api/devices/runFlowFile`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    flowId,
+                    filePath: yamlPath,
+                    workspacePath: '',
+                    instanceId: connectedDevice.udid,
+                    env: env || {},
+                }),
+            });
+            if (!res.ok) {
+                const text = await res.text();
+                console.error('runFlowFile failed', res.status, text);
+                alert(`Falha ao iniciar a execução: ${res.status}`);
+                finish(false);
+            }
+        } catch (e) {
+            console.error('runFlowFile network error', e);
+            alert('Erro de rede ao iniciar a execução.');
+            finish(false);
+        }
+    }, [connectedDevice, testIdParam]);
+
     const handleExecuteTest = async () => {
         if (!connectedDevice) {
             alert('Conecte um dispositivo primeiro.');
@@ -1217,7 +1496,11 @@ export default function TestEditorPage() {
 
         // Reset all step statuses
         setSteps(prev => prev.map(s => ({ ...s, status: 'idle' })));
-        setShowExecutionOverlay(false);
+        // Show the staged overlay immediately — cold-start of `maestro test`
+        // is ~30s (JVM + driver APK forward). Without feedback the button
+        // looks frozen. executeViaMaestroStudio hides it as soon as the first
+        // commandStatuses event arrives from the SSE.
+        setShowExecutionOverlay(true);
         setIsExecuting(true);
 
         // Small delay to let WebSocket connect before sending the request
@@ -1245,10 +1528,78 @@ export default function TestEditorPage() {
         }, 300000);
         executionTimeoutRef.current = timeoutId;
 
+        // ── Maestro path: route through the MSS pipeline (SSE + runFlowFile).
+        // The legacy /api/runs + /ws/front-{runId} pipeline had a race
+        // condition (background task could broadcast RUN_STARTED before the
+        // WebSocket connected) that left this button stuck in EXECUTANDO.
+        if (stepsEngine === 'maestro') {
+            // appId comes from the test_cases row that was loaded (testAppId).
+            // Fallback chain prevents a broken-but-old test from blocking
+            // execution: try to scrape an inline appId from the launchApp
+            // step, then warn the user if we genuinely have no clue.
+            let appId = testAppId;
+            if (!appId) {
+                // Look for a launchApp step that carries the appId inline.
+                for (const s of stepsToRun) {
+                    const cmd = s.maestro_command || '';
+                    const m = cmd.match(/appId\s*:\s*["']?([^"'\n\r]+)["']?/);
+                    if (m && m[1]) { appId = m[1].trim(); break; }
+                }
+            }
+            if (!appId) {
+                clearTimeout(timeoutId);
+                executionTimeoutRef.current = null;
+                setIsExecuting(false);
+                setShowExecutionOverlay(false);
+                alert('Este teste nao tem appId definido. Salve-o novamente via Maestro Studio ou Importar YAML para que o app correto seja iniciado.');
+                return;
+            }
+            const commands = stepsToRun.map(s => s.maestro_command || '').filter(Boolean);
+            const yamlContent = commands.length > 0
+                ? `appId: ${appId}\n---\n${commands.join('\n')}`
+                : maestroYaml;
+
+            let yamlPath = maestroYamlPath;
+            if (yamlContent) {
+                try {
+                    const saveRes = await fetch(`${DAEMON_URL}/api/maestro/save-yaml`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            yaml_content: yamlContent,
+                            project_id: currentProjectId || 'runs',
+                            test_name: testName || execRunId,
+                        }),
+                    });
+                    const saveData = await saveRes.json();
+                    if (saveData.path) {
+                        yamlPath = saveData.path;
+                        setMaestroYamlPath(saveData.path);
+                        setMaestroYaml(yamlContent);
+                    }
+                } catch (e) {
+                    console.error('Failed to save YAML before execution:', e);
+                }
+            }
+
+            if (!yamlPath) {
+                clearTimeout(timeoutId);
+                executionTimeoutRef.current = null;
+                setIsExecuting(false);
+                setShowExecutionOverlay(false);
+                alert('Não foi possível salvar o YAML antes da execução.');
+                return;
+            }
+
+            await executeViaMaestroStudio(yamlPath, envVarsValues || {});
+            return;
+        }
+
+        // ── Non-Maestro path (UIAutomator2 / vision): keep legacy WS flow ──
         try {
             let res: Response;
 
-            if (referenceImages.length > 0 && stepsEngine !== 'maestro') {
+            if (referenceImages.length > 0) {
                 // Vision-first path: use FormData (UIAutomator2 only)
                 const formData = new FormData();
                 formData.append('run_id', execRunId);
@@ -1271,53 +1622,14 @@ export default function TestEditorPage() {
                     body: formData,
                 });
             } else {
-                // Standard / Maestro path: JSON
-                const currentEngine = stepsEngine;
                 const payload: Record<string, any> = {
                     test_case_id: testIdParam || 'test-1',
                     device_udid: connectedDevice.udid,
                     run_id: execRunId,
                     steps: stepsToRun,
                     platform: 'android',
-                    engine: currentEngine,
+                    engine: stepsEngine,
                 };
-
-                if (currentEngine === 'maestro') {
-                    // Always regenerate fresh YAML from current steps' maestro_command fields
-                    const appId = 'br.com.foxbit.foxbitandroid';
-                    const commands = stepsToRun
-                        .map(s => s.maestro_command || '')
-                        .filter(Boolean);
-                    let yamlContent = commands.length > 0
-                        ? `appId: ${appId}\n---\n${commands.join('\n')}`
-                        : maestroYaml;
-
-                    let yamlPath = maestroYamlPath;
-                    if (yamlContent) {
-                        try {
-                            const saveRes = await fetch(`${DAEMON_URL}/api/maestro/save-yaml`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    yaml_content: yamlContent,
-                                    project_id: currentProjectId || 'runs',
-                                    test_name: testName || execRunId,
-                                }),
-                            });
-                            const saveData = await saveRes.json();
-                            if (saveData.path) {
-                                yamlPath = saveData.path;
-                                setMaestroYamlPath(saveData.path);
-                                setMaestroYaml(yamlContent);
-                            }
-                        } catch (e) {
-                            console.error('Failed to save YAML before execution:', e);
-                        }
-                    }
-
-                    payload.yaml_path = yamlPath;
-                    payload.env_vars = envVarsValues;
-                }
 
                 res = await fetch(`${DAEMON_URL}/api/runs`, {
                     method: 'POST',
@@ -1387,7 +1699,7 @@ export default function TestEditorPage() {
             </header>
 
             <div className="flex flex-1 overflow-hidden relative">
-                {/* Execution overlay removed — tests start immediately */}
+                <ExecutionOverlay isVisible={showExecutionOverlay} onComplete={() => {}} />
 
                 <div className="w-[550px] border-r border-white/10 bg-[#0C0F1A] flex flex-col shrink-0 h-full">
                     <div className="flex-shrink-0 px-4 py-3 border-b border-zinc-800 flex items-center justify-between">

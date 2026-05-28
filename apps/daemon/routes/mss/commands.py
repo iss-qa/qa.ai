@@ -23,12 +23,16 @@ class _MSSRunCmd(BaseModel):
 
 @router.post("/mss/api/run-command")
 async def mss_run_command(req: _MSSRunCmd):
-    """Execute a Maestro YAML command on the connected device via the embedded studio session.
+    """Execute a Maestro YAML command on the connected device.
 
-    Uses _embedded_run_yaml (warm session) instead of spawning a new `maestro test` subprocess
-    so there's no JVM cold-start penalty (~5-10s) per command. _adb_command_active is set during
-    execution so the screenshot SSE pauses cleanly — without this gate both screencap and Maestro's
-    own ADB commands fight for the single-device ADB channel and intermittently timeout.
+    Strategy:
+    1. Fast path via _fast_run_maestro_command (ADB tap from cached XML, <200ms).
+       Covers `tapOn: "..."`, `tapOn: id/text/point`, `assertVisible`, `back`, `inputText`.
+    2. Fallback to the warm embedded session if the fast path doesn't match the YAML.
+       The embedded subprocess sometimes fails to start (TimeoutException on
+       dadb.forwarding.TcpForwarder.waitFor) — keeping the fast path FIRST avoids
+       that penalty for the simple commands the Maestro Studio "Insert & Run"
+       button generates.
     """
     udid = _mss_get_udid()
     if not udid:
@@ -38,6 +42,17 @@ async def mss_run_command(req: _MSSRunCmd):
         return []  # parse-only — nothing to run
 
     yaml_body = req.yaml.strip()
+
+    try:
+        fast = await _fast_run_maestro_command(udid, yaml_body)
+        if fast is not None:
+            if fast.get("success"):
+                return []
+            raise HTTPException(status_code=400, detail=fast.get("error") or "Command failed")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"fast path errored, falling back to embedded: {e}")
 
     ok, err = await _embedded_run_yaml(udid, yaml_body)
     if not ok:
@@ -108,22 +123,24 @@ async def mss_run_command_new(body: dict):
 
 @router.post("/mss/api/devices/runFlowFile")
 async def mss_run_flow_file(body: dict):
-    """Validate (dryRun=true) or execute a Maestro YAML flow file.
+    """Register a Maestro flow for execution via the flowStatus SSE.
 
-    The client opens the flowStatus SSE BEFORE calling this endpoint, using its
-    own client-generated flowId. We must honour that flowId (not mint a new one)
-    or the SSE subscription will never match the stored flow.
+    The Maestro Studio bundle sends TWO POSTs per Run Test click — once with
+    `dryRun: true` (validation) and once with `dryRun: false` (trigger). If we
+    execute the test synchronously in the non-dryRun branch, the SSE pipeline
+    also runs it (after picking up the stored flow), resulting in the test
+    running twice back-to-back under `state.test_run_lock`.
 
-    When `yaml` is empty but `filePath` is provided and the file exists on disk,
-    the YAML content is read from the file. This handles the Maestro Studio case
-    where the frontend sends only the path (not the full content).
+    Single source of truth: always store; the open flowStatus SSE is the sole
+    executor. Both POSTs become idempotent registers. When the second POST
+    arrives for an in-flight flow, we return success without re-storing so the
+    SSE's RUNNING/COMPLETED/FAILED status is preserved.
     """
     flow_id = body.get("flowId") or str(_uuid_lib.uuid4())
     udid = body.get("instanceId") or _mss_get_udid()
     yaml_content = (body.get("yaml") or "").strip()
     workspace_path = body.get("workspacePath", "")
     file_path = body.get("filePath", "")
-    dry_run = body.get("dryRun", False)
     env = body.get("env") or {}
 
     # The Maestro Studio frontend strips the workspace prefix from filePath before
@@ -143,8 +160,12 @@ async def mss_run_flow_file(body: dict):
     if not yaml_content and not file_path:
         raise HTTPException(status_code=400, detail="No YAML content or filePath provided")
 
-    if dry_run:
-        # Store and let the open flowStatus SSE connection execute it.
+    # Idempotent register: if this flow is already in flight or done, leave it
+    # alone. Otherwise (re)store as PENDING and let the SSE pick it up.
+    existing = state.mss_flows.get(flow_id)
+    if existing and existing.get("status") in ("PENDING", "RUNNING", "COMPLETED", "FAILED"):
+        logger.info(f"runFlowFile: idempotent skip for {flow_id[:8]} (status={existing.get('status')})")
+    else:
         state.mss_flows[flow_id] = {
             "yaml": yaml_content,
             "workspacePath": workspace_path,
@@ -153,22 +174,4 @@ async def mss_run_flow_file(body: dict):
             "udid": udid,
             "status": "PENDING",
         }
-        return {"success": True, "flowId": flow_id, "filepath": file_path}
-
-    # Non-dry-run: execute immediately.
-    # Prefer direct file execution when the workspace file exists — relative
-    # runFlow / runScript paths only resolve correctly this way (Maestro uses
-    # the file's parent dir as cwd). Fall back to embedded-studio for inline YAML.
-    if not udid:
-        raise HTTPException(status_code=400, detail="No device connected")
-
-    if file_path and os.path.exists(file_path):
-        ok, err = await _run_maestro_test_file(udid, file_path, env)
-    else:
-        ok, err = await _embedded_run_yaml(udid, yaml_content)
-    return {
-        "success": ok,
-        "flowId": flow_id,
-        "filepath": file_path,
-        "error": None if ok else err,
-    }
+    return {"success": True, "flowId": flow_id, "filepath": file_path}
