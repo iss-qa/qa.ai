@@ -58,6 +58,10 @@ daemon_output.log
 # Testing
 coverage/
 .nyc_output/
+playwright-report/
+test-results/
+tests/__artifacts__/
+apps/*/tests/__artifacts__/
 
 # Miscellaneous
 .npm

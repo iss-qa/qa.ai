@@ -366,15 +366,31 @@ async def _run_maestro_test_file(
         t2 = _time.perf_counter()
         result = await _do_run_maestro_test(udid, cmd, run_env, file_path, step_queue)
         logger.info(f"[runtest] maestro CLI run total {(_time.perf_counter()-t2)*1000:.0f}ms (incl. JVM start)")
-        # If it failed with the TcpForwarder timeout, the driver got stuck
-        # mid-run. Reset and retry ONCE. This is the same fix the Maestro
-        # error message itself recommends ("adb kill-server && adb start-server")
-        # but scoped to just this device's driver to avoid disrupting other ADB
-        # sessions.
+        # If it failed with one of the two known "driver didn't start" errors,
+        # reset and retry ONCE with the heavy artillery (adb reconnect + APK
+        # cache invalidation so _ensure_maestro_apks reinstalls).
+        #
+        # Two distinct symptoms, same root cause (stuck driver state):
+        #   - `dadb.forwarding.TcpForwarder.waitFor` — host couldn't reach the
+        #     forwarded device port. The driver may be running but not bound.
+        #   - `AndroidDriverTimeoutException: Maestro Android driver did not
+        #     start up in time` — `am instrument` was issued but the driver
+        #     never ACKed the gRPC bind. The APK might be force-stopped /
+        #     killed by MIUI / left in a bad state by a prior aborted run.
         ok, err = result
-        if (not ok) and err and "TcpForwarder" in err and "TimeoutException" in err:
-            logger.warning(f"[runtest] TcpForwarder timeout — resetting driver and retrying once")
+        retryable = (not ok) and err and (
+            ("TcpForwarder" in err and "TimeoutException" in err)
+            or ("AndroidDriverTimeoutException" in err)
+            or ("Maestro Android driver did not start up" in err)
+        )
+        if retryable:
+            logger.warning(f"[runtest] driver startup timeout — hard reset + reinstall + retry once")
+            # Invalidate the APK verification cache so _ensure_maestro_apks
+            # re-checks `pm list instrumentation` and reinstalls if it's not
+            # registered. The previous "cached as good" result is suspect now.
+            state.mss_apks_verified.discard(udid)
             await _reset_maestro_driver_state(udid, hard=True)
+            await _ensure_maestro_apks(udid)   # may reinstall if pm list shows missing
             result = await _do_run_maestro_test(udid, cmd, run_env, file_path, step_queue)
         return result
 
@@ -441,12 +457,38 @@ async def _reset_maestro_driver_state(udid: str, hard: bool = False) -> None:
     except Exception as e:
         logger.debug(f"[reset] zombie scan failed: {e}")
 
-    # 2 + 3. Release host-side ADB forwards + force-stop driver APKs.
-    # These commands target the same device but the ADB daemon serialises
-    # them on the wire; firing concurrently still saves ~50% wall-time because
-    # asyncio doesn't block on each subprocess spawn.
+    # 2. Selectively release ADB forwards held by previous Maestro runs.
+    # `adb forward --remove-all` (the previous approach) also killed scrcpy's
+    # localabstract:scrcpy_<scid> tunnel, breaking the device mirror after
+    # every Run Test. We now list forwards and remove only the ones that
+    # aren't scrcpy — Maestro's dadb tunnels use `tcp:<remote>` while scrcpy
+    # uses `localabstract:scrcpy_*`.
+    try:
+        p = await asyncio.create_subprocess_exec(
+            "adb", "-s", udid, "forward", "--list",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await asyncio.wait_for(p.communicate(), timeout=5)
+        removed = 0
+        preserved = 0
+        for line in out.decode(errors="replace").splitlines():
+            # Format: "<serial> tcp:<local> <remote>"
+            parts = line.strip().split()
+            if len(parts) < 3 or parts[0] != udid:
+                continue
+            local_spec = parts[1]            # e.g. "tcp:12345"
+            remote_spec = parts[2]           # e.g. "tcp:7001" or "localabstract:scrcpy_AB12"
+            if remote_spec.startswith("localabstract:scrcpy"):
+                preserved += 1
+                continue                     # keep scrcpy's tunnel alive
+            await _adb("forward", "--remove", local_spec, timeout=3)
+            removed += 1
+        logger.info(f"[reset] forwards removed={removed} preserved_scrcpy={preserved}")
+    except Exception as e:
+        logger.warning(f"[reset] selective forward cleanup failed, leaving them: {e}")
+
+    # 3. Force-stop the driver APK packages so `am instrument` can start fresh.
     await asyncio.gather(
-        _adb("forward", "--remove-all"),
         _adb("shell", "am", "force-stop", "dev.mobile.maestro.test", timeout=3),
         _adb("shell", "am", "force-stop", "dev.mobile.maestro", timeout=3),
     )
@@ -455,11 +497,13 @@ async def _reset_maestro_driver_state(udid: str, hard: bool = False) -> None:
         # 4. Nuke the adb side of this device. `reconnect` triggers re-handshake
         #    without killing the global adb server.
         await _adb("reconnect", timeout=5)
-        await asyncio.sleep(1.0)  # let the device re-attach
+        await asyncio.sleep(1.5)  # let the device re-attach + process queues
     else:
-        # Cut settle from 400ms → 150ms. The kernel typically releases the
-        # forwarded socket within a frame; longer waits were defensive.
-        await asyncio.sleep(0.15)
+        # Force-stop on MIUI takes noticeably longer than stock AOSP to fully
+        # tear down the process group. 150ms was too tight and produced the
+        # `AndroidDriverTimeoutException` failures we saw. 600ms is the
+        # smallest stable window observed in practice on Redmi Note 13.
+        await asyncio.sleep(0.6)
     logger.info(f"[reset] driver state cleaned on {udid} (hard={hard})")
 
 
@@ -556,17 +600,43 @@ async def _do_run_maestro_test(
         return False, str(e)
     finally:
         state.adb_command_active.clear()
-        if step_queue is not None:
-            await step_queue.put(None)  # sentinel: run finished
-        # Clean up ADB forwards left by `maestro test`
+        # Selectively release Maestro's ADB forwards. We CANNOT use
+        # `adb forward --remove-all` here: it would also drop the scrcpy
+        # localabstract:scrcpy_<scid> tunnel, killing the live mirror after
+        # every test run (user saw "Aguardando espelhamento..." right after
+        # Executar). Same selective filter as _reset_maestro_driver_state.
         try:
             p = await asyncio.create_subprocess_exec(
-                "adb", "-s", udid, "forward", "--remove-all",
-                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                "adb", "-s", udid, "forward", "--list",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
             )
-            await asyncio.wait_for(p.wait(), timeout=5)
+            out, _ = await asyncio.wait_for(p.communicate(), timeout=5)
+            for line in out.decode(errors="replace").splitlines():
+                parts = line.strip().split()
+                if len(parts) < 3 or parts[0] != udid:
+                    continue
+                local_spec = parts[1]
+                remote_spec = parts[2]
+                if remote_spec.startswith("localabstract:scrcpy"):
+                    continue  # keep scrcpy mirror alive
+                try:
+                    rm = await asyncio.create_subprocess_exec(
+                        "adb", "-s", udid, "forward", "--remove", local_spec,
+                        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    await asyncio.wait_for(rm.wait(), timeout=3)
+                except Exception:
+                    pass
         except Exception:
             pass
+
+        # Put the sentinel LAST — after cleanup so flows.py's
+        # `wait_for(test_task, timeout=N)` doesn't race with the still-running
+        # ADB ops above. The previous order put None first, then ran cleanup,
+        # which meant the SSE saw "test done" while the task was actually busy
+        # for up to 5s more — manifesting as "Result timeout".
+        if step_queue is not None:
+            await step_queue.put(None)
 
 
 async def _embedded_run_yaml(udid: str, yaml_content: str, dry_run: bool = False) -> tuple:

@@ -17,6 +17,11 @@ logger = logging.getLogger("recording")
 class RecordingStartRequest(BaseModel):
     udid: str
     project_id: Optional[str] = None
+    # When provided, the daemon launches the app on the device before the
+    # getevent loop starts. Matches the YAML's `launchApp:` step so the
+    # first captured taps are on the app's actual first screen.
+    app_id: Optional[str] = None
+    clear_state: bool = False
 
 
 @router.post("/recordings/start")
@@ -24,7 +29,12 @@ async def start_recording(req: RecordingStartRequest):
     """Start recording via ADB getevent. Returns recording_id for SSE subscription."""
     try:
         recorder = InteractionRecorder(ws_server)
-        recording_id = await recorder.start_recording(req.udid, project_id=req.project_id)
+        recording_id = await recorder.start_recording(
+            req.udid,
+            project_id=req.project_id,
+            app_id=req.app_id,
+            clear_state=req.clear_state,
+        )
         active_recorders[req.udid] = recorder
         return {"status": "recording_started", "udid": req.udid, "recording_id": recording_id}
     except Exception as e:

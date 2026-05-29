@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { FileText, Bug, Search, Filter, Loader2, Plus, X, Link2, Paperclip, Trash2, AlertTriangle } from 'lucide-react';
+import { FileText, Bug, Search, Filter, Loader2, Plus, X, Link2, Paperclip, Trash2, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useQueryState } from 'nuqs';
 import { supabase } from '@/lib/supabase';
@@ -126,6 +126,26 @@ export default function BugTrackerPage() {
         });
     }, [bugs, globalFilter, severityFilter]);
 
+    // Pagination — purely client-side: bug counts are low enough that loading
+    // all and slicing in the browser beats round-tripping per page. If the
+    // list ever grows past a few hundred rows we'd move this to Supabase
+    // .range() with server-side count.
+    const PAGE_SIZE = 10;
+    const [currentPage, setCurrentPage] = useState(1);
+    const totalPages = Math.max(1, Math.ceil(filteredBugs.length / PAGE_SIZE));
+
+    // Reset to page 1 whenever the result set shrinks below the current page
+    // (e.g. user types a more specific search) so we don't strand them on an
+    // empty page.
+    useEffect(() => {
+        if (currentPage > totalPages) setCurrentPage(1);
+    }, [currentPage, totalPages]);
+
+    const pagedBugs = useMemo(() => {
+        const start = (currentPage - 1) * PAGE_SIZE;
+        return filteredBugs.slice(start, start + PAGE_SIZE);
+    }, [filteredBugs, currentPage]);
+
     const openNewBug = () => {
         setEditing({
             severity: 'medium',
@@ -216,7 +236,7 @@ export default function BugTrackerPage() {
                             placeholder="Buscar bugs..."
                             value={globalFilter}
                             onChange={(e) => setGlobalFilter(e.target.value)}
-                            className="bg-white border border-black/5 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/20 w-[250px]"
+                            className="h-9 bg-white border border-black/5 rounded-lg pl-9 pr-4 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/20 w-[250px]"
                         />
                     </div>
 
@@ -225,7 +245,7 @@ export default function BugTrackerPage() {
                         <select
                             value={severityFilter}
                             onChange={(e) => setSeverityFilter(e.target.value)}
-                            className="bg-white border border-black/5 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/20 appearance-none min-w-[160px]"
+                            className="h-9 bg-white border border-black/5 rounded-lg pl-9 pr-4 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/20 appearance-none min-w-[160px]"
                         >
                             <option value="all">Todas Severidades</option>
                             <option value="critical">Crítico</option>
@@ -235,10 +255,11 @@ export default function BugTrackerPage() {
                         </select>
                     </div>
 
+                    {/* Button height matches search/filter (h-9) so the toolbar is flush. */}
                     <button
                         onClick={openNewBug}
                         disabled={migrationMissing}
-                        className="bg-brand text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+                        className="h-9 bg-brand text-black px-4 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all inline-flex items-center gap-2"
                         title={migrationMissing ? 'Aplique a migration antes de criar bugs' : 'Reportar novo bug'}
                     >
                         <Plus className="w-4 h-4" /> Novo Bug
@@ -263,8 +284,13 @@ export default function BugTrackerPage() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-black/[0.03]">
-                            {filteredBugs.map(bug => (
-                                <tr key={bug.id} className="hover:bg-slate-50/30 transition-colors">
+                            {pagedBugs.map(bug => (
+                                <tr
+                                    key={bug.id}
+                                    onClick={() => setEditing(bug)}
+                                    className="hover:bg-slate-50/40 transition-colors cursor-pointer"
+                                    title="Clique para visualizar/editar"
+                                >
                                     <td className="px-6 py-4">
                                         <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-bold uppercase tracking-wide ${severityColors[bug.severity]}`}>
                                             {bug.severity}
@@ -286,7 +312,8 @@ export default function BugTrackerPage() {
                                     </td>
                                     <td className="px-6 py-4 text-xs">{statusLabel[bug.status]}</td>
                                     <td className="px-6 py-4 text-xs">{formatBugDate(bug.created_at)}</td>
-                                    <td className="px-6 py-4 text-right">
+                                    {/* Action links use stopPropagation so they don't also trigger the row's edit-open click. */}
+                                    <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                                         <div className="flex items-center justify-end gap-3 text-slate-500">
                                             {bug.jira_url && (
                                                 <a href={bug.jira_url} target="_blank" rel="noopener noreferrer"
@@ -309,10 +336,6 @@ export default function BugTrackerPage() {
                                                     <FileText className="w-3.5 h-3.5" /> PDF
                                                 </a>
                                             )}
-                                            <button onClick={() => setEditing(bug)}
-                                                    className="text-xs hover:text-brand font-semibold">
-                                                Editar
-                                            </button>
                                             <button onClick={() => setDeletingId(bug.id)}
                                                     className="text-slate-400 hover:text-red-500 transition-colors"
                                                     title="Excluir bug">
@@ -340,6 +363,37 @@ export default function BugTrackerPage() {
                             : bugs.length === 0
                                 ? 'Nenhum bug registrado ainda. Clique em "Novo Bug" para reportar um.'
                                 : 'Nenhum bug encontrado com os filtros atuais.'}
+                    </div>
+                )}
+
+                {/* Pagination footer — only shown when there's more than one
+                    page so a small dataset doesn't get a permanent footer. */}
+                {!loading && filteredBugs.length > PAGE_SIZE && (
+                    <div className="px-6 py-3 border-t border-black/[0.04] bg-slate-50/40 flex items-center justify-between text-xs text-slate-500">
+                        <span>
+                            Mostrando <span className="font-bold text-slate-700">{((currentPage - 1) * PAGE_SIZE) + 1}</span>
+                            – <span className="font-bold text-slate-700">{Math.min(currentPage * PAGE_SIZE, filteredBugs.length)}</span>
+                            {' '}de <span className="font-bold text-slate-700">{filteredBugs.length}</span> bugs
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                                className="inline-flex items-center gap-1 px-3 h-8 rounded-md border border-black/5 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-600 font-medium"
+                            >
+                                <ChevronLeft className="w-3.5 h-3.5" /> Anterior
+                            </button>
+                            <span className="px-2">
+                                Página <span className="font-bold text-slate-700">{currentPage}</span> de <span className="font-bold text-slate-700">{totalPages}</span>
+                            </span>
+                            <button
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                disabled={currentPage >= totalPages}
+                                className="inline-flex items-center gap-1 px-3 h-8 rounded-md border border-black/5 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-600 font-medium"
+                            >
+                                Próximo <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>

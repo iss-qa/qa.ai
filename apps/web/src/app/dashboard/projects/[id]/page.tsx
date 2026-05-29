@@ -86,25 +86,63 @@ export default function ProjectDetailPage() {
                 return;
             }
 
-            // Try to get appId from the row first, else from inline `appId:` on any command.
+            // Resolve YAML content with a 3-step fallback so the Studio always
+            // opens with the user's most-faithful version of the test:
+            //   1. test_cases.raw_yaml — the exact bytes the user last saved
+            //      in the Studio. Preserves comments, blank lines, and any
+            //      formatting that the steps[]/app_id parser drops.
+            //   2. Regenerate from steps[] + app_id — used for tests that
+            //      pre-date the raw_yaml column or were created from the
+            //      step editor (no comments to preserve).
+            //   3. Inline appId scrape on legacy steps that carry it.
             const t = test as any;
-            const appIdRow = t.app_id || null;
-            const steps: any[] = Array.isArray(t.steps) ? t.steps : [];
-            let appId: string | null = appIdRow;
-            if (!appId) {
-                for (const s of steps) {
-                    const m = (s.maestro_command || '').match(/appId\s*:\s*["']?([^"'\n\r]+)["']?/);
-                    if (m && m[1]) { appId = m[1].trim(); break; }
-                }
-            }
-            if (!appId) {
-                setShowMaestroStudio(false);
-                alert('Este teste nao tem appId definido. Re-salve via "Salvar como Teste" ou edite-o e re-salve para gravar o appId.');
-                return;
-            }
+            const rawYaml: string | null = typeof t.raw_yaml === 'string' && t.raw_yaml.trim() ? t.raw_yaml : null;
 
-            const commands = steps.map(s => s.maestro_command || '').filter(Boolean).join('\n');
-            const yamlContent = `appId: ${appId}\n---\n${commands}\n`;
+            let yamlContent: string;
+            let appId: string | null = null;
+
+            if (rawYaml) {
+                yamlContent = rawYaml;
+                appId = extractAppIdFromYaml(rawYaml) || t.app_id || null;
+            } else {
+                const appIdRow = t.app_id || null;
+                const steps: any[] = Array.isArray(t.steps) ? t.steps : [];
+                appId = appIdRow;
+                if (!appId) {
+                    for (const s of steps) {
+                        const m = (s.maestro_command || '').match(/appId\s*:\s*["']?([^"'\n\r]+)["']?/);
+                        if (m && m[1]) { appId = m[1].trim(); break; }
+                    }
+                }
+                if (!appId) {
+                    setShowMaestroStudio(false);
+                    alert('Este teste nao tem appId definido. Re-salve via "Salvar como Teste" ou edite-o e re-salve para gravar o appId.');
+                    return;
+                }
+                // Sanitize each command before joining. A common breakage is
+                // a block-form parent line with no children (e.g. `- launchApp:`
+                // saved with the trailing colon but no indented body), which
+                // Maestro rejects with "Incorrect Command Format". For these
+                // we drop the colon so Maestro falls back to the default
+                // behavior using the top-level appId.
+                const normalizeCommand = (cmd: string): string => {
+                    const lines = cmd.split('\n');
+                    if (lines.length === 0) return cmd;
+                    const head = lines[0].trim();
+                    const hasIndentedChild = lines.slice(1).some(l => /^\s+\S/.test(l));
+                    // Only the parent line ends with `:` and there's no body — fix it.
+                    if (head.endsWith(':') && !hasIndentedChild) {
+                        const stripped = head.replace(/:\s*$/, '');
+                        return cmd.replace(lines[0], lines[0].replace(head, stripped));
+                    }
+                    return cmd;
+                };
+                const commands = steps
+                    .map(s => normalizeCommand(s.maestro_command || ''))
+                    .filter(Boolean)
+                    .join('\n');
+                yamlContent = `appId: ${appId}\n---\n${commands}\n`;
+            }
 
             // Filename derived from test name (snake-case, safe chars only).
             const safeName = (test.name || 'teste')
@@ -130,9 +168,27 @@ export default function ProjectDetailPage() {
 
             // Pre-open the file as active tab. localStorage is shared with the
             // iframe (same origin) so the bundle picks this up on next load.
+            //
+            // `maestro-open-tabs` schema (per the bundle's compiled state):
+            //   [{ path, fileType, content, savedContent }]
+            // Not a plain array of strings — the bundle does
+            // `tabs.some(t => t.path === activeTab)` and would otherwise
+            // render "No open files" even with the active tab highlighted
+            // in the tree.
+            const ext = fullPath.split('.').pop()?.toLowerCase() || '';
+            const fileType = ext === 'yaml' ? 'yaml'
+                           : ext === 'yml'  ? 'yml'
+                           : ext === 'json' ? 'json'
+                           : ext === 'js'   ? 'js'
+                           : ext === 'ts'   ? 'ts'
+                           : ext === 'css'  ? 'css'
+                           : ext === 'html' ? 'html'
+                           : 'other';
+            const tabRecord = { path: fullPath, fileType, content: yamlContent, savedContent: yamlContent };
+
             localStorage.removeItem('maestro-expanded-folders');
             localStorage.setItem('maestro-workspace-path', JSON.stringify(workspace));
-            localStorage.setItem('maestro-open-tabs', JSON.stringify([fullPath]));
+            localStorage.setItem('maestro-open-tabs', JSON.stringify([tabRecord]));
             localStorage.setItem('maestro-active-tab', JSON.stringify(fullPath));
 
             // Cache-bust and open. We skip the workspace-resolve dance inside
@@ -353,6 +409,7 @@ export default function ProjectDetailPage() {
                 project_id: projectId,
                 is_active: true,
                 app_id: saveAsTestData.appId,
+                raw_yaml: saveAsTestData.content,  // preserva comentarios e formatacao
             };
 
             // Update if a test with this name already exists in the project,
@@ -456,6 +513,71 @@ export default function ProjectDetailPage() {
         };
         window.addEventListener('message', onMessage);
         return () => window.removeEventListener('message', onMessage);
+    }, [projectId]);
+
+    // YAML save sync: when the user saves any file inside the Studio
+    // (manual Ctrl+S, autosave, or "Insert & Run" rewrites), parse the
+    // new content and re-sync the matching test_cases row's steps[] + app_id.
+    // Debounced so a burst of autosaves while typing collapses into one
+    // Supabase write at the end (1.2s after the last save event).
+    const fileSaveDebounce = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+    const lastSyncedContent = useRef<Record<string, string>>({});
+    useEffect(() => {
+        const onMessage = (e: MessageEvent) => {
+            const msg = e.data;
+            if (!msg || typeof msg !== 'object') return;
+            if (msg.type !== 'qamind:file-saved') return;
+            const filepath: string = msg.path || '';
+            const content: string = msg.content || '';
+            if (!filepath || !content) return;
+            // Skip if the bundle re-emitted the same content (Monaco fires
+            // a save event on focus blur even without changes).
+            if (lastSyncedContent.current[filepath] === content) return;
+
+            const prev = fileSaveDebounce.current[filepath];
+            if (prev) clearTimeout(prev);
+
+            fileSaveDebounce.current[filepath] = setTimeout(async () => {
+                delete fileSaveDebounce.current[filepath];
+                lastSyncedContent.current[filepath] = content;
+
+                const basename = filepath.split('/').pop() || '';
+                const testName = basename.replace(/\.(ya?ml)$/i, '').replace(/_/g, ' ');
+                const steps = parseMaestroYamlToSteps(content);
+                if (steps.length === 0) return;
+                const appId = extractAppIdFromYaml(content);
+
+                try {
+                    const { data, error } = await supabase
+                        .from('test_cases')
+                        .select('id')
+                        .eq('project_id', projectId)
+                        .eq('name', testName)
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+                    if (error) throw error;
+                    const row = (data || [])[0];
+                    if (!row) return;  // not a saved test, silent no-op
+
+                    await supabase.from('test_cases').update({
+                        steps,
+                        app_id: appId,
+                        raw_yaml: content,  // mantem comentarios e formatacao do Studio
+                    }).eq('id', row.id);
+
+                    fetchProject();  // refresh tests list under the iframe
+                } catch (err) {
+                    console.error('file-saved sync failed:', err);
+                }
+            }, 1200);
+        };
+        window.addEventListener('message', onMessage);
+        return () => {
+            window.removeEventListener('message', onMessage);
+            // Cancel pending debounces on unmount
+            for (const t of Object.values(fileSaveDebounce.current)) clearTimeout(t);
+            fileSaveDebounce.current = {};
+        };
     }, [projectId]);
 
     // Listen for the bundle iframe's "flow-finished" postMessage so the test
@@ -943,6 +1065,7 @@ export default function ProjectDetailPage() {
                 project_id: projectId,
                 is_active: true,
                 app_id: importedAppId,
+                raw_yaml: rawContent,
             };
             const { data: existingImport, error: lookupErr } = await supabase
                 .from('test_cases')

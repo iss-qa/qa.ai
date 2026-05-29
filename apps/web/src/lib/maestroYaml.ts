@@ -11,6 +11,19 @@ export interface MaestroStep {
     value?: string;
     direction?: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
     timeout?: number;
+    /** For `launchApp`: when true, serializes as block form with `clearState: true`. */
+    clearState?: boolean;
+}
+
+/**
+ * Coordinate fallback detection. The daemon emits `elementId = "x,y"` when
+ * neither resource-id nor text could be resolved (uiautomator dump failed
+ * AND AppScan lookup missed). Those tokens must become Maestro `point:`
+ * selectors — `id:` rejects numeric strings and breaks the whole run.
+ */
+const COORDS_RE = /^\d+\s*,\s*\d+$/;
+function isCoordinateId(s?: string): boolean {
+    return !!s && COORDS_RE.test(s.trim());
 }
 
 /**
@@ -21,11 +34,20 @@ export function stepsToMaestroYaml(appId: string, steps: MaestroStep[]): string 
     const body = steps.map(step => {
         switch (step.action) {
             case 'assertVisible':
+                if (isCoordinateId(step.elementId)) {
+                    // Can't assertVisible by point — drop the step rather
+                    // than emit invalid YAML.
+                    return '';
+                }
                 if (step.elementId) {
                     return `- assertVisible:\n    id: "${step.elementId}"`;
                 }
                 return `- assertVisible:\n    text: "${step.value || ''}"`;
             case 'tapOn':
+                if (isCoordinateId(step.elementId)) {
+                    // Fallback: no element resolved → tap by coordinates.
+                    return `- tapOn:\n    point: "${step.elementId}"`;
+                }
                 if (step.elementId) {
                     return `- tapOn:\n    id: "${step.elementId}"`;
                 }
@@ -43,6 +65,9 @@ export function stepsToMaestroYaml(appId: string, steps: MaestroStep[]): string 
             case 'hideKeyboard':
                 return `- hideKeyboard`;
             case 'launchApp':
+                if (step.clearState) {
+                    return `- launchApp:\n    clearState: true`;
+                }
                 return `- launchApp`;
             default:
                 return '';

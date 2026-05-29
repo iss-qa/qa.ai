@@ -288,11 +288,15 @@ async def mss_flow_status_sse(flowId: str = "", filepath: str = ""):
                         qamindStartLines=start_lines,
                     )
 
-            # Await the task result (should already be done after sentinel)
+            # Await the task result. The runner now puts the sentinel AFTER
+            # its cleanup, so by the time we read None the task is essentially
+            # done — but keep a generous timeout as a backstop in case any
+            # cleanup step (force-stop, forward remove, etc.) is slow on a
+            # given device.
             try:
-                ok, err = await asyncio.wait_for(test_task, timeout=5)
+                ok, err = await asyncio.wait_for(test_task, timeout=15)
             except asyncio.TimeoutError:
-                ok, err = False, "Result timeout"
+                ok, err = False, "Result timeout (task did not finalize in 15s after sentinel)"
             except Exception as e:
                 ok, err = False, str(e)
 

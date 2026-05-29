@@ -40,6 +40,28 @@ SYSTEM_PREFIXES = ("android:id", "com.android", "com.miui", "com.xiaomi")
 FOCUSABLE_CLASSES = ("EditText", "AutoCompleteTextView")
 
 
+def _is_text_input_class(cls: str) -> bool:
+    """Return True only when `cls` is a real text-input widget.
+
+    The previous check was a substring match (`any(fc in cls)`) which
+    mis-fires on any class whose name happens to contain "EditText" as
+    a substring — obscure widget wrappers, accessibility delegates, or
+    Compose nodes that bubble an EditText accessibility class up to a
+    Button container. On the Foxbit welcome screen the "Entrar" button
+    was matching incorrectly; the recorder then emitted a pending
+    `inputText` step right after the tap, and the user typing their
+    email landed on a step bound to `bt_welcome_login` (a button).
+
+    Tighter rule: the class name must END WITH the focusable type, so
+    `androidx.appcompat.widget.AppCompatEditText` still matches while
+    `androidx.compose.ui.platform.ComposeButtonWithEditTextLabel`
+    doesn't.
+    """
+    if not cls:
+        return False
+    return any(cls.endswith(fc) for fc in FOCUSABLE_CLASSES)
+
+
 def clean_resource_id(resource_id: str) -> str:
     """Remove package prefix: 'com.foxbit:id/btn_login' -> 'btn_login'"""
     if not resource_id:
@@ -337,10 +359,77 @@ class ElementLookupService:
                     return {"id": el["id"], "screen_name": sname, "class": el.get("class", "")}
         return None
 
+    def get_first_element_for_screen(self, screen_name: Optional[str]) -> Optional[dict]:
+        """Return the first identifiable element of a screen (by activity name).
+
+        Used to emit an auto-`assertVisible` whenever the recorder detects a
+        screen transition. Prefers elements with a stable resource-id; falls
+        back to anything that has a usable selector.
+
+        Matching is fuzzy: if `screen_name` doesn't appear verbatim in the
+        element_map, we try substring matches against each screen key (the
+        scanner sometimes uses friendly names like `LoginActivity` while the
+        device reports the package-qualified `com.app.activities.LoginActivity`).
+        """
+        if not self.element_map or not self.element_map.get("screens") or not screen_name:
+            return None
+        screens = self.element_map["screens"]
+        candidate = None
+        if screen_name in screens:
+            candidate = screens[screen_name]
+            matched_name = screen_name
+        else:
+            for k, v in screens.items():
+                if screen_name.lower() in k.lower() or k.lower() in screen_name.lower():
+                    candidate = v
+                    matched_name = k
+                    break
+        if not candidate:
+            return None
+        for el in candidate.get("elements", []):
+            if el.get("id"):
+                return {**el, "screen_name": matched_name}
+        # No element with a clean id — last-ditch: pick the first that has text
+        for el in candidate.get("elements", []):
+            if el.get("text") or el.get("content_desc"):
+                return {**el, "screen_name": matched_name}
+        return None
+
 
 # ─── Interaction Recorder ─────────────────────────────────────────────────────
 
 PENDING_INPUT = "__PENDING_INPUT__"
+
+
+async def _adb_input_text(udid: str, text: str) -> None:
+    """Type `text` on the connected device via `adb shell input text`.
+
+    `input text` doesn't accept literal spaces (they become tab stops) or
+    several shell metacharacters. We follow the standard adb workaround:
+      • space → '%s'
+      • single-quote each chunk so the shell doesn't interpret it
+      • split by single-quote boundaries to keep escaping simple
+    Special characters in passwords (@, !, &, etc.) work fine inside the
+    single-quote envelope on stock Android shell.
+    """
+    if not text:
+        return
+    # Replace literal spaces with the special token recognised by input text.
+    safe = text.replace(" ", "%s")
+    # Drop any embedded single-quotes by closing/quoting/escaping them, then
+    # reopening the quote. This is the canonical shell escape for adb input.
+    parts = safe.split("'")
+    escaped = "'" + "'\\''".join(parts) + "'"
+    proc = await asyncio.create_subprocess_exec(
+        "adb", "-s", udid, "shell", "input", "text", escaped,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=8)
+    except asyncio.TimeoutError:
+        try: proc.kill()
+        except Exception: pass
 
 
 class InteractionRecorder:
@@ -382,6 +471,13 @@ class InteractionRecorder:
         # Semaphore: serialised lazily in the first async call
         # (can't create asyncio primitives before the event loop starts)
         self._dump_sem: Optional[asyncio.Semaphore] = None
+        # When the recorder is waiting for the user to confirm the text for a
+        # pending inputText step, taps on the device's soft keyboard would
+        # otherwise be captured as separate `tapOn` events on the focused
+        # EditText (showing up as N spurious `0_resource_name_obfuscated`
+        # steps for an N-char password). While this gate is set, _on_tap
+        # becomes a no-op.
+        self._pending_input: bool = False
 
     # ── SSE pub/sub ───────────────────────────────────────────────────────────
 
@@ -413,7 +509,24 @@ class InteractionRecorder:
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
-    async def start_recording(self, udid: str, project_id: str = None) -> str:
+    async def start_recording(
+        self,
+        udid: str,
+        project_id: str = None,
+        app_id: Optional[str] = None,
+        clear_state: bool = False,
+    ) -> str:
+        """Start a recording session.
+
+        If `app_id` is provided, the daemon launches the app on the device
+        BEFORE the getevent capture begins. This matches what the recorded
+        `launchApp` step does at replay time, so the user's first interactions
+        are always captured on the app's actual first screen — not on
+        whatever was open when they clicked Gravar.
+
+        `clear_state=True` first force-stops the package so the app starts
+        from a clean state (matching `launchApp: clearState: true` in YAML).
+        """
         from android.ui_inspector import UIInspector
         from android.element_scanner import load_element_map
         from android.device_manager import device_manager_instance
@@ -423,6 +536,39 @@ class InteractionRecorder:
         self.recorded_steps = []
         self.project_id = project_id
         self._recording_id = f"rec_{udid}_{int(time.time())}"
+
+        # ── Launch the target app (best-effort) ──
+        # We INTENTIONALLY don't use `am force-stop` here, even when clearState
+        # is requested. The reason: force-stop tears down the foreground app's
+        # SurfaceFlinger surface, and the scrcpy H.264 encoder doesn't emit a
+        # fresh keyframe for the new surface — the browser decoder freezes on
+        # the last decoded frame (control channel still works, video doesn't).
+        #
+        # Trade-off accepted:
+        #   • During RECORDING, the app comes up wherever it naturally opens.
+        #     The user is responsible for being at the desired starting screen
+        #     before clicking Gravar.
+        #   • During REPLAY, the `launchApp: clearState: true` step at the top
+        #     of the YAML is what actually guarantees a clean start — Maestro
+        #     handles that on its own driver (no scrcpy in the loop).
+        #
+        # `monkey -p <pkg> -c LAUNCHER 1` brings the app's launcher activity
+        # to the foreground without killing the process, so the surface
+        # survives and the mirror stays smooth.
+        if app_id:
+            try:
+                p = await asyncio.create_subprocess_exec(
+                    "adb", "-s", udid, "shell", "monkey", "-p", app_id,
+                    "-c", "android.intent.category.LAUNCHER", "1",
+                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(p.wait(), timeout=8)
+                logger.info(f"[RECORDING] launched {app_id} (clearState={clear_state} honored only at replay time)")
+                # Brief settle so getevent doesn't pick up the launch's own
+                # micro-taps (e.g. the launcher's app-open ripple).
+                await asyncio.sleep(0.4)
+            except Exception as e:
+                logger.warning(f"[RECORDING] launch {app_id} failed: {e} — proceeding anyway")
 
         # Connect u2 device for live dump during recording
         try:
@@ -551,7 +697,15 @@ class InteractionRecorder:
         return phys_x, phys_y
 
     async def confirm_input(self, step_index: int, text: str) -> dict:
-        """Resolve a pending inputText step with the actual text value."""
+        """Resolve a pending inputText step with the actual text value AND
+        type that value on the device. Without the device-side type, the
+        user would have to physically tap the soft keyboard — and each
+        character would register as a separate tapOn step on the focused
+        EditText (the `0_resource_name_obfuscated` artifact in password
+        fields). After the type lands, we clear the gate so subsequent
+        taps on different elements resume being recorded normally.
+        """
+        result: dict = {}
         if 0 <= step_index < len(self.recorded_steps):
             step = self.recorded_steps[step_index]
             if step.get("action") == "inputText" and step.get("is_pending"):
@@ -559,22 +713,79 @@ class InteractionRecorder:
                 step["maestro_command"] = f'- inputText: "{text}"'
                 step["is_pending"] = False
                 await self._broadcast({**step, "step_index": step_index, "updated": True})
-                return step
-        return {}
+                result = step
+
+        # Best-effort device-side type: even if the step bookkeeping above
+        # didn't match (e.g. user re-submitted after the recording ended),
+        # we still try to put the text in the focused field for parity with
+        # what the recorder UI implies happened.
+        if text and self.udid:
+            try:
+                await _adb_input_text(self.udid, text)
+            except Exception as e:
+                logger.warning(f"[confirm_input] device type failed: {e}")
+            # Tiny settle so we don't catch the IME's release event as a tap.
+            await asyncio.sleep(0.25)
+
+        # Always lift the gate, even on errors, so the recorder doesn't
+        # get stuck swallowing taps.
+        self._pending_input = False
+        return result
 
     # ── Element identification ────────────────────────────────────────────────
 
-    async def _identify_element(self, x: int, y: int) -> dict:
+    async def _identify_element(self, x: int, y: int, pre_tap_xml: Optional[str] = None) -> dict:
         """
         Identify element at physical coords (x, y).
 
-        1. u2 dump_hierarchy — live dump, works on any screen, safe for scrcpy
-        2. element map bounds lookup — restricted to confirmed current screen
-        3. fallback: None (caller uses point coords)
+        1. pre-tap XML snapshot (preferred) — captured by _on_tap before any
+           await so we always look up against the screen the user actually
+           tapped, not whatever screen the navigation transitioned to.
+        2. u2 dump_hierarchy — live dump, fallback for when snapshot failed
+           or didn't include a meaningful element.
+        3. element map bounds lookup — restricted to current screen.
+        4. fallback: None (caller uses point coords)
         """
-        from android.ui_inspector import UIInspector
+        from android.ui_inspector import UIInspector, _find_element_in_xml
 
-        # ── 1. Live u2 dump (primary) ──────────────────────────────────────
+        # ── 1. Pre-tap XML snapshot (preferred when available) ─────────────
+        if pre_tap_xml:
+            try:
+                info = _find_element_in_xml(pre_tap_xml, x, y)
+                rid = info.get("resource_id", "") if info else ""
+                is_sys = rid and any(rid.startswith(p) for p in SYSTEM_PREFIXES)
+                has_data = info and ((rid and not is_sys) or info.get("text") or info.get("content_desc"))
+                if has_data:
+                    cls = info.get("class_name", "") or info.get("class", "")
+                    if rid and not is_sys:
+                        eid = clean_resource_id(rid)
+                        logger.info(f"[IDENTIFY] pre-tap snapshot → id={eid}")
+                        return {"id": eid, "class": cls, "from_dump": True,
+                                "is_focusable": _is_text_input_class(cls)}
+                    # No resource-id but has text/desc — use text-based selector
+                    text = info.get("text", "")
+                    desc = info.get("content_desc", "")
+                    if text:
+                        if self._lookup:
+                            m = self._lookup.find_by_text(text)
+                            if m:
+                                return {**m, "from_dump": True,
+                                        "is_focusable": _is_text_input_class(cls)}
+                        return {"id": text, "class": cls, "from_dump": True, "use_text": True,
+                                "is_focusable": _is_text_input_class(cls)}
+                    if desc:
+                        if self._lookup:
+                            m = self._lookup.find_by_desc(desc)
+                            if m:
+                                return {**m, "from_dump": True,
+                                        "is_focusable": _is_text_input_class(cls)}
+                        short = desc.split("\n")[0].strip()[:50]
+                        return {"id": short, "class": cls, "from_dump": True, "use_text": True,
+                                "is_focusable": _is_text_input_class(cls)}
+            except Exception as e:
+                logger.debug(f"[IDENTIFY] pre-tap snapshot parse failed: {e}")
+
+        # ── 2. Live u2 dump (fallback when snapshot missed) ────────────────
         # Serialised via semaphore — concurrent dumps on Xiaomi kill scrcpy stream.
         if self._d:
             if self._dump_sem is None:
@@ -608,7 +819,7 @@ class InteractionRecorder:
                 if rid and not any(rid.startswith(p) for p in SYSTEM_PREFIXES):
                     eid = clean_resource_id(rid)
                     return {"id": eid, "class": cls, "from_dump": True,
-                            "is_focusable": any(fc in cls for fc in FOCUSABLE_CLASSES)}
+                            "is_focusable": _is_text_input_class(cls)}
 
                 # text lookup in element map first for a cleaner id
                 if text:
@@ -616,19 +827,19 @@ class InteractionRecorder:
                         match = self._lookup.find_by_text(text)
                         if match:
                             return {**match, "from_dump": True,
-                                    "is_focusable": any(fc in cls for fc in FOCUSABLE_CLASSES)}
+                                    "is_focusable": _is_text_input_class(cls)}
                     return {"id": text, "class": cls, "from_dump": True, "use_text": True,
-                            "is_focusable": any(fc in cls for fc in FOCUSABLE_CLASSES)}
+                            "is_focusable": _is_text_input_class(cls)}
 
                 if desc:
                     if self._lookup:
                         match = self._lookup.find_by_desc(desc)
                         if match:
                             return {**match, "from_dump": True,
-                                    "is_focusable": any(fc in cls for fc in FOCUSABLE_CLASSES)}
+                                    "is_focusable": _is_text_input_class(cls)}
                     short = desc.split("\n")[0].strip()[:50]
                     return {"id": short, "class": cls, "from_dump": True, "use_text": True,
-                            "is_focusable": any(fc in cls for fc in FOCUSABLE_CLASSES)}
+                            "is_focusable": _is_text_input_class(cls)}
 
         # ── 2. Element map bounds (fallback for screens in the map) ────────
         if self._lookup:
@@ -637,7 +848,7 @@ class InteractionRecorder:
             if found and found.get("id"):
                 cls = found.get("class", "")
                 return {**found, "from_map": True,
-                        "is_focusable": any(fc in cls for fc in FOCUSABLE_CLASSES)}
+                        "is_focusable": _is_text_input_class(cls)}
 
         return {}
 
@@ -704,6 +915,9 @@ class InteractionRecorder:
                 "maestro_command": f'- inputText: "{PENDING_INPUT}"',
                 "is_pending": True,
             })
+            # Gate subsequent taps until the frontend resolves the value.
+            # `confirm_input` clears this when the user confirms in the modal.
+            self._pending_input = True
 
         return steps
 
@@ -716,23 +930,160 @@ class InteractionRecorder:
         except Exception:
             return None
 
+    async def _build_screen_assert(self, screen_name: Optional[str]) -> Optional[dict]:
+        """Compose an `assertVisible` step for the first identifiable element
+        of `screen_name`. Returns None when no element can be resolved, so the
+        caller skips the assert rather than emitting an invalid YAML stub.
+
+        Resolution order:
+          1. ElementLookupService (pre-scanned element_map) — preferred,
+             gives a clean resource-id matching the recording's `screen_name`.
+          2. Live uiautomator dump — fallback if the map is missing the
+             screen. We walk the XML for the first element with a non-system
+             resource-id; ignores android.* IDs (system chrome).
+        """
+        if not screen_name:
+            return None
+
+        eid: Optional[str] = None
+        screen: Optional[str] = None
+
+        # 1. Pre-scanned map (best case)
+        try:
+            mapped = self._lookup.get_first_element_for_screen(screen_name)
+            if mapped and mapped.get("id"):
+                eid = mapped["id"]
+                screen = mapped.get("screen_name") or screen_name
+        except Exception as e:
+            logger.debug(f"[screen_assert] map lookup failed: {e}")
+
+        # 2. Live dump fallback
+        if not eid:
+            try:
+                from android.ui_inspector import UIInspector
+                import xml.etree.ElementTree as ET
+                from android.device_manager import device_manager_instance
+                device = await asyncio.to_thread(device_manager_instance.connect, self.udid)
+                xml = await asyncio.to_thread(UIInspector.dump_via_u2, device) if device else None
+                if xml:
+                    root = ET.fromstring(xml)
+                    for node in root.iter():
+                        rid = node.get("resource-id", "")
+                        if not rid:
+                            continue
+                        # Skip Android system IDs (status bar, nav, etc.)
+                        if rid.startswith("android:") or rid.startswith("com.android.systemui:"):
+                            continue
+                        clean = rid.split("/", 1)[-1] if "/" in rid else rid
+                        if clean:
+                            eid = clean
+                            screen = screen_name
+                            break
+            except Exception as e:
+                logger.debug(f"[screen_assert] live dump failed: {e}")
+
+        if not eid:
+            return None
+
+        return {
+            "action": "assertVisible",
+            "elementId": eid,
+            "maestro_command": f'- assertVisible:\n    id: "{eid}"',
+            "auto_generated": True,
+            "screen_name": screen or screen_name,
+        }
+
     async def _on_tap(self, x: int, y: int):
         if not self.is_recording:
             return
+        if self._pending_input:
+            # Swallow taps while a pending inputText is awaiting confirmation.
+            # Each character the user types on the device's keyboard would
+            # otherwise be captured as a separate tapOn on the focused
+            # EditText, polluting the recording.
+            logger.info(f"[TAP] ({x}, {y}) — ignored (pending input awaiting confirm)")
+            return
         logger.info(f"[TAP] ({x}, {y})")
+
+        # CRITICAL: snapshot the view hierarchy AS THE FIRST ACTION, BEFORE any
+        # await that could let the device transition to the next screen. The
+        # most common bug we hit is:
+        #   1. user taps "Entrar" button on welcome (button has resource-id)
+        #   2. screen starts transitioning to login form (~200ms)
+        #   3. _on_tap awaits _current_screen() and the screen-change check
+        #   4. by the time _identify_element runs, the dump returns the LOGIN
+        #      screen's hierarchy — (x,y) doesn't match any clickable there →
+        #      fallback to coordinates, defeating the whole point of the scan.
+        # Snapshotting now binds the lookup to the screen the user actually
+        # tapped on.
+        pre_tap_xml: Optional[str] = None
+        if self._d:
+            try:
+                from android.ui_inspector import UIInspector
+                if self._dump_sem is None:
+                    self._dump_sem = asyncio.Semaphore(1)
+                async with self._dump_sem:
+                    pre_tap_xml = await asyncio.to_thread(UIInspector.dump_via_u2, self._d)
+            except Exception as e:
+                logger.debug(f"[TAP] pre-tap dump failed: {e}")
 
         curr_screen = await self._current_screen()
 
-        # Screen change → insert assertVisible for transition
-        if curr_screen and curr_screen != self._prev_activity:
+        # Screen change → auto-emit an assertVisible for the new screen so the
+        # generated YAML confirms we've landed where the user expected before
+        # acting. Without this the flow can pass even if a previous step
+        # navigated to the wrong screen.
+        screen_changed = bool(curr_screen and curr_screen != self._prev_activity)
+        if screen_changed:
             logger.info(f"[RECORDING] Screen: {self._prev_activity} → {curr_screen}")
             self._prev_activity = curr_screen
             await asyncio.sleep(0.5)
+            assert_step = await self._build_screen_assert(curr_screen)
+            if assert_step:
+                # Don't emit if the same element is already the last recorded
+                # step — happens when the previous screen's exit step landed
+                # on the same id that's first-visible on the new screen.
+                last = self.recorded_steps[-1] if self.recorded_steps else None
+                if (
+                    last
+                    and last.get("action") == "assertVisible"
+                    and last.get("elementId") == assert_step.get("elementId")
+                ):
+                    logger.info(f"[RECORDING] dedup: skipping screen-change assertVisible id={assert_step.get('elementId')!r}")
+                else:
+                    idx = len(self.recorded_steps)
+                    self.recorded_steps.append(assert_step)
+                    await self._broadcast({**assert_step, "step_index": idx})
 
-        element = await self._identify_element(x, y)
+        element = await self._identify_element(x, y, pre_tap_xml=pre_tap_xml)
 
         steps = self._build_steps(element, x, y)
         for step in steps:
+            # Dedupe consecutive assertVisible steps on the same element.
+            # Two paths emit asserts:
+            #   1. _build_screen_assert on screen change (appended directly above)
+            #   2. _build_steps emits its own assertVisible for the tapped element
+            # When the first visible element of the new screen IS the one the
+            # user just tapped (common: user navigates to a screen with a
+            # single prominent button), both asserts target the same element
+            # and we end up with a useless duplicate.
+            #
+            # We compare only `action` + `elementId` — `maestro_command` would
+            # be the right semantic but tiny formatting differences across
+            # the two emitters (whitespace, quote style if it ever changes)
+            # would silently break the dedupe. Action+id is the safe minimum.
+            if step.get("action") == "assertVisible" and self.recorded_steps:
+                last = self.recorded_steps[-1]
+                if (
+                    last.get("action") == "assertVisible"
+                    and last.get("elementId") == step.get("elementId")
+                    and last.get("elementId")
+                ):
+                    logger.info(
+                        f"[TAP] dedup: skipping assertVisible id={step.get('elementId')!r} "
+                        f"(prev={last.get('elementId')!r}, same)"
+                    )
+                    continue
             idx = len(self.recorded_steps)
             self.recorded_steps.append(step)
             await self._broadcast({**step, "step_index": idx})

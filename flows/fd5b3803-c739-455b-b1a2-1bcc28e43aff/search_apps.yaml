@@ -1,7 +1,6 @@
-appId: br.com.foxbit.foxbitandroid
+appId: com.google.android.apps.playconsole
 ---
 - launchApp:
-    clearState: true
 - assertVisible: "Pesquisar apps e jogos"
 - tapOn: "Pesquisar apps e jogos"
 - inputText: "WasteZero"

@@ -95,6 +95,17 @@ class ScrcpyClient:
         """
         Iniciar o scrcpy-server no device.
         """
+        # `video_codec_options=i-frame-interval=1` is critical for low-latency
+        # mirroring. Without it the Android MediaCodec defaults to ~10s between
+        # I-frames (keyframes). Whenever the decoder loses sync — common at any
+        # screen transition or after a brief network/CPU stall — it has to
+        # wait for the next keyframe before painting again. With a 1s
+        # interval the worst-case lag drops from ~10s to ~1s.
+        #
+        # `video_bit_rate=4000000` (4 Mbps) is plenty for 1080p/30fps mirroring
+        # and prevents the local socket buffer from filling up faster than the
+        # browser decoder can drain, which manifests as "the mirror is still
+        # showing the previous screen" while the device has already moved on.
         cmd = (
             f"CLASSPATH=/data/local/tmp/scrcpy-server.jar "
             f"app_process / com.genymobile.scrcpy.Server "
@@ -102,6 +113,8 @@ class ScrcpyClient:
             f"scid={self.scid_hex} "
             f"tunnel_forward=true "
             f"video_codec=h264 "
+            f"video_bit_rate=4000000 "
+            f"video_codec_options=i-frame-interval=1 "
             f"max_fps={self.max_fps} "
             f"max_size={self.max_width} "
             f"audio=false "
@@ -235,6 +248,34 @@ class ScrcpyClient:
     async def send_backspace(self):
         """Send backspace key via scrcpy keyevent."""
         await self.send_keyevent(67)  # KEYCODE_DEL
+
+    async def reset_video(self) -> None:
+        """Force the scrcpy server to emit a fresh keyframe.
+
+        Needed when something on the device tore down the encoded surface
+        (e.g. `am force-stop` of the foreground app) — the H.264 decoder in
+        the browser then sits on the last decoded frame because no new
+        keyframe arrives. Asking the server to RESET_VIDEO produces one
+        immediately, unfreezing the mirror.
+
+        Opcode is version-sensitive. In scrcpy 2.7 the control_msg enum is:
+            0  INJECT_KEYCODE          5  EXPAND_NOTIFICATION_PANEL  10 SET_DISPLAY_POWER       15 OPEN_HARD_KEYBOARD_SETTINGS
+            1  INJECT_TEXT             6  EXPAND_SETTINGS_PANEL      11 ROTATE_DEVICE          16 START_APP
+            2  INJECT_TOUCH_EVENT      7  COLLAPSE_PANELS            12 UHID_CREATE            17 RESET_VIDEO   ← this one
+            3  INJECT_SCROLL_EVENT     8  GET_CLIPBOARD              13 UHID_INPUT
+            4  BACK_OR_SCREEN_ON       9  SET_CLIPBOARD              14 UHID_DESTROY
+        (An earlier version of this file sent byte 14 by mistake — that's
+        UHID_DESTROY which expects 2 more bytes for the device id, so the
+        server consumed the next message's header and the control stream
+        ended up corrupted.)
+        """
+        if not self._control_writer:
+            return
+        try:
+            self._control_writer.write(struct.pack('>B', 17))
+            await self._control_writer.drain()
+        except Exception as e:
+            logger.warning(f"Scrcpy reset_video failed for {self.udid}: {e}")
 
     async def send_keyevent(self, keycode: int, action: str = "down_up"):
         """

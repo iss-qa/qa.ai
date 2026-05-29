@@ -1,0 +1,225 @@
+{
+  "id": "c9808aff-c065-449d-b6fa-c3980779c0e6",
+  "name": "TesteGracvadoLogin",
+  "description": "Teste gravado com 19 passos (Maestro)",
+  "steps": [
+    {
+      "id": "74c9b72b-594f-4c40-9c2d-104c69f23d78",
+      "num": 1,
+      "action": "launchApp",
+      "elementId": "br.com.foxbit.foxbitandroid",
+      "target": "br.com.foxbit.foxbitandroid",
+      "value": "true",
+      "description": "Abrir app (br.com.foxbit.foxbitandroid) com clearState",
+      "engine": "maestro",
+      "maestro_command": "- launchApp:\n    clearState: true"
+    },
+    {
+      "id": "b9af83f9-d434-4e35-9b44-af7e8f617a8e",
+      "num": 2,
+      "action": "assertVisible",
+      "elementId": "txt_login_welcome",
+      "target": "txt_login_welcome",
+      "value": "",
+      "description": "Confirmar tela › txt_login_welcome",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"txt_login_welcome\""
+    },
+    {
+      "id": "9cee2657-f42d-46f7-94d4-b6f8bd6f1e7a",
+      "num": 3,
+      "action": "assertVisible",
+      "elementId": "txt_login_welcome",
+      "target": "txt_login_welcome",
+      "value": "",
+      "description": "Confirmar tela › txt_login_welcome",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"txt_login_welcome\""
+    },
+    {
+      "id": "9c1a2bdd-01a9-4289-ace0-f0ae5d237e5f",
+      "num": 4,
+      "action": "tapOn",
+      "elementId": "txt_login_welcome",
+      "target": "txt_login_welcome",
+      "value": "",
+      "description": "Tocar em › txt_login_welcome",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"txt_login_welcome\""
+    },
+    {
+      "id": "5ee01676-0194-4a83-87ed-754a3cdf3326",
+      "num": 5,
+      "action": "assertVisible",
+      "elementId": "bt_welcome_login",
+      "target": "bt_welcome_login",
+      "value": "",
+      "description": "Confirmar tela › bt_welcome_login",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"bt_welcome_login\""
+    },
+    {
+      "id": "5755abc4-3e58-4ce6-9b17-0ba0f1944416",
+      "num": 6,
+      "action": "assertVisible",
+      "elementId": "bt_welcome_login",
+      "target": "bt_welcome_login",
+      "value": "",
+      "description": "Confirmar tela › bt_welcome_login",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"bt_welcome_login\""
+    },
+    {
+      "id": "679af549-3d3d-4ad4-9d62-671a046c3b1a",
+      "num": 7,
+      "action": "tapOn",
+      "elementId": "bt_welcome_login",
+      "target": "bt_welcome_login",
+      "value": "isaiasilva.info@gmail.com",
+      "description": "Digitar › \"isaiasilva.info@gmail.com\"",
+      "engine": "maestro",
+      "maestro_command": "- inputText: \"isaiasilva.info@gmail.com\""
+    },
+    {
+      "id": "ba2765cc-9e0a-4244-baa5-cf9d87a5d730",
+      "num": 8,
+      "action": "assertVisible",
+      "elementId": "inp_login_email",
+      "target": "inp_login_email",
+      "value": "",
+      "description": "Confirmar tela › inp_login_email",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"inp_login_email\""
+    },
+    {
+      "id": "8a8a39b4-e9ae-484a-8136-655c77b113b1",
+      "num": 9,
+      "action": "assertVisible",
+      "elementId": "inp_login_email",
+      "target": "inp_login_email",
+      "value": "",
+      "description": "Confirmar tela › inp_login_email",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"inp_login_email\""
+    },
+    {
+      "id": "f95afd8b-55a0-48ff-a0ac-78a3dd6e5133",
+      "num": 10,
+      "action": "tapOn",
+      "elementId": "inp_login_email",
+      "target": "inp_login_email",
+      "value": "Is@i@s2026",
+      "description": "Digitar › \"Is@i@s2026\"",
+      "engine": "maestro",
+      "maestro_command": "- inputText: \"Is@i@s2026\""
+    },
+    {
+      "id": "2a9fb6f4-5c8e-46e3-8f10-103f7cac4487",
+      "num": 11,
+      "action": "inputText",
+      "elementId": "inp_login_email",
+      "target": "inp_login_email",
+      "value": "__PENDING_INPUT__",
+      "description": "Digitar › [aguardando texto...]",
+      "engine": "maestro",
+      "maestro_command": "- inputText: \"__PENDING_INPUT__\""
+    },
+    {
+      "id": "32a1eeb5-3f0e-40be-8252-9bcc297a2d50",
+      "num": 12,
+      "action": "assertVisible",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Confirmar tela › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "4d323f8d-d3fd-4ebf-9830-76ac87a5d94b",
+      "num": 13,
+      "action": "assertVisible",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Confirmar tela › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "da50d123-a0ad-4c62-ba71-b3f5d2ffd7d6",
+      "num": 14,
+      "action": "tapOn",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Tocar em › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "b74b6b6a-e1f0-4db3-b21a-1279bccf9863",
+      "num": 15,
+      "action": "inputText",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "__PENDING_INPUT__",
+      "description": "Digitar › [aguardando texto...]",
+      "engine": "maestro",
+      "maestro_command": "- inputText: \"__PENDING_INPUT__\""
+    },
+    {
+      "id": "132a7e18-0a85-42e9-b520-3d1bab08bb07",
+      "num": 16,
+      "action": "assertVisible",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Confirmar tela › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "75de016a-ac60-4b3f-a687-a10b8ce635fb",
+      "num": 17,
+      "action": "assertVisible",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Confirmar tela › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- assertVisible:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "af6b41a5-bb6c-4dd3-9866-651fc51a8073",
+      "num": 18,
+      "action": "tapOn",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "",
+      "description": "Tocar em › inp_login_password",
+      "engine": "maestro",
+      "maestro_command": "- tapOn:\n    id: \"inp_login_password\""
+    },
+    {
+      "id": "727bda55-e995-4272-9c6c-7e9027653908",
+      "num": 19,
+      "action": "inputText",
+      "elementId": "inp_login_password",
+      "target": "inp_login_password",
+      "value": "__PENDING_INPUT__",
+      "description": "Digitar › [aguardando texto...]",
+      "engine": "maestro",
+      "maestro_command": "- inputText: \"__PENDING_INPUT__\""
+    }
+  ],
+  "tags": [
+    "recorded",
+    "maestro",
+    "foxbit"
+  ],
+  "project_id": "b63d8dd4-f0dd-4eeb-a7ad-e8a00a4644ad",
+  "is_active": true,
+  "version": 1,
+  "created_at": "2026-05-29T12:38:07.890231"
+}

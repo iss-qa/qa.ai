@@ -403,7 +403,22 @@
                 return fetch('http://localhost:8001/api/maestro-studio/file/save', {
                   method: 'POST', headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ path: a.path || '', content: a.content || '' })
-                }).then(function(r) { return r.json(); }).catch(function() { return { success: false }; });
+                }).then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    // Announce the save so the parent QAMind project page can
+                    // re-sync test_cases.steps[] from the new YAML.
+                    if (d && d.success) {
+                      try {
+                        window.parent.postMessage({
+                          type: 'qamind:file-saved',
+                          path: a.path || '',
+                          content: a.content || '',
+                        }, '*');
+                      } catch (e) {}
+                    }
+                    return d;
+                  })
+                  .catch(function() { return { success: false }; });
               },
               'read-file': function(args) {
                 var path = (args && args[0]) || '';
@@ -661,12 +676,22 @@
               // The editor calls ipcRenderer.send('save-file', {path, content}) on autosave
               // (fire-and-forget). Without this handler, edits never persisted to disk —
               // VS Code open on the same file would show the old template.
+              // Also announces the save to the parent so test_cases.steps[]
+              // stay in sync with the YAML on disk.
               'save-file': function(args) {
                 var a = (args && args[0]) || {};
                 if (!a.path) return;
                 fetch('http://localhost:8001/api/maestro-studio/file/save', {
                   method: 'POST', headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ path: a.path, content: a.content || '' })
+                }).then(function() {
+                  try {
+                    window.parent.postMessage({
+                      type: 'qamind:file-saved',
+                      path: a.path,
+                      content: a.content || '',
+                    }, '*');
+                  } catch (e) {}
                 }).catch(function(e) { console.error('[ipc] save-file send failed', e); });
               },
             };

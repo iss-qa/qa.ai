@@ -3,30 +3,27 @@ appId: br.com.foxbit.foxbitandroid
 - launchApp:
     clearState: true
 - assertVisible:
+    id: "txt_welcome_title"
+- assertVisible:
     id: "bt_welcome_login"
-- tapOn:
-    id: "bt_welcome_login"
+- tapOn: 
+    id: bt_welcome_login
 - assertVisible:
     id: "inp_login_email"
-- tapOn:
-    id: "inp_login_email"
-- inputText: "testecadastro200@hotmail.com"
+- inputText: "Is@i@s1989"
+- inputText: "__PENDING_INPUT__"
 - assertVisible:
     id: "inp_login_password"
 - tapOn:
     id: "inp_login_password"
-- inputText: "ISS.1@qa"
-- assertVisible:
-    id: "bt_login_eye"
+- inputText: "__PENDING_INPUT__"
 - tapOn:
-    id: "bt_login_eye"
-- assertVisible:
     id: "txt_login_welcome"
 - assertVisible:
-    id: "txt_login_welcome"
-- tapOn:
     id: "bt_login_continue"
 - tapOn:
-    id: "bt_welcome_login"
+    id: "bt_login_continue"
+- assertVisible:
+    id: "bt_login_continue"
 - tapOn:
-    id: "bt_welcome_login"
+    id: "bt_login_continue"

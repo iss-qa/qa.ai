@@ -28,5 +28,3 @@ appId: br.com.foxbit.foxbitandroid
     id: "bt_login_continue"
 - tapOn:
     id: "bt_welcome_login"
-- tapOn:
-    id: "bt_welcome_login"

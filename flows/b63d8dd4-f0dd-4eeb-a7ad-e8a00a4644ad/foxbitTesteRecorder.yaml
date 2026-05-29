@@ -1,0 +1,91 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: "Página inicial"
+- assertVisible:
+    id: "Página inicial"
+- tapOn:
+    id: "Página inicial"
+- swipe:
+    direction: LEFT
+- swipe:
+    direction: LEFT
+- swipe:
+    direction: LEFT
+- assertVisible:
+    id: "bt_welcome_deposit"
+- assertVisible:
+    id: "bt_welcome_deposit"
+- tapOn:
+    id: "bt_welcome_deposit"
+- assertVisible:
+    id: "bt_welcome_login"
+- assertVisible:
+    id: "bt_welcome_login"
+- tapOn:
+    id: "bt_welcome_login"
+- assertVisible:
+    id: "inp_login_password"
+- assertVisible:
+    id: "inp_login_password"
+- tapOn:
+    id: "inp_login_password"
+- inputText: "__PENDING_INPUT__"
+- assertVisible:
+    id: "bt_login_forgot_password"
+- assertVisible:
+    id: "bt_login_forgot_password"
+- tapOn:
+    id: "bt_login_forgot_password"
+- assertVisible:
+    id: "0_resource_name_obfuscated"
+- assertVisible:
+    id: "0_resource_name_obfuscated"
+- tapOn:
+    id: "0_resource_name_obfuscated"
+- assertVisible:
+    id: "0_resource_name_obfuscated"
+- assertVisible:
+    id: "0_resource_name_obfuscated"
+- tapOn:
+    id: "0_resource_name_obfuscated"
+- swipe:
+    direction: RIGHT
+- assertVisible:
+    id: "0_resource_name_obfuscated"
+- assertVisible:
+    id: "0_resource_name_obfuscated"
+- tapOn:
+    id: "0_resource_name_obfuscated"
+- assertVisible:
+    id: "0_resource_name_obfuscated"
+- assertVisible:
+    id: "0_resource_name_obfuscated"
+- tapOn:
+    id: "0_resource_name_obfuscated"
+- assertVisible:
+    id: "0_resource_name_obfuscated"
+- assertVisible:
+    id: "0_resource_name_obfuscated"
+- tapOn:
+    id: "0_resource_name_obfuscated"
+- assertVisible:
+    id: "D06"
+- assertVisible:
+    id: "D06"
+- tapOn:
+    id: "D06"
+- assertVisible:
+    id: "C05"
+- assertVisible:
+    id: "C05"
+- tapOn:
+    id: "C05"
+- assertVisible:
+    id: "0_resource_name_obfuscated"
+- assertVisible:
+    id: "0_resource_name_obfuscated"
+- tapOn:
+    id: "0_resource_name_obfuscated"
