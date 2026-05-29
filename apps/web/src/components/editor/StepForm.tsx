@@ -2,7 +2,7 @@
 
 import { useTestEditor } from '@/store/testEditor';
 import { TestStep, StepAction } from '@qamind/shared';
-import { Settings, Save, X } from 'lucide-react';
+import { Settings, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 // Maps action to fields it requires
@@ -37,7 +37,7 @@ export function StepForm() {
         else setLocalStep(null);
     }, [step]);
 
-    const handleChange = (field: keyof TestStep, val: any) => {
+    const handleChange = (field: keyof TestStep, val: TestStep[keyof TestStep]) => {
         if (!localStep) return;
         setLocalStep({ ...localStep, [field]: val });
         updateStep(localStep.id!, { [field]: val }); // sync up

@@ -133,7 +133,7 @@ export function StepTransforms({ state, update, onNext, onBack }: Props) {
                                         const target = guessTarget(fieldKey, value);
                                         return (
                                             <tr key={value} className="border-b border-white/5">
-                                                <td className="px-4 py-2 font-mono text-xs text-slate-300">"{value}"</td>
+                                                <td className="px-4 py-2 font-mono text-xs text-slate-300">&quot;{value}&quot;</td>
                                                 <td className="px-4 py-2">
                                                     <select
                                                         value={target}

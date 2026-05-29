@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, CheckCircle2, Clock, XCircle, ChevronRight, Video, FileText } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Clock, XCircle, Video, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 

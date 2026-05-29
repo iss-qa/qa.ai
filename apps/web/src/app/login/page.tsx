@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Mail, Lock, ArrowRight, Activity, ShieldCheck } from 'lucide-react';
 
@@ -13,7 +12,6 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const router = useRouter();
     const supabase = createClient();
 
     const handleLogin = async (e: React.FormEvent) => {
@@ -34,8 +32,8 @@ export default function LoginPage() {
                 window.location.href = '/dashboard';
                 return; // Early return keeps loading state visible
             }
-        } catch (err: any) {
-            setError(err.message || 'Credenciais inválidas');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Credenciais inválidas');
             setLoading(false);
         }
     };

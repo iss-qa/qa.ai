@@ -53,7 +53,7 @@ export function SaveRecordingModal({
             .from('projects')
             .select('id, name')
             .order('name')
-            .then(({ data, error }) => {
+            .then(({ data }) => {
                 if (data && data.length > 0) {
                     setProjects(data);
                     // Pre-select current project if available, otherwise first project

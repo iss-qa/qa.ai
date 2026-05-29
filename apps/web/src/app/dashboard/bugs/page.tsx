@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { FileText, Bug, Search, Filter, Loader2, Plus, X, Link2, Paperclip, Trash2, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
-import Link from 'next/link';
 import { useQueryState } from 'nuqs';
 import { supabase } from '@/lib/supabase';
 
@@ -35,13 +34,6 @@ const severityColors: Record<Severity, string> = {
     high:     'bg-orange-500/20 text-orange-500',
     medium:   'bg-yellow-500/20 text-yellow-500',
     low:      'bg-green-500/20 text-green-500',
-};
-
-const severityLabel: Record<Severity, string> = {
-    critical: 'Crítico',
-    high:     'Alta',
-    medium:   'Média',
-    low:      'Baixa',
 };
 
 const statusLabel: Record<BugStatus, string> = {
@@ -87,7 +79,7 @@ export default function BugTrackerPage() {
             .select('id, severity, title, description, project_id, test_case_id, test_run_id, attachment_url, jira_url, pdf_url, status, source, created_at, projects:project_id ( name ), test_cases:test_case_id ( name )')
             .order('created_at', { ascending: false });
         if (error) {
-            if ((error as any).code === '42P01') setMigrationMissing(true);
+            if ((error as { code?: string }).code === '42P01') setMigrationMissing(true);
             else console.error('bug_reports load failed:', error);
             return [];
         }
@@ -189,9 +181,9 @@ export default function BugTrackerPage() {
             const fresh = await loadBugs();
             setBugs(fresh);
             setEditing(null);
-        } catch (e: any) {
+        } catch (e) {
             console.error('bug save failed:', e);
-            alert('Erro ao salvar bug: ' + (e?.message || e));
+            alert('Erro ao salvar bug: ' + ((e as { message?: string })?.message || e));
         } finally {
             setSaving(false);
         }
@@ -205,8 +197,8 @@ export default function BugTrackerPage() {
             const { error } = await supabase.from('bug_reports').delete().eq('id', targetId);
             if (error) throw error;
             setBugs(prev => prev.filter(b => b.id !== targetId));
-        } catch (e: any) {
-            alert('Erro ao excluir: ' + (e?.message || e));
+        } catch (e) {
+            alert('Erro ao excluir: ' + ((e as { message?: string })?.message || e));
         }
     };
 
@@ -519,7 +511,7 @@ export default function BugTrackerPage() {
                                     <option value="open">Aberto</option>
                                     <option value="in_progress">Em andamento</option>
                                     <option value="resolved">Resolvido</option>
-                                    <option value="wont_fix">Won't fix</option>
+                                    <option value="wont_fix">Won&apos;t fix</option>
                                 </select>
                             </div>
                         </div>
@@ -549,7 +541,7 @@ export default function BugTrackerPage() {
                     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                         <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
                             <h3 className="text-lg font-bold text-white mb-2">Excluir Bug?</h3>
-                            <p className="text-sm text-slate-400 mb-6">O bug "{title}" será excluído permanentemente.</p>
+                            <p className="text-sm text-slate-400 mb-6">O bug &quot;{title}&quot; será excluído permanentemente.</p>
                             <div className="flex gap-3 justify-end">
                                 <button onClick={() => setDeletingId(null)} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancelar</button>
                                 <button onClick={confirmDelete} className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 transition-colors">Excluir</button>

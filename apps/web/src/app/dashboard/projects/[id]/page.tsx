@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Play, Plus, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, X, Download, Upload, FileUp, AlertTriangle, CheckCircle2, ScanSearch, Monitor, Square, ChevronDown, ChevronRight, MousePointerClick, Eye, Copy, Smartphone, Wand2, RefreshCw, ExternalLink, MoreVertical, Clapperboard } from 'lucide-react';
+import { ArrowLeft, Play, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, X, Download, Upload, FileUp, AlertTriangle, CheckCircle2, ScanSearch, Monitor, Square, ChevronDown, ChevronRight, MousePointerClick, Eye, Copy, Smartphone, Wand2, RefreshCw, ExternalLink, MoreVertical, Clapperboard } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -16,14 +16,58 @@ interface Project {
     status: string;
 }
 
+interface ScanElement {
+    class?: string;
+    id?: string;
+    index?: number;
+    text?: string;
+    hint?: string;
+    [key: string]: unknown;
+}
+
+interface ScanSelectorCommand {
+    type?: string;
+    strategy?: string;
+    command?: string;
+}
+
+interface ScanSelectorGroup {
+    element?: ScanElement;
+    commands?: ScanSelectorCommand[];
+}
+
+interface ScanScreen {
+    maestro_selectors?: ScanSelectorGroup[];
+    screenshot?: string;
+    activity?: string;
+}
+
+interface ScanResults {
+    screens?: Record<string, ScanScreen>;
+    stats?: { elements_found?: number; dumps_completed?: number };
+    app_package?: string;
+}
+
+interface TestStep {
+    id?: string;
+    num?: number;
+    action?: string;
+    target?: string;
+    value?: string;
+    engine?: string;
+    maestro_command?: string;
+}
+
 interface TestCase {
     id: string;
     name: string;
     status: string;
     last_run_at: string | null;
     platform: string;
-    steps?: any[];
+    steps?: TestStep[];
     tags?: string[];
+    raw_yaml?: string | null;
+    app_id?: string | null;
 }
 
 export default function ProjectDetailPage() {
@@ -55,7 +99,7 @@ export default function ProjectDetailPage() {
     const maestroIframeRef = useRef<HTMLIFrameElement>(null);
     const [saveAsTestOpen, setSaveAsTestOpen] = useState(false);
     const [saveAsTestPhase, setSaveAsTestPhase] = useState<'loading' | 'review' | 'saving' | 'error' | 'success'>('loading');
-    const [saveAsTestData, setSaveAsTestData] = useState<{ path: string; name: string; content: string; steps: any[]; appId: string | null } | null>(null);
+    const [saveAsTestData, setSaveAsTestData] = useState<{ path: string; name: string; content: string; steps: TestStep[]; appId: string | null } | null>(null);
     const [saveAsTestName, setSaveAsTestName] = useState('');
     const [saveAsTestError, setSaveAsTestError] = useState('');
     const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -79,7 +123,7 @@ export default function ProjectDetailPage() {
                 .select('workspace_path')
                 .eq('id', projectId)
                 .single();
-            const workspace = (proj as any)?.workspace_path || null;
+            const workspace = (proj as { workspace_path?: string | null } | null)?.workspace_path || null;
             if (!workspace) {
                 setShowMaestroStudio(false);  // close pre-opened modal if deep-linked
                 alert('Defina um workspace para este projeto antes. Clique em "Criar Teste" e escolha uma pasta no Maestro Studio.');
@@ -95,7 +139,7 @@ export default function ProjectDetailPage() {
             //      pre-date the raw_yaml column or were created from the
             //      step editor (no comments to preserve).
             //   3. Inline appId scrape on legacy steps that carry it.
-            const t = test as any;
+            const t = test;
             const rawYaml: string | null = typeof t.raw_yaml === 'string' && t.raw_yaml.trim() ? t.raw_yaml : null;
 
             let yamlContent: string;
@@ -106,7 +150,7 @@ export default function ProjectDetailPage() {
                 appId = extractAppIdFromYaml(rawYaml) || t.app_id || null;
             } else {
                 const appIdRow = t.app_id || null;
-                const steps: any[] = Array.isArray(t.steps) ? t.steps : [];
+                const steps: TestStep[] = Array.isArray(t.steps) ? t.steps : [];
                 appId = appIdRow;
                 if (!appId) {
                     for (const s of steps) {
@@ -217,7 +261,7 @@ export default function ProjectDetailPage() {
                 .select('workspace_path')
                 .eq('id', projectId)
                 .single();
-            const ws = (data as any)?.workspace_path || null;
+            const ws = (data as { workspace_path?: string | null } | null)?.workspace_path || null;
 
             // Reset session-specific keys so we don't carry over the
             // previous project's open tabs / tree expansion.
@@ -262,7 +306,7 @@ export default function ProjectDetailPage() {
         return m ? m[1].trim() : null;
     };
 
-    const parseMaestroYamlToSteps = (rawContent: string): any[] => {
+    const parseMaestroYamlToSteps = (rawContent: string): TestStep[] => {
         const content = rawContent
             .split('\n')
             .filter(line => !line.trimStart().startsWith('#'))
@@ -271,7 +315,7 @@ export default function ProjectDetailPage() {
         const parts = content.split('---', 2);
         if (!parts[0].includes('appId')) return [];
         const lines = parts[1].split('\n');
-        const steps: any[] = [];
+        const steps: TestStep[] = [];
         let stepNum = 0;
 
         const trimQuotes = (s: string) => s.trim().replace(/^"|"$/g, '');
@@ -439,9 +483,9 @@ export default function ProjectDetailPage() {
             setSaveAsTestPhase('success');
             fetchProject();
             setTimeout(() => setSaveAsTestOpen(false), 1500);
-        } catch (e: any) {
+        } catch (e: unknown) {
             setSaveAsTestPhase('error');
-            setSaveAsTestError(`Erro ao salvar: ${e.message || e}`);
+            setSaveAsTestError(`Erro ao salvar: ${e instanceof Error ? e.message : String(e)}`);
         }
     };
 
@@ -452,7 +496,7 @@ export default function ProjectDetailPage() {
     const [scannerTimer, setScannerTimer] = useState<ReturnType<typeof setInterval> | null>(null);
     const [hasElementMap, setHasElementMap] = useState(false);
     const [availableDeviceUdid, setAvailableDeviceUdid] = useState<string | null>(null);
-    const [scanResults, setScanResults] = useState<any>(null);
+    const [scanResults, setScanResults] = useState<ScanResults | null>(null);
     const [expandedScreens, setExpandedScreens] = useState<Record<string, boolean>>({});
     const [scanAppPackage, setScanAppPackage] = useState<string | null>(null);
     const [scanAppLabel, setScanAppLabel] = useState<string>('');
@@ -782,8 +826,8 @@ export default function ProjectDetailPage() {
         }
     };
 
-    const getSelectorsFromGroup = (selectorGroup: any): { type: string; strategy: string; command: string }[] => {
-        return (selectorGroup?.commands || []).map((cmd: any) => ({
+    const getSelectorsFromGroup = (selectorGroup: ScanSelectorGroup): { type: string; strategy: string; command: string }[] => {
+        return (selectorGroup?.commands || []).map((cmd: ScanSelectorCommand) => ({
             type: cmd.type || 'tapOn',
             strategy: cmd.strategy || '',
             command: cmd.command || '',
@@ -874,11 +918,11 @@ export default function ProjectDetailPage() {
         // Resolve appId via daemon
         const DAEMON = process.env.NEXT_PUBLIC_DAEMON_URL || 'http://localhost:8001';
         let appId = 'com.app.unknown';
-        const launchStep = steps.find((s: any) => (s.action || '').toLowerCase() === 'launchapp');
+        const launchStep = steps.find((s: TestStep) => (s.action || '').toLowerCase() === 'launchapp');
         if (launchStep) {
             try {
                 const udid = connectedDevice?.udid || '';
-                const appHint = extractElementName((launchStep as any).target || test.name);
+                const appHint = extractElementName(launchStep.target || test.name);
                 if (udid) {
                     const res = await fetch(`${DAEMON}/api/devices/${udid}/resolve-app?name=${encodeURIComponent(appHint)}`);
                     if (res.ok) {
@@ -890,15 +934,15 @@ export default function ProjectDetailPage() {
         }
 
         for (const s of steps) {
-            const cmd = (s as any).maestro_command;
+            const cmd = s.maestro_command;
             if (cmd) {
                 commands.push(cmd);
                 continue;
             }
 
-            const action = ((s as any).action || '').toLowerCase();
-            const target = (s as any).target || '';
-            const value = (s as any).value || '';
+            const action = (s.action || '').toLowerCase();
+            const target = s.target || '';
+            const value = s.value || '';
             const elem = extractElementName(target);
 
             if (action === 'launchapp') commands.push('- launchApp');
@@ -986,7 +1030,7 @@ export default function ProjectDetailPage() {
             // Parse commands into steps
             const commandSection = parts[1].trim();
             const lines = commandSection.split('\n');
-            const steps: any[] = [];
+            const steps: TestStep[] = [];
             let stepNum = 0;
 
             for (let i = 0; i < lines.length; i++) {
@@ -1096,9 +1140,9 @@ export default function ProjectDetailPage() {
             // Close modal after 2s
             setTimeout(() => { setShowImportModal(false); setImportStatus({ type: 'idle', message: '' }); }, 2000);
 
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Import failed:', err);
-            setImportStatus({ type: 'error', message: `Erro ao importar: ${err.message || err}` });
+            setImportStatus({ type: 'error', message: `Erro ao importar: ${err instanceof Error ? err.message : String(err)}` });
         } finally {
             setImporting(false);
         }
@@ -1454,7 +1498,7 @@ export default function ProjectDetailPage() {
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
                         <h3 className="text-lg font-bold text-white mb-2">Excluir Projeto?</h3>
-                        <p className="text-sm text-slate-400 mb-6">O projeto "{project.name}" será excluído permanentemente.</p>
+                        <p className="text-sm text-slate-400 mb-6">O projeto &quot;{project.name}&quot; será excluído permanentemente.</p>
                         <div className="flex gap-3 justify-end">
                             <button onClick={() => setDeleteConfirm(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancelar</button>
                             <button onClick={handleDelete} className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 transition-colors">Excluir</button>
@@ -1469,7 +1513,7 @@ export default function ProjectDetailPage() {
                     <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
                         <h3 className="text-lg font-bold text-white mb-2">Excluir Teste?</h3>
                         <p className="text-sm text-slate-400 mb-6">
-                            O teste "{tests.find(t => t.id === deletingTestId)?.name}" sera excluido permanentemente.
+                            O teste &quot;{tests.find(t => t.id === deletingTestId)?.name}&quot; sera excluido permanentemente.
                         </p>
                         <div className="flex gap-3 justify-end">
                             <button onClick={() => setDeletingTestId(null)} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancelar</button>
@@ -1730,14 +1774,14 @@ export default function ProjectDetailPage() {
                                     </div>
                                     <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-2.5 text-center">
                                         <p className="text-xl font-bold text-green-400">
-                                            {(() => { let t = 0; Object.values(scanResults.screens || {}).forEach((s: any) => { (s.maestro_selectors || []).forEach((g: any) => { t += (g.commands || []).length; }); }); return t; })()}
+                                            {(() => { let t = 0; Object.values(scanResults.screens || {}).forEach((s: ScanScreen) => { (s.maestro_selectors || []).forEach((g: ScanSelectorGroup) => { t += (g.commands || []).length; }); }); return t; })()}
                                         </p>
                                         <p className="text-[10px] text-slate-400 uppercase font-bold">Seletores</p>
                                     </div>
                                 </div>
                                 {/* Scrollable results */}
                                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                                    {Object.entries(scanResults.screens || {}).map(([screenName, screenData]: [string, any]) => {
+                                    {Object.entries(scanResults.screens || {}).map(([screenName, screenData]: [string, ScanScreen]) => {
                                         const selectorGroups = screenData.maestro_selectors || [];
                                         const screenshot = screenData.screenshot || '';
                                         const activity = screenData.activity || '';
@@ -1786,8 +1830,8 @@ export default function ProjectDetailPage() {
                                                         )}
                                                         {/* Elements */}
                                                         <div className="max-h-[50vh] overflow-y-auto">
-                                                            {selectorGroups.map((group: any, gIdx: number) => {
-                                                                const el = group.element || {};
+                                                            {selectorGroups.map((group: ScanSelectorGroup, gIdx: number) => {
+                                                                const el: ScanElement = group.element || {};
                                                                 const selectors = getSelectorsFromGroup(group);
                                                                 if (selectors.length === 0) return null;
                                                                 return (

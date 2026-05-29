@@ -6,7 +6,7 @@ import { StepList } from '@/components/editor/StepList';
 import { StepForm } from '@/components/editor/StepForm';
 import { useTestEditor } from '@/store/testEditor';
 import { useAutoSave } from '@/hooks/useAutoSave';
-import { Play, Save, Clock, HelpCircle, ChevronLeft } from 'lucide-react';
+import { Play, Clock, ChevronLeft } from 'lucide-react';
 import Link from 'next/link';
 
 export default function TestEditorPage({ params }: { params: { id: string } }) {

@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
-import { Bot, Play, Save, Smartphone, Loader2, ArrowLeft, MousePointerClick, Keyboard, CheckCircle2, Wifi, ChevronLeft, Circle, Copy, Trash2, Edit2, Check, GripVertical, CopyPlus, XCircle, ChevronDown, ChevronUp, Search, Crosshair, RefreshCw, AlertTriangle, Square, MoveHorizontal, ArrowUp, Plus, FlaskConical, Clapperboard, BookOpen, X, ThumbsUp, ThumbsDown, ListPlus } from 'lucide-react';
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { Bot, Play, Save, Smartphone, Loader2, ArrowLeft, CheckCircle2, Copy, Trash2, Edit2, Check, GripVertical, CopyPlus, XCircle, ChevronDown, ChevronUp, Search, Crosshair, RefreshCw, AlertTriangle, Square, ArrowUp, Plus, FlaskConical, Clapperboard, BookOpen, X, ThumbsUp, ThumbsDown, ListPlus } from 'lucide-react';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, type DraggableAttributes, type DraggableSyntheticListeners } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import Link from 'next/link';
@@ -10,7 +10,7 @@ import { useSearchParams } from 'next/navigation';
 import { DAEMON_URL } from '@/lib/constants';
 import { useDeviceStore } from '@/store/deviceStore';
 import { useVisionStore } from '@/store/visionStore';
-import { useRecordingStore, type RecordedStep } from '@/store/recordingStore';
+import { useRecordingStore, type DaemonStep } from '@/store/recordingStore';
 import { ConnectDeviceModal } from '@/components/ConnectDeviceModal';
 import { DevicePreview, type DevicePreviewHandle, type RecordedInteraction } from '@/components/DevicePreview';
 import { DeviceToolbar } from '@/components/DeviceToolbar';
@@ -20,7 +20,7 @@ import { AmbiguityDialog } from '@/components/AmbiguityDialog';
 import { SaveRecordingModal } from '@/components/SaveRecordingModal';
 import { ExecutionOverlay } from '@/components/ExecutionOverlay';
 import { supabase } from '@/lib/supabase';
-import { getMaestroActionLabel, getMaestroActionIcon, getMaestroStepDescription, stepsToMaestroYaml } from '@/lib/maestroYaml';
+import { getMaestroActionLabel, getMaestroActionIcon, stepsToMaestroYaml } from '@/lib/maestroYaml';
 
 export interface TestStep {
     id: string;
@@ -29,7 +29,7 @@ export interface TestStep {
     status: string;
     value?: string;
     error_message?: string;
-    strategies_log?: any[];
+    strategies_log?: { name: string; result: string }[];
     suggestion?: string;
     engine?: 'uiautomator2' | 'maestro';
     maestro_command?: string;
@@ -408,7 +408,7 @@ function SortableRecordedStep({
     children,
 }: {
     id: string;
-    children: (args: { dragHandleProps: any; isDragging: boolean }) => ReactNode;
+    children: (args: { dragHandleProps: DraggableAttributes & DraggableSyntheticListeners; isDragging: boolean }) => ReactNode;
 }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
     const style = {
@@ -420,7 +420,7 @@ function SortableRecordedStep({
     return (
         <div ref={setNodeRef} style={style}>
             {children({
-                dragHandleProps: { ...attributes, ...listeners },
+                dragHandleProps: { ...attributes, ...listeners } as DraggableAttributes & DraggableSyntheticListeners,
                 isDragging,
             })}
         </div>
@@ -434,7 +434,6 @@ export default function TestEditorPage() {
     const [prompt, setPrompt] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
     const [isExecuting, setIsExecuting] = useState(false);
-    const [isRecording, setIsRecording] = useState(false);
     const [editingStepId, setEditingStepId] = useState<string | null>(null);
     const [editingData, setEditingData] = useState<Partial<TestStep>>({});
     const [aiFeedbackText, setAiFeedbackText] = useState('');
@@ -515,7 +514,7 @@ export default function TestEditorPage() {
                 if (error || !data) return;
                 setTestName(data.name || '');
                 setTestAppId(data.app_id || null);
-                const loadedSteps = (data.steps || []).map((s: any, idx: number) => ({
+                const loadedSteps = ((data.steps || []) as Partial<TestStep>[]).map((s, idx) => ({
                     id: s.id || String(idx + 1),
                     action: s.action || '',
                     target: s.target || '',
@@ -543,19 +542,14 @@ export default function TestEditorPage() {
         showSaveModal,
         startRecording: startRecordingStore,
         stopRecording: stopRecordingStore,
-        addInteraction,
-        addKeyevent: addRecordingKeyevent,
-        addTextInput,
         addStepFromDaemon,
         updateStepAtIndex,
-        updateStepElement,
         addLaunchAppStep,
         reorderSteps,
         removeStep: removeRecordedStep,
         setElapsedSeconds,
         setShowSaveModal,
         clearRecording,
-        deviceResolution,
     } = useRecordingStore();
 
     const handleRecordingDragEnd = (event: DragEndEvent) => {
@@ -602,7 +596,7 @@ export default function TestEditorPage() {
             .then(({ data }) => {
                 const unique = Array.from(new Set(
                     (data || [])
-                        .map((r: any) => (r.app_id || '').trim())
+                        .map((r: { app_id: string | null }) => (r.app_id || '').trim())
                         .filter(Boolean)
                 ));
                 setAppIdSuggestions(unique);
@@ -640,7 +634,7 @@ export default function TestEditorPage() {
     }, []);
 
     // SSE step handler
-    const handleSseStep = useCallback((data: any) => {
+    const handleSseStep = useCallback((data: DaemonStep) => {
         if (data.updated && typeof data.step_index === 'number') {
             // confirm-input update for existing step
             updateStepAtIndex(data.step_index, data);
@@ -694,7 +688,7 @@ export default function TestEditorPage() {
         }
     }, [isRecordingActive, connectedDevice, addStepFromDaemon]);
 
-    const handleRecordingTextInput = useCallback((_text: string) => {
+    const handleRecordingTextInput = useCallback(() => {
         // no-op: text captured via confirm-input modal after EditText tap
     }, []);
 
@@ -744,7 +738,6 @@ export default function TestEditorPage() {
         startRecordingStore(undefined, testIdParam || undefined);
         addLaunchAppStep(appId, cfg.clearState);
 
-        setIsRecording(true);
         setSelectedEngine('maestro');
         setRunId(`rec-${Date.now()}`);
         recordingUdidRef.current = connectedDevice.udid;
@@ -790,7 +783,6 @@ export default function TestEditorPage() {
 
     const handleStopRecording = async () => {
         stopRecordingStore();
-        setIsRecording(false);
 
         // Close SSE
         if (recordingEsRef.current) {
@@ -821,7 +813,7 @@ export default function TestEditorPage() {
                 recordedSteps.map((rs, idx) => ({
                     id: rs.id,
                     order: idx + 1,
-                    action: rs.action as any,
+                    action: rs.action,
                     elementId: rs.elementId || undefined,
                     value: rs.value || undefined,
                     direction: rs.direction,
@@ -865,7 +857,7 @@ export default function TestEditorPage() {
             recordedSteps.map((rs, idx) => ({
                 id: rs.id,
                 order: idx + 1,
-                action: rs.action as any,
+                action: rs.action,
                 elementId: rs.elementId || undefined,
                 value: rs.value || undefined,
                 direction: rs.direction,
@@ -1055,9 +1047,10 @@ export default function TestEditorPage() {
             }
             setTestName(trimmed);
             setShowSaveDialog(false);
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error('Save failed:', e);
-            alert('Erro ao salvar teste: ' + (e?.message || e));
+            const message = e instanceof Error ? e.message : String(e);
+            alert('Erro ao salvar teste: ' + message);
         } finally {
             setIsSaving(false);
         }
@@ -1276,7 +1269,13 @@ export default function TestEditorPage() {
 
                                     if (data.engine === 'maestro') {
                                         // Maestro: steps come with description + maestro_command + confidence
-                                        const newSteps = data.steps.map((s: any, idx: number) => ({
+                                        const newSteps = (data.steps as Array<{
+                                            action?: string;
+                                            maestro_command?: string;
+                                            description?: string;
+                                            confidence?: 'high' | 'low' | 'unresolved';
+                                            confidence_comment?: string;
+                                        }>).map((s, idx: number) => ({
                                             id: String(idx + 1),
                                             action: s.action || s.maestro_command || '',
                                             target: s.description || '',
@@ -1284,7 +1283,7 @@ export default function TestEditorPage() {
                                             status: 'idle',
                                             engine: 'maestro' as const,
                                             maestro_command: s.maestro_command || '',
-                                            confidence: (s.confidence as 'high' | 'low' | 'unresolved') || 'high',
+                                            confidence: s.confidence || 'high',
                                             confidence_comment: s.confidence_comment || '',
                                         }));
                                         setSteps(newSteps);
@@ -1310,7 +1309,11 @@ export default function TestEditorPage() {
                                                 .catch(e => console.error('Failed to save YAML:', e));
                                         }
                                     } else {
-                                        const newSteps = data.steps.map((s: any, idx: number) => ({
+                                        const newSteps = (data.steps as Array<{
+                                            action: string;
+                                            target?: string;
+                                            value?: string;
+                                        }>).map((s, idx: number) => ({
                                             id: String(idx + 1),
                                             action: s.action,
                                             target: s.target || '',
@@ -1845,7 +1848,7 @@ export default function TestEditorPage() {
                     body: formData,
                 });
             } else {
-                const payload: Record<string, any> = {
+                const payload: Record<string, unknown> = {
                     test_case_id: testIdParam || 'test-1',
                     device_udid: connectedDevice.udid,
                     run_id: execRunId,
@@ -2918,7 +2921,7 @@ export default function TestEditorPage() {
                                 </div>
                                 <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4">
                                     <p className="text-sm text-zinc-300 italic leading-relaxed">
-                                        "Abrir aplicativo da foxbit, realizar login, comprar e vender bitcoin"
+                                        &quot;Abrir aplicativo da foxbit, realizar login, comprar e vender bitcoin&quot;
                                     </p>
                                 </div>
                                 <p className="text-[11px] text-zinc-500">Muito genérico. A IA não sabe quais campos, botões ou textos esperar na tela.</p>
@@ -2936,7 +2939,7 @@ export default function TestEditorPage() {
                                 </div>
                                 <div className="bg-green-500/5 border border-green-500/20 rounded-xl p-4">
                                     <p className="text-sm text-zinc-300 leading-relaxed">
-                                        "Na área de trabalho, clique para abrir o app da Foxbit. Na tela inicial, identifique o botão <span className="text-white font-medium">Entrar</span> e clique nele. Quando a tela de login com campos de e-mail e senha for exibida, preencha o e-mail <span className="text-brand font-mono">{'{{EMAIL}}'}</span> e a senha <span className="text-brand font-mono">{'{{SENHA}}'}</span>. Verifique que o botão <span className="text-white font-medium">Entrar</span> ficou habilitado e clique nele para realizar login. Após alguns segundos, valide que o login foi bem-sucedido verificando se a tela inicial do app aparece."
+                                        &quot;Na área de trabalho, clique para abrir o app da Foxbit. Na tela inicial, identifique o botão <span className="text-white font-medium">Entrar</span> e clique nele. Quando a tela de login com campos de e-mail e senha for exibida, preencha o e-mail <span className="text-brand font-mono">{'{{EMAIL}}'}</span> e a senha <span className="text-brand font-mono">{'{{SENHA}}'}</span>. Verifique que o botão <span className="text-white font-medium">Entrar</span> ficou habilitado e clique nele para realizar login. Após alguns segundos, valide que o login foi bem-sucedido verificando se a tela inicial do app aparece.&quot;
                                     </p>
                                 </div>
                                 <p className="text-[11px] text-zinc-500">Descreve cada tela, elemento e validação esperada. Use <span className="font-mono text-brand">{'{{VARIAVEL}}'}</span> para dados dinâmicos.</p>
@@ -2949,10 +2952,10 @@ export default function TestEditorPage() {
                                 <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Dicas para bons prompts</p>
                                 <ul className="space-y-1.5 text-xs text-zinc-400">
                                     <li className="flex gap-2"><span className="text-brand mt-0.5">•</span>Descreva o <span className="text-white">estado inicial</span> da tela antes de cada ação</li>
-                                    <li className="flex gap-2"><span className="text-brand mt-0.5">•</span>Nomeie os elementos exatamente como aparecem na tela (ex: "botão Entrar", não "botão de login")</li>
+                                    <li className="flex gap-2"><span className="text-brand mt-0.5">•</span>Nomeie os elementos exatamente como aparecem na tela (ex: &quot;botão Entrar&quot;, não &quot;botão de login&quot;)</li>
                                     <li className="flex gap-2"><span className="text-brand mt-0.5">•</span>Inclua <span className="text-white">validações</span> após cada etapa importante</li>
                                     <li className="flex gap-2"><span className="text-brand mt-0.5">•</span>Use <span className="font-mono text-brand">{'{{VARIAVEL}}'}</span> para dados que mudam entre execuções (credenciais, CPF, etc.)</li>
-                                    <li className="flex gap-2"><span className="text-brand mt-0.5">•</span>Mencione tempos de espera quando o app é lento (ex: "aguarde o carregamento")</li>
+                                    <li className="flex gap-2"><span className="text-brand mt-0.5">•</span>Mencione tempos de espera quando o app é lento (ex: &quot;aguarde o carregamento&quot;)</li>
                                 </ul>
                             </div>
                         </div>

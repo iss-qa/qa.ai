@@ -5,10 +5,9 @@ import { useExecutionSocket } from '@/hooks/useExecutionSocket';
 import { DevicePreview } from '@/components/runner/DevicePreview';
 import { ExecutionLog } from '@/components/runner/ExecutionLog';
 import { StepCard } from '@/components/editor/StepCard';
-import { StepAction } from '@qamind/shared';
-import { ChevronLeft, Play, Square, Pause } from 'lucide-react';
+import { ChevronLeft, Play, Square } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { fetchApi } from '@/lib/api';
 
 export default function TestPlayerPage({ params }: { params: { id: string } }) {

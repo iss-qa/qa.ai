@@ -35,7 +35,7 @@ export interface TestEditorState {
 
 export const useTestEditor = create<TestEditorState>()(
     temporal(
-        (set, get) => ({
+        (set) => ({
             testCase: null,
             isDirty: false,
             isSaving: false,

@@ -93,19 +93,19 @@ export function GoogleSheetsIntegrationModal({ onClose, onSaved }: Props) {
                                 <strong className="text-white">Criar/escolher projeto GCP</strong> em{' '}
                                 <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="text-brand hover:underline inline-flex items-center gap-0.5">
                                     console.cloud.google.com <ExternalLink className="w-2.5 h-2.5" />
-                                </a>. No topo da página, seletor de projeto → "Novo projeto" (ou reutilizar um existente).
+                                </a>. No topo da página, seletor de projeto → &quot;Novo projeto&quot; (ou reutilizar um existente).
                             </li>
                             <li>
                                 <strong className="text-white">Habilitar a Google Sheets API</strong> nesse projeto (passo mais esquecido):
                                 <a href="https://console.cloud.google.com/apis/library/sheets.googleapis.com" target="_blank" rel="noopener noreferrer" className="text-brand hover:underline inline-flex items-center gap-0.5 ml-1">
                                     Biblioteca de APIs → Google Sheets API → Ativar <ExternalLink className="w-2.5 h-2.5" />
                                 </a>.
-                                Sem isso, o sync falha com erro <code className="font-mono bg-red-500/10 text-red-300 px-1 rounded">"Sheets API has not been used"</code>.
+                                Sem isso, o sync falha com erro <code className="font-mono bg-red-500/10 text-red-300 px-1 rounded">&quot;Sheets API has not been used&quot;</code>.
                             </li>
                             <li>
                                 <strong className="text-white">Criar Service Account</strong> em{' '}
                                 <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener noreferrer" className="text-brand hover:underline inline-flex items-center gap-0.5">
-                                    IAM & Admin → Contas de serviço → "Criar conta de serviço" <ExternalLink className="w-2.5 h-2.5" />
+                                    IAM & Admin → Contas de serviço → &quot;Criar conta de serviço&quot; <ExternalLink className="w-2.5 h-2.5" />
                                 </a>.
                                 Nome livre (ex: <code className="font-mono text-slate-200">qamind-sheets-reader</code>). <strong>Pule</strong> as etapas de roles e usuários — não precisa.
                             </li>

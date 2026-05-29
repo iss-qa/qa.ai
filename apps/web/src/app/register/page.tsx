@@ -42,8 +42,8 @@ export default function RegisterPage() {
                     router.push('/login');
                 }, 2000);
             }
-        } catch (err: any) {
-            setError(err.message || 'Erro ao criar conta');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Erro ao criar conta');
         } finally {
             setLoading(false);
         }

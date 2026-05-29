@@ -3,7 +3,7 @@
 import { TestStep } from '@qamind/shared';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Copy, Trash2, Edit2 } from 'lucide-react';
+import { GripVertical, Copy, Trash2 } from 'lucide-react';
 
 const ACTION_ICONS: Record<string, string> = {
     open_app: '📱',

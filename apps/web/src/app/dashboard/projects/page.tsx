@@ -151,7 +151,7 @@ export default function ProjectsPage() {
                 <div className="col-span-full py-16 text-center text-slate-400 bg-white/5 border border-white/10 rounded-2xl border-dashed">
                     <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
                     <p className="font-medium">Nenhum projeto ainda</p>
-                    <p className="text-sm mt-1 opacity-70">Clique em "Novo Projeto" para começar</p>
+                    <p className="text-sm mt-1 opacity-70">Clique em &quot;Novo Projeto&quot; para começar</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

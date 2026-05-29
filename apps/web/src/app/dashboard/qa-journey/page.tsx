@@ -202,7 +202,7 @@ function EmptyState({ projectId }: { projectId: string | null }) {
                 Nenhuma jornada publicada para este projeto ainda.
             </p>
             <p className="text-slate-500 text-xs max-w-md">
-                Cadastre Jornadas no admin e marque "Publicar no mapa público" para que apareçam aqui.
+                Cadastre Jornadas no admin e marque &quot;Publicar no mapa público&quot; para que apareçam aqui.
             </p>
             <Link
                 href={`/dashboard/qa-journey/admin?project=${projectId || ''}`}

@@ -1,6 +1,6 @@
 import React, { useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Smartphone } from 'lucide-react';
-import { useScrcpyStream, type StreamStatus } from '../hooks/useScrcpyStream';
+import { useScrcpyStream } from '../hooks/useScrcpyStream';
 
 export interface RecordedInteraction {
     type: 'tap' | 'swipe' | 'keyevent';
@@ -26,7 +26,7 @@ export interface DevicePreviewHandle {
     getDeviceDimensions: () => { width: number; height: number };
 }
 
-export const DevicePreview = forwardRef<DevicePreviewHandle, DevicePreviewProps>(function DevicePreview({ udid, frameSrc, onInteraction, onTextInput }, ref) {
+export const DevicePreview = forwardRef<DevicePreviewHandle, DevicePreviewProps>(function DevicePreview({ udid, onInteraction, onTextInput }, ref) {
     const { canvasRef, deviceDimensions, sendTouch, sendKeyevent, sendText, sendBackspace, streamStatus } = useScrcpyStream(udid);
 
     useImperativeHandle(ref, () => ({

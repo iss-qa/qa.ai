@@ -47,7 +47,7 @@ export function CoverageTimeline({ snapshots, onSnapshotNow, snapshotting }: Pro
                     <Sparkles className="w-6 h-6 text-slate-300" />
                     <p>Nenhum snapshot histórico ainda.</p>
                     <p className="text-[11px] text-slate-400 max-w-md">
-                        O primeiro snapshot é capturado automaticamente no próximo domingo, ou clique em "Snapshot agora" para criar um ponto inicial.
+                        O primeiro snapshot é capturado automaticamente no próximo domingo, ou clique em &quot;Snapshot agora&quot; para criar um ponto inicial.
                     </p>
                 </div>
             ) : (

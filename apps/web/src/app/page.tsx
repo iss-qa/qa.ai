@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { 
   Zap, Activity, ShieldCheck, Sparkles, ArrowRight, CheckCircle2, 
-  Smartphone, Globe, Bot, Play, BarChart3, Users, Star,
+  Smartphone, Globe, Bot, Play, BarChart3, Users,
   MessageSquare, Layers, Target, ChevronRight, Monitor
 } from 'lucide-react';
 

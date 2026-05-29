@@ -5,7 +5,7 @@ import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell
 } from 'recharts';
-import { Activity, Bug, CheckCircle2, Clock, Loader2 } from 'lucide-react';
+import { Activity, Bug, CheckCircle2, Clock, Loader2, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 
@@ -109,7 +109,7 @@ export default function DashboardPage() {
             if (bugsRes.error) {
                 // 42P01 = "relation does not exist" → migration not applied yet.
                 // Treat as empty so the dashboard still renders.
-                if ((bugsRes.error as any).code !== '42P01') {
+                if ((bugsRes.error as { code?: string }).code !== '42P01') {
                     console.error('bugs load failed:', bugsRes.error);
                 }
                 setBugs([]);
@@ -127,13 +127,6 @@ export default function DashboardPage() {
     // ── KPIs ─────────────────────────────────────────────────────────────────
     const todayIso = isoDay(new Date());
     const yesterdayIso = isoDay(new Date(Date.now() - 24 * 3600 * 1000));
-
-    const runsToday = useMemo(
-        () => runs.filter(r => isoDay(new Date(r.started_at)) === todayIso),
-        [runs, todayIso],
-    );
-    const passedToday = runsToday.filter(r => r.status === 'passed').length;
-    const failedToday = runsToday.filter(r => r.status === 'failed').length;
 
     // Success rate window: last 7d vs 7d before (for trend arrow).
     const trends = useMemo(() => {
@@ -397,7 +390,13 @@ export default function DashboardPage() {
     );
 }
 
-function KPICard({ title, value, trend, trendUp, icon: Icon }: any) {
+function KPICard({ title, value, trend, trendUp, icon: Icon }: {
+    title: string;
+    value: string;
+    trend: string;
+    trendUp: boolean;
+    icon: LucideIcon;
+}) {
     return (
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-black/5 flex flex-col justify-between group hover:border-brand/20 hover:shadow-md transition-all h-[140px]">
             <div className="flex items-start justify-between">

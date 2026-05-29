@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { 
-  Zap, ArrowLeft, BookOpen, Smartphone, Globe, Bot, Play, 
-  Terminal, Settings, Folder, FlaskConical, BarChart3, ChevronDown, ChevronRight,
-  Monitor, Wifi, CheckCircle2, ArrowRight
+import {
+  Zap, BookOpen, Smartphone, Bot, Play,
+  Terminal, Settings, Folder, BarChart3,
+  CheckCircle2, ArrowRight
 } from 'lucide-react';
 
 const sections = [

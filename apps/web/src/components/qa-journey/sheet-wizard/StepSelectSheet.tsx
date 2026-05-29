@@ -74,7 +74,7 @@ export function StepSelectSheet({ state, update, onNext }: Props) {
         <div className="flex flex-col gap-5">
             <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3 text-xs text-amber-200 leading-relaxed">
                 <strong className="text-amber-100">⚠ Importante:</strong> a planilha precisa estar no formato <strong>nativo do Google Sheets</strong>.
-                Arquivos <code className="font-mono bg-amber-500/20 px-1 rounded">.xlsx</code> (Excel) hospedados no Drive <strong>não funcionam</strong>, mesmo abertos no Sheets — a API do Google retorna <em>"This operation is not supported for this document"</em>.
+                Arquivos <code className="font-mono bg-amber-500/20 px-1 rounded">.xlsx</code> (Excel) hospedados no Drive <strong>não funcionam</strong>, mesmo abertos no Sheets — a API do Google retorna <em>&quot;This operation is not supported for this document&quot;</em>.
                 {' '}Para converter um .xlsx existente: abra-o no Sheets → menu <strong>Arquivo</strong> → <strong>Salvar como Planilhas Google</strong> → use a URL da cópia gerada (com <strong>permissão Leitor</strong> para o service account).
             </div>
 

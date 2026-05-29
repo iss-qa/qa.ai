@@ -4,8 +4,8 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { DAEMON_URL } from '@/lib/constants';
 import {
     FileText, FolderOpen, Download, Search, Filter,
-    RefreshCw, ChevronRight, AlertCircle, Info, Cpu,
-    Play, Pause, ChevronsDown, Copy, Check, Layers,
+    RefreshCw, ChevronRight, AlertCircle, Cpu,
+    Play, ChevronsDown, Copy, Check, Layers,
 } from 'lucide-react';
 
 interface LogFile {

@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, Loader2, Save } from 'lucide-react';
 import { runSync, upsertSheetConfig } from '@/lib/qa-journey/sheet-api';
-import type { ColumnMap, SheetDefaults, SheetTransforms } from '@/types/qa-journey-sheet';
+import type { ColumnMap } from '@/types/qa-journey-sheet';
 import type { WizardState } from './types';
 import { QA_JOURNEY_FIELDS } from './types';
 
@@ -112,7 +112,7 @@ export function StepPreview({ state, onBack }: Props) {
                         {mappedRows.length === 0 && (
                             <tr>
                                 <td colSpan={8} className="px-3 py-6 text-center text-slate-500 text-xs">
-                                    Nenhuma linha encontrada nas primeiras 10 da planilha. Verifique se "data_start_row" está correto.
+                                    Nenhuma linha encontrada nas primeiras 10 da planilha. Verifique se &quot;data_start_row&quot; está correto.
                                 </td>
                             </tr>
                         )}

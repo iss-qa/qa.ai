@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useTestEditor } from '@/store/testEditor';
 import { fetchApi } from '@/lib/api';
-import { Loader2, Sparkles, Smartphone, Globe, Lock } from 'lucide-react';
+import { Loader2, Sparkles, Smartphone } from 'lucide-react';
 import { useOrganization } from '@/hooks/useOrganization';
 
 export function PromptInput({ projectId }: { projectId: string }) {
@@ -17,9 +17,6 @@ export function PromptInput({ projectId }: { projectId: string }) {
 
     const { org } = useOrganization();
     const isPro = org.plan === 'pro';
-
-    // Notice we use the underlying Zustand store directly to add multiple steps
-    const testCase = useTestEditor(state => state.testCase);
 
     const handleGenerate = async () => {
         if (!prompt.trim()) return;
@@ -44,8 +41,8 @@ export function PromptInput({ projectId }: { projectId: string }) {
                 }
                 setPrompt('');
             }
-        } catch (err: any) {
-            setError(err.message || 'Falha ao processar prompt');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Falha ao processar prompt');
         } finally {
             setIsGenerating(false);
         }
@@ -78,7 +75,7 @@ export function PromptInput({ projectId }: { projectId: string }) {
                                 alert("O teste Automático de Web requires o plano Pro.");
                                 return;
                             }
-                            setPlatform(e.target.value as any);
+                            setPlatform(e.target.value as 'android' | 'web');
                         }}
                         className="bg-bgPrimary border border-white/10 text-white text-sm rounded-lg pl-8 pr-8 py-2 appearance-none focus:outline-none focus:border-brand"
                     >

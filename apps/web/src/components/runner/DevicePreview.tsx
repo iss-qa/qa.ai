@@ -10,7 +10,7 @@ interface DevicePreviewProps {
     udid?: string; // NOVO: udid do device para conectar o scrcpy
 }
 
-export function DevicePreview({ screenshotUrl, status, udid = 'emulator-5554' }: DevicePreviewProps) {
+export function DevicePreview({ status, udid = 'emulator-5554' }: DevicePreviewProps) {
     // Passar udid mock ou recebido
     const { canvasRef, deviceDimensions, sendTouch, streamStatus } = useScrcpyStream(udid);
     const containerRef = useRef<HTMLDivElement>(null);

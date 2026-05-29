@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Smartphone, Search, Zap, CheckCircle2, Play, Cpu, Shield } from 'lucide-react';
+import { Smartphone, Search, Zap, CheckCircle2, Cpu, Shield } from 'lucide-react';
 
 interface ExecutionOverlayProps {
     isVisible: boolean;

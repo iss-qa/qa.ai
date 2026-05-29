@@ -1,6 +1,6 @@
 'use client';
 
-import { Smartphone, Monitor, Cpu, Plus, Wifi, X, Loader2, CheckCircle2 } from 'lucide-react';
+import { Smartphone, Monitor, Plus, Wifi, X, Loader2, CheckCircle2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { DAEMON_URL } from '@/lib/constants';
 
@@ -62,7 +62,7 @@ export default function DevicesPage() {
             } else {
                 setScanResult('error');
             }
-        } catch (error) {
+        } catch {
             setScanResult('error');
         } finally {
             setIsScanning(false);
@@ -87,7 +87,7 @@ export default function DevicesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {devices.length === 0 ? (
                     <div className="col-span-full py-12 text-center text-slate-400 bg-white/5 border border-white/10 rounded-2xl border-dashed">
-                        Nenhum dispositivo conectado no momento. Clique em "Conectar Dispositivo" para buscar.
+                        Nenhum dispositivo conectado no momento. Clique em &quot;Conectar Dispositivo&quot; para buscar.
                     </div>
                 ) : (
                     devices.map((device) => (

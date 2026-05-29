@@ -66,15 +66,6 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
 
     const [maestroOpen, setMaestroOpen] = useState(false);
 
-    const reload = async () => {
-        const { journey: j, subflows: s, cases: c, migrationMissing: mm } = await loadJourneyDetail(journeyId);
-        setJourney(j);
-        setSubflows(s);
-        setCases(c);
-        setMigrationMissing(mm);
-        setLoading(false);
-    };
-
     useEffect(() => {
         let cancelled = false;
         (async () => {
@@ -268,7 +259,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
             <div className="flex flex-col gap-3">
                 {sortedSubflows.length === 0 && (
                     <div className="bg-white rounded-2xl shadow-sm border border-black/5 p-8 text-center text-textSecondary text-sm">
-                        Nenhum sub-fluxo cadastrado ainda. Clique em "Novo Sub-fluxo" para adicionar o primeiro.
+                        Nenhum sub-fluxo cadastrado ainda. Clique em &quot;Novo Sub-fluxo&quot; para adicionar o primeiro.
                     </div>
                 )}
 

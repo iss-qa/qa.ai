@@ -23,7 +23,7 @@ export async function triggerSnapshot(projectId: string): Promise<void> {
     let res: Response;
     try {
         res = await fetch(u.toString(), { method: 'POST' });
-    } catch (e) {
+    } catch {
         throw new Error(`Backend Fastify offline em ${API_URL}. Suba com: pnpm --filter api dev`);
     }
     if (!res.ok) {
