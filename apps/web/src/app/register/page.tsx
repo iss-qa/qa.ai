@@ -50,18 +50,18 @@ export default function RegisterPage() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50">
-            <div className="bg-white p-8 rounded-lg shadow-sm border w-full max-w-sm">
+        <div className="min-h-screen flex items-center justify-center bg-surface-muted">
+            <div className="bg-card p-8 rounded-lg shadow-sm border w-full max-w-sm">
                 <h1 className="text-2xl font-bold text-center mb-6">Cadastro QAMind</h1>
 
                 {success ? (
-                    <div className="bg-green-50 text-green-700 p-4 rounded-md mb-4 text-sm">
+                    <div className="bg-success/10 text-success p-4 rounded-md mb-4 text-sm">
                         Conta criada com sucesso! Redirecionando...
                     </div>
                 ) : (
                     <form onSubmit={handleRegister} className="flex flex-col gap-4">
                         {error && (
-                            <div className="bg-red-50 text-red-700 p-3 rounded-md text-sm">
+                            <div className="bg-danger/10 text-danger p-3 rounded-md text-sm">
                                 {error}
                             </div>
                         )}
@@ -106,7 +106,7 @@ export default function RegisterPage() {
                             {loading ? 'Criando conta...' : 'Criar Conta'}
                         </button>
 
-                        <p className="text-center text-sm text-slate-600 mt-2">
+                        <p className="text-center text-sm text-muted-foreground mt-2">
                             Já tem uma conta? <Link href="/login" className="text-blue-500 hover:underline">Faça login</Link>
                         </p>
                     </form>

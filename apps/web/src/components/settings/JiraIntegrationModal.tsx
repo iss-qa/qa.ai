@@ -12,7 +12,7 @@ interface Props {
     onSaved: (rec: IntegrationRecord) => void;
 }
 
-const inputClass = 'bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/50';
+const inputClass = 'bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50';
 
 export function JiraIntegrationModal({ initial, onClose, onSaved }: Props) {
     const [host, setHost] = useState(initial?.host ?? '');
@@ -48,13 +48,13 @@ export function JiraIntegrationModal({ initial, onClose, onSaved }: Props) {
             maxWidth="max-w-xl"
             footer={
                 <>
-                    <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">
+                    <button onClick={onClose} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">
                         Cancelar
                     </button>
                     <button
                         onClick={handleSubmit}
                         disabled={saving}
-                        className="px-5 py-2 bg-brand text-black text-sm font-bold rounded-lg hover:bg-brand/90 disabled:opacity-50 flex items-center gap-2"
+                        className="px-5 py-2 bg-brand text-white text-sm font-bold rounded-lg hover:bg-brand/90 disabled:opacity-50 flex items-center gap-2"
                     >
                         {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                         Salvar credenciais
@@ -63,7 +63,7 @@ export function JiraIntegrationModal({ initial, onClose, onSaved }: Props) {
             }
         >
             <div className="flex flex-col gap-4">
-                <p className="text-xs text-slate-400 leading-relaxed">
+                <p className="text-xs text-muted-foreground leading-relaxed">
                     Gere um API token em{' '}
                     <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
                         id.atlassian.com/manage-profile/security/api-tokens
@@ -101,12 +101,12 @@ export function JiraIntegrationModal({ initial, onClose, onSaved }: Props) {
                 </Field>
 
                 {error && (
-                    <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-400">
+                    <div className="bg-danger/10 border border-danger/30 rounded-lg px-3 py-2 text-xs text-danger">
                         {error}
                     </div>
                 )}
 
-                <p className="text-[10px] text-slate-500">
+                <p className="text-[10px] text-muted-foreground">
                     O token é criptografado (AES-256-GCM) antes de ser gravado. Nunca aparece em logs ou no navegador depois de salvo.
                 </p>
             </div>
@@ -117,7 +117,7 @@ export function JiraIntegrationModal({ initial, onClose, onSaved }: Props) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">{label}</label>
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{label}</label>
             {children}
         </div>
     );

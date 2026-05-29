@@ -189,7 +189,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
 
     if (loading) {
         return (
-            <div className="p-8 max-w-[1400px] mx-auto">
+            <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto">
                 <div className="p-8 text-center text-textSecondary text-sm">
                     <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
                     Carregando jornada…
@@ -200,7 +200,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
 
     if (migrationMissing) {
         return (
-            <div className="p-8 max-w-[1400px] mx-auto flex flex-col gap-6">
+            <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto flex flex-col gap-6">
                 <BackLink />
                 <MigrationMissingBanner />
             </div>
@@ -209,9 +209,9 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
 
     if (!journey) {
         return (
-            <div className="p-8 max-w-[1400px] mx-auto flex flex-col gap-6">
+            <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto flex flex-col gap-6">
                 <BackLink />
-                <div className="bg-white rounded-2xl p-8 text-center text-textSecondary text-sm border border-black/5">
+                <div className="bg-card rounded-2xl p-8 text-center text-textSecondary text-sm border border-border">
                     Jornada não encontrada.
                 </div>
             </div>
@@ -219,32 +219,32 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
     }
 
     return (
-        <div className="p-8 max-w-[1400px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
 
             {/* Header */}
             <div className="flex flex-col gap-3">
                 <BackLink />
-                <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                    <div className="flex items-center gap-3 min-w-0">
                         <span
-                            className="w-4 h-4 rounded-full border border-white/10 shrink-0"
+                            className="w-4 h-4 rounded-full border border-border shrink-0"
                             style={{ background: journey.color || '#7c3aed' }}
                         />
-                        <h1 className="text-2xl font-bold text-white">{journey.title}</h1>
-                        <span className="text-xs font-mono text-slate-500">/{journey.slug}</span>
+                        <h1 className="text-2xl font-bold text-foreground">{journey.title}</h1>
+                        <span className="text-xs font-mono text-muted-foreground">/{journey.slug}</span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
                         <button
                             onClick={() => setMaestroOpen(true)}
                             disabled={subflows.length === 0}
-                            className="text-xs text-slate-400 hover:text-white border border-white/10 rounded-lg px-3 py-2 inline-flex items-center gap-1.5 disabled:opacity-50"
+                            className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-2 inline-flex items-center gap-1.5 disabled:opacity-50"
                             title={subflows.length === 0 ? 'Crie sub-fluxos primeiro' : 'Vincular test cases Maestro aos sub-fluxos'}
                         >
                             <Sparkles className="w-3.5 h-3.5" /> Vincular Maestro
                         </button>
                         <button
                             onClick={() => { setSubflowDialog({ mode: 'create', subflow: null }); setSubflowDialogOpen(true); }}
-                            className="bg-brand text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 transition-all flex items-center gap-2"
+                            className="bg-brand text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 transition-all flex items-center gap-2"
                         >
                             <Plus className="w-4 h-4" /> Novo Sub-fluxo
                         </button>
@@ -258,7 +258,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
             {/* Subflows list */}
             <div className="flex flex-col gap-3">
                 {sortedSubflows.length === 0 && (
-                    <div className="bg-white rounded-2xl shadow-sm border border-black/5 p-8 text-center text-textSecondary text-sm">
+                    <div className="bg-card rounded-2xl shadow-sm border border-border p-8 text-center text-textSecondary text-sm">
                         Nenhum sub-fluxo cadastrado ainda. Clique em &quot;Novo Sub-fluxo&quot; para adicionar o primeiro.
                     </div>
                 )}
@@ -268,18 +268,18 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                     const statusOpt = AUTOMATION_STATUS_OPTIONS.find(o => o.value === sub.automation_status);
                     const isOpen = expanded.has(sub.id);
                     return (
-                        <div key={sub.id} className="bg-white rounded-2xl shadow-sm border border-black/5 overflow-hidden">
+                        <div key={sub.id} className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden">
                             <div className="flex items-center justify-between px-6 py-4 gap-4">
                                 <button
                                     onClick={() => toggleExpand(sub.id)}
                                     className="flex items-center gap-3 text-left flex-1 min-w-0"
                                 >
-                                    {isOpen ? <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />}
+                                    {isOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
                                     <GitBranch className="w-4 h-4 text-brand shrink-0" />
                                     <div className="flex flex-col min-w-0">
-                                        <span className="font-bold text-slate-900 truncate">{sub.title}</span>
+                                        <span className="font-bold text-foreground truncate">{sub.title}</span>
                                         {sub.description && (
-                                            <span className="text-xs text-slate-500 truncate">{sub.description}</span>
+                                            <span className="text-xs text-muted-foreground truncate">{sub.description}</span>
                                         )}
                                     </div>
                                     {statusOpt && (
@@ -292,7 +292,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                             <Link2 className="w-3 h-3" /> Maestro
                                         </span>
                                     )}
-                                    <span className="text-[10px] text-slate-400 ml-auto">
+                                    <span className="text-[10px] text-muted-foreground ml-auto">
                                         {subCases.length} {subCases.length === 1 ? 'caso' : 'casos'}
                                     </span>
                                 </button>
@@ -300,7 +300,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                 <div className="flex items-center gap-1 shrink-0">
                                     <button
                                         onClick={() => { setSubflowDialog({ mode: 'edit', subflow: sub }); setSubflowDialogOpen(true); }}
-                                        className="p-2 rounded-lg text-slate-500 hover:bg-brand/10 hover:text-brand transition-all"
+                                        className="p-2 rounded-lg text-muted-foreground hover:bg-brand/10 hover:text-brand transition-all"
                                         title="Editar sub-fluxo"
                                         aria-label="Editar sub-fluxo"
                                     >
@@ -308,7 +308,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                     </button>
                                     <button
                                         onClick={() => setDeleteSubflowId(sub.id)}
-                                        className="p-2 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all"
+                                        className="p-2 rounded-lg text-muted-foreground hover:bg-danger/10 hover:text-danger transition-all"
                                         title="Excluir sub-fluxo"
                                         aria-label="Excluir sub-fluxo"
                                     >
@@ -318,7 +318,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                             </div>
 
                             {isOpen && (
-                                <div className="border-t border-black/[0.03] bg-slate-50/30">
+                                <div className="border-t border-border bg-surface-muted/30">
                                     <div className="flex justify-end px-6 py-3">
                                         <button
                                             onClick={() => setCaseDialog({ subflowId: sub.id, subject: null })}
@@ -329,12 +329,13 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                     </div>
 
                                     {subCases.length === 0 ? (
-                                        <div className="px-6 pb-4 text-xs text-slate-400">
+                                        <div className="px-6 pb-4 text-xs text-muted-foreground">
                                             Nenhum caso cadastrado neste sub-fluxo.
                                         </div>
                                     ) : (
-                                        <table className="w-full text-left text-sm text-slate-600">
-                                            <thead className="text-[10px] uppercase text-slate-400 font-bold tracking-widest">
+                                        <div className="overflow-x-auto custom-scrollbar">
+                                        <table className="w-full text-left text-sm text-muted-foreground whitespace-nowrap">
+                                            <thead className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest">
                                                 <tr>
                                                     <th className="px-6 py-2 w-24">ID externo</th>
                                                     <th className="px-6 py-2">Título</th>
@@ -343,18 +344,18 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                                     <th className="px-6 py-2 text-right w-32">Ações</th>
                                                 </tr>
                                             </thead>
-                                            <tbody className="divide-y divide-black/[0.03]">
+                                            <tbody className="divide-y divide-border">
                                                 {subCases.map(c => {
                                                     const prio = PRIORITY_OPTIONS.find(o => o.value === c.priority);
                                                     return (
-                                                        <tr key={c.id} className="hover:bg-white">
-                                                            <td className="px-6 py-2 text-[11px] font-mono text-slate-500">
+                                                        <tr key={c.id} className="hover:bg-accent">
+                                                            <td className="px-6 py-2 text-[11px] font-mono text-muted-foreground">
                                                                 {c.external_id || '—'}
                                                             </td>
                                                             <td className="px-6 py-2">
                                                                 <div className="flex items-center gap-2">
-                                                                    <FileText className="w-3 h-3 text-slate-400 shrink-0" />
-                                                                    <span className="text-slate-900">{c.title}</span>
+                                                                    <FileText className="w-3 h-3 text-muted-foreground shrink-0" />
+                                                                    <span className="text-foreground">{c.title}</span>
                                                                 </div>
                                                             </td>
                                                             <td className="px-6 py-2">
@@ -364,14 +365,14 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                                                     </span>
                                                                 )}
                                                             </td>
-                                                            <td className="px-6 py-2 text-[11px] text-slate-500">
+                                                            <td className="px-6 py-2 text-[11px] text-muted-foreground">
                                                                 {c.last_run_status || '—'}
                                                             </td>
                                                             <td className="px-6 py-2 text-right">
                                                                 <div className="flex items-center justify-end gap-1">
                                                                     <button
                                                                         onClick={() => setCaseDialog({ subflowId: sub.id, subject: c })}
-                                                                        className="p-1.5 rounded-md text-slate-500 hover:bg-brand/10 hover:text-brand transition-all"
+                                                                        className="p-1.5 rounded-md text-muted-foreground hover:bg-brand/10 hover:text-brand transition-all"
                                                                         title="Editar caso"
                                                                         aria-label="Editar caso"
                                                                     >
@@ -379,7 +380,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                                                     </button>
                                                                     <button
                                                                         onClick={() => setDeleteCaseId(c.id)}
-                                                                        className="p-1.5 rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all"
+                                                                        className="p-1.5 rounded-md text-muted-foreground hover:bg-danger/10 hover:text-danger transition-all"
                                                                         title="Excluir caso"
                                                                         aria-label="Excluir caso"
                                                                     >
@@ -392,6 +393,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                                 })}
                                             </tbody>
                                         </table>
+                                        </div>
                                     )}
                                 </div>
                             )}
@@ -457,7 +459,7 @@ function BackLink() {
     return (
         <Link
             href="/dashboard/qa-journey/admin"
-            className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-white"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
             <ArrowLeft className="w-3 h-3" /> Voltar para Jornadas
         </Link>

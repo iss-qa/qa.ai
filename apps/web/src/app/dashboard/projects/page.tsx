@@ -129,15 +129,15 @@ export default function ProjectsPage() {
     };
 
     return (
-        <div className="p-8 max-w-7xl mx-auto flex flex-col gap-8">
-            <div className="flex items-center justify-between">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto flex flex-col gap-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-white">Projetos</h1>
+                    <h1 className="text-2xl font-bold text-foreground">Projetos</h1>
                     <p className="text-textSecondary/80 text-sm mt-1">Organize seus testes por contexto de negócio.</p>
                 </div>
                 <button
                     onClick={handleOpenCreate}
-                    className="bg-brand text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 transition-all flex items-center gap-2"
+                    className="bg-brand text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 transition-all flex items-center gap-2"
                 >
                     <Plus className="w-4 h-4" /> NOVO PROJETO
                 </button>
@@ -148,7 +148,7 @@ export default function ProjectsPage() {
                     <Loader2 className="w-8 h-8 text-brand animate-spin" />
                 </div>
             ) : projects.length === 0 ? (
-                <div className="col-span-full py-16 text-center text-slate-400 bg-white/5 border border-white/10 rounded-2xl border-dashed">
+                <div className="col-span-full py-16 text-center text-muted-foreground bg-foreground/5 border border-border rounded-2xl border-dashed">
                     <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
                     <p className="font-medium">Nenhum projeto ainda</p>
                     <p className="text-sm mt-1 opacity-70">Clique em &quot;Novo Projeto&quot; para começar</p>
@@ -159,7 +159,7 @@ export default function ProjectsPage() {
                         <Link
                             key={project.id}
                             href={`/dashboard/projects/${project.id}`}
-                            className="group relative bg-gradient-to-br from-[#111827] to-[#0d1117] rounded-2xl border border-white/[0.06] hover:border-brand/30 transition-all duration-300 overflow-hidden hover:shadow-[0_0_30px_rgba(74,144,217,0.08)]"
+                            className="group relative bg-gradient-to-br from-card to-card rounded-2xl border border-border hover:border-brand/30 transition-all duration-300 overflow-hidden hover:shadow-[0_0_30px_rgba(74,144,217,0.08)]"
                         >
                             {/* Subtle gradient accent on hover */}
                             <div className="absolute inset-0 bg-gradient-to-br from-brand/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
@@ -167,24 +167,24 @@ export default function ProjectsPage() {
                             <div className="relative p-6">
                                 {/* Top row: icon + status + actions */}
                                 <div className="flex items-center justify-between mb-5">
-                                    <div className="w-11 h-11 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-slate-500 group-hover:bg-brand/10 group-hover:text-brand group-hover:border-brand/20 transition-all duration-300">
+                                    <div className="w-11 h-11 rounded-xl bg-foreground/[0.04] border border-border flex items-center justify-center text-muted-foreground group-hover:bg-brand/10 group-hover:text-brand group-hover:border-brand/20 transition-all duration-300">
                                         <LayoutGrid className="w-5 h-5" />
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-full tracking-wider ${!project.is_archived ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-500 border border-slate-500/20'}`}>
+                                        <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-full tracking-wider ${!project.is_archived ? 'bg-success/10 text-success border border-success/20' : 'bg-muted text-muted-foreground border border-border'}`}>
                                             {project.is_archived ? 'Arquivado' : 'Ativo'}
                                         </span>
                                         <div className="flex opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                                             <button
                                                 onClick={(e) => { e.preventDefault(); handleOpenEdit(project); }}
-                                                className="p-1.5 text-slate-500 hover:text-brand hover:bg-brand/10 rounded-lg transition-colors"
+                                                className="p-1.5 text-muted-foreground hover:text-brand hover:bg-brand/10 rounded-lg transition-colors"
                                                 title="Editar"
                                             >
                                                 <Edit2 className="w-3.5 h-3.5" />
                                             </button>
                                             <button
                                                 onClick={(e) => { e.preventDefault(); setDeleteConfirm(project.id); }}
-                                                className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                className="p-1.5 text-muted-foreground hover:text-danger hover:bg-danger/10 rounded-lg transition-colors"
                                                 title="Excluir"
                                             >
                                                 <Trash2 className="w-3.5 h-3.5" />
@@ -194,19 +194,19 @@ export default function ProjectsPage() {
                                 </div>
 
                                 {/* Name + description */}
-                                <h3 className="text-base font-bold text-white mb-1 group-hover:text-brand transition-colors duration-300">{project.name}</h3>
-                                <p className="text-slate-500 text-xs leading-relaxed line-clamp-2 mb-6">{project.description}</p>
+                                <h3 className="text-base font-bold text-foreground mb-1 group-hover:text-brand transition-colors duration-300">{project.name}</h3>
+                                <p className="text-muted-foreground text-xs leading-relaxed line-clamp-2 mb-6">{project.description}</p>
 
                                 {/* Bottom stats */}
-                                <div className="flex items-center justify-between pt-4 border-t border-white/[0.04]">
+                                <div className="flex items-center justify-between pt-4 border-t border-border">
                                     <div className="flex items-center gap-3">
                                         <div className="flex items-center gap-1.5">
-                                            <FlaskConical className="w-3 h-3 text-slate-500" />
-                                            <span className="text-[11px] text-slate-400 font-semibold">{project.test_count || 0} testes</span>
+                                            <FlaskConical className="w-3 h-3 text-muted-foreground" />
+                                            <span className="text-[11px] text-muted-foreground font-semibold">{project.test_count || 0} testes</span>
                                         </div>
                                         <div className="flex items-center gap-1.5">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
-                                            <span className="text-[11px] text-slate-500 capitalize">{project.platform}</span>
+                                            <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground" />
+                                            <span className="text-[11px] text-muted-foreground capitalize">{project.platform}</span>
                                         </div>
                                     </div>
                                     <span className="text-[11px] text-brand font-bold opacity-0 group-hover:opacity-100 transition-opacity">
@@ -222,13 +222,13 @@ export default function ProjectsPage() {
             {/* Delete Confirmation */}
             {deleteConfirm && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
-                        <h3 className="text-lg font-bold text-white mb-2">Excluir Projeto?</h3>
-                        <p className="text-sm text-slate-400 mb-6">Esta ação não pode ser desfeita. Todos os testes associados serão desvinculados.</p>
+                    <div className="bg-card border border-border rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+                        <h3 className="text-lg font-bold text-foreground mb-2">Excluir Projeto?</h3>
+                        <p className="text-sm text-muted-foreground mb-6">Esta ação não pode ser desfeita. Todos os testes associados serão desvinculados.</p>
                         <div className="flex gap-3 justify-end">
                             <button
                                 onClick={() => setDeleteConfirm(null)}
-                                className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+                                className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
                             >
                                 Cancelar
                             </button>
@@ -246,51 +246,51 @@ export default function ProjectsPage() {
             {/* Create/Edit Modal */}
             {modalOpen && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl relative">
+                    <div className="bg-card border border-border rounded-2xl w-full max-w-md shadow-2xl relative">
                         <button
                             onClick={() => setModalOpen(false)}
-                            className="absolute right-4 top-4 p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+                            className="absolute right-4 top-4 p-2 text-muted-foreground hover:text-foreground rounded-lg hover:bg-accent transition-colors"
                         >
                             <X className="w-5 h-5" />
                         </button>
 
-                        <div className="p-6 border-b border-white/10">
-                            <h2 className="text-xl font-bold text-white">
+                        <div className="p-6 border-b border-border">
+                            <h2 className="text-xl font-bold text-foreground">
                                 {editingProject ? 'Editar Projeto' : 'Novo Projeto'}
                             </h2>
-                            <p className="text-sm text-slate-400 mt-1">
+                            <p className="text-sm text-muted-foreground mt-1">
                                 {editingProject ? 'Atualize as informações do projeto.' : 'Crie um novo projeto para organizar seus testes.'}
                             </p>
                         </div>
 
                         <div className="p-6 flex flex-col gap-4">
                             <div className="flex flex-col gap-1.5">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Nome do Projeto</label>
+                                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Nome do Projeto</label>
                                 <input
                                     type="text"
                                     value={formData.name}
                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                     placeholder="Ex: App Mobile Principal"
-                                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand/50"
+                                    className="bg-foreground/5 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-brand/50"
                                 />
                             </div>
                             <div className="flex flex-col gap-1.5">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Descrição</label>
+                                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Descrição</label>
                                 <textarea
                                     value={formData.description}
                                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                     placeholder="Descreva o escopo do projeto..."
                                     rows={3}
-                                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand/50 resize-none"
+                                    className="bg-foreground/5 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-brand/50 resize-none"
                                 />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Plataforma</label>
+                                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Plataforma</label>
                                     <select
                                         value={formData.platform}
                                         onChange={(e) => setFormData({ ...formData, platform: e.target.value })}
-                                        className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-brand/50"
+                                        className="bg-foreground/5 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-brand/50"
                                     >
                                         <option value="android">Android</option>
                                         <option value="ios">iOS</option>
@@ -299,11 +299,11 @@ export default function ProjectsPage() {
                                     </select>
                                 </div>
                                 <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Status</label>
+                                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Status</label>
                                     <select
                                         value={formData.is_archived ? 'archived' : 'active'}
                                         onChange={(e) => setFormData({ ...formData, is_archived: e.target.value === 'archived' })}
-                                        className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-brand/50"
+                                        className="bg-foreground/5 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-brand/50"
                                     >
                                         <option value="active">Ativo</option>
                                         <option value="archived">Arquivado</option>
@@ -315,14 +315,14 @@ export default function ProjectsPage() {
                         <div className="p-6 pt-2 flex gap-3 justify-end">
                             <button
                                 onClick={() => setModalOpen(false)}
-                                className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+                                className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
                             >
                                 Cancelar
                             </button>
                             <button
                                 onClick={handleSave}
                                 disabled={saving || !formData.name.trim()}
-                                className="px-5 py-2 bg-brand text-black text-sm font-bold rounded-lg hover:bg-brand/90 disabled:opacity-50 transition-all flex items-center gap-2"
+                                className="px-5 py-2 bg-brand text-white text-sm font-bold rounded-lg hover:bg-brand/90 disabled:opacity-50 transition-all flex items-center gap-2"
                             >
                                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                                 {editingProject ? 'Salvar Alterações' : 'Criar Projeto'}

@@ -12,7 +12,7 @@ interface Props {
 export function JourneyTreemap({ data }: Props) {
     if (data.length === 0) {
         return (
-            <div className="bg-white rounded-2xl border border-black/5 p-8 text-center text-slate-500 text-sm">
+            <div className="bg-card rounded-2xl border border-border p-8 text-center text-muted-foreground text-sm">
                 Sem jornadas cadastradas para gerar o treemap.
             </div>
         );
@@ -28,10 +28,10 @@ export function JourneyTreemap({ data }: Props) {
     }));
 
     return (
-        <div className="bg-white rounded-2xl border border-black/5 p-5 flex flex-col gap-3">
+        <div className="bg-card rounded-2xl border border-border p-5 flex flex-col gap-3">
             <div>
-                <h3 className="text-sm font-bold text-slate-900">Distribuição de casos por jornada</h3>
-                <p className="text-[11px] text-slate-500">Tamanho do bloco = nº de casos · cor = % automação</p>
+                <h3 className="text-sm font-bold text-foreground">Distribuição de casos por jornada</h3>
+                <p className="text-[11px] text-muted-foreground">Tamanho do bloco = nº de casos · cor = % automação</p>
             </div>
             <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -46,7 +46,7 @@ export function JourneyTreemap({ data }: Props) {
                 </ResponsiveContainer>
             </div>
 
-            <div className="flex items-center gap-3 text-[10px] text-slate-500">
+            <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
                 <Legend color="#ef4444" label="< 30%" />
                 <Legend color="#eab308" label="30-69%" />
                 <Legend color="#22c55e" label="≥ 70%" />
@@ -110,10 +110,10 @@ function CustomTooltip({ active, payload }: TooltipProps) {
     const d = payload[0]?.payload;
     if (!d) return null;
     return (
-        <div className="bg-white border border-black/10 rounded-md shadow-md px-3 py-2 text-xs">
-            <div className="font-bold text-slate-900">{d.name}</div>
-            <div className="text-slate-600">Casos: <strong>{d.size}</strong></div>
-            <div className="text-slate-600">
+        <div className="bg-popover border border-border rounded-md shadow-md px-3 py-2 text-xs">
+            <div className="font-bold text-foreground">{d.name}</div>
+            <div className="text-muted-foreground">Casos: <strong>{d.size}</strong></div>
+            <div className="text-muted-foreground">
                 Automação: <strong>{d.automation_pct}%</strong> ({d.subflow_automated}/{d.subflow_total} sub-fluxos)
             </div>
         </div>

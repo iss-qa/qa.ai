@@ -79,15 +79,15 @@ export default function QAJourneyInsightsPage() {
     };
 
     return (
-        <div className="p-8 max-w-[1400px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
 
             <div className="flex flex-col gap-2">
-                <Link href={`/dashboard/qa-journey?project=${projectId}`} className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-white">
+                <Link href={`/dashboard/qa-journey?project=${projectId}`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                     <ArrowLeft className="w-3 h-3" /> Voltar para o mapa
                 </Link>
-                <div className="flex items-end justify-between gap-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-4">
                     <div>
-                        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
                             <BarChart3 className="w-6 h-6 text-brand" />
                             Insights da Jornada
                         </h1>
@@ -99,7 +99,7 @@ export default function QAJourneyInsightsPage() {
                         <select
                             value={projectId}
                             onChange={e => setProjectId(e.target.value || null)}
-                            className="bg-white border border-black/5 rounded-lg px-4 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/20 min-w-[200px]"
+                            className="bg-card border border-border rounded-lg px-4 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/20 min-w-[200px]"
                             disabled={projects.length === 0}
                         >
                             {projects.length === 0 && <option value="">Sem projetos</option>}
@@ -107,7 +107,7 @@ export default function QAJourneyInsightsPage() {
                         </select>
                         <Link
                             href={`/dashboard/qa-journey?project=${projectId}`}
-                            className="text-xs text-slate-400 hover:text-white border border-white/10 rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
+                            className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
                         >
                             <MapIcon className="w-3.5 h-3.5" /> Mapa visual
                         </Link>
@@ -116,13 +116,13 @@ export default function QAJourneyInsightsPage() {
             </div>
 
             {error && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-sm text-red-400">
+                <div className="bg-danger/10 border border-danger/30 rounded-2xl p-4 text-sm text-danger">
                     {error}
                 </div>
             )}
 
             {loading && (
-                <div className="bg-white rounded-2xl p-12 text-center text-textSecondary text-sm border border-black/5">
+                <div className="bg-card rounded-2xl p-12 text-center text-textSecondary text-sm border border-border">
                     <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Carregando insights…
                 </div>
             )}

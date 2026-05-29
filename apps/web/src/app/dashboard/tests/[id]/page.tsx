@@ -39,10 +39,10 @@ const columns = [
         cell: info => {
             const status = info.getValue();
             return (
-                <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${status === 'passed' ? 'bg-green-500/10 text-green-400' :
-                        status === 'failed' ? 'bg-red-500/10 text-red-400' :
+                <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${status === 'passed' ? 'bg-success/10 text-success' :
+                        status === 'failed' ? 'bg-danger/10 text-danger' :
                             status === 'running' ? 'bg-blue-500/10 text-blue-400 animate-pulse' :
-                                'bg-white/5 text-textSecondary'
+                                'bg-foreground/5 text-textSecondary'
                     }`}>
                     {status === 'passed' ? 'Passou' : status === 'failed' ? 'Falhou' : status === 'running' ? 'Executando' : 'Cancelado'}
                 </span>
@@ -54,7 +54,7 @@ const columns = [
     columnHelper.accessor(row => `${row.steps_passed}/${row.steps_total}`, {
         id: 'steps',
         header: 'Steps',
-        cell: info => <span className="text-white bg-white/5 px-2 py-1 rounded text-xs">{info.getValue()}</span>
+        cell: info => <span className="text-foreground bg-foreground/5 px-2 py-1 rounded text-xs">{info.getValue()}</span>
     }),
     columnHelper.accessor('created_at', { header: 'Data' }),
     columnHelper.display({
@@ -86,21 +86,22 @@ export default function TestHistoryPage({ params }: { params: { id: string } }) 
     });
 
     return (
-        <div className="p-8 max-w-7xl mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
 
-            <div className="flex items-center gap-4 border-b border-white/5 pb-4">
-                <Link href="/dashboard" className="p-2 -ml-2 text-textSecondary hover:text-white rounded-lg transition-colors">
+            <div className="flex items-center gap-4 border-b border-border pb-4">
+                <Link href="/dashboard" className="p-2 -ml-2 text-textSecondary hover:text-foreground rounded-lg transition-colors">
                     <ChevronLeft className="w-5 h-5" />
                 </Link>
                 <div>
-                    <h1 className="text-2xl font-bold text-white">Histórico de Execuções</h1>
+                    <h1 className="text-2xl font-bold text-foreground">Histórico de Execuções</h1>
                     <p className="text-textSecondary mt-1">Teste: Login Checkout BancoX ({params.id})</p>
                 </div>
             </div>
 
-            <div className="bg-bgSecondary border border-white/5 rounded-xl overflow-hidden">
-                <table className="w-full text-left text-sm text-textSecondary">
-                    <thead className="text-xs uppercase bg-black/20 text-textSecondary border-b border-white/5">
+            <div className="bg-bgSecondary border border-border rounded-xl overflow-hidden">
+                <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left text-sm text-textSecondary whitespace-nowrap">
+                    <thead className="text-xs uppercase bg-foreground/20 text-textSecondary border-b border-border">
                         {table.getHeaderGroups().map(headerGroup => (
                             <tr key={headerGroup.id}>
                                 {headerGroup.headers.map(header => (
@@ -111,9 +112,9 @@ export default function TestHistoryPage({ params }: { params: { id: string } }) 
                             </tr>
                         ))}
                     </thead>
-                    <tbody className="divide-y divide-white/5">
+                    <tbody className="divide-y divide-border">
                         {table.getRowModel().rows.map(row => (
-                            <tr key={row.id} className="hover:bg-white/[0.02] transition-colors">
+                            <tr key={row.id} className="hover:bg-accent transition-colors">
                                 {row.getVisibleCells().map(cell => (
                                     <td key={cell.id} className="px-6 py-4">
                                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -123,6 +124,7 @@ export default function TestHistoryPage({ params }: { params: { id: string } }) 
                         ))}
                     </tbody>
                 </table>
+                </div>
             </div>
         </div>
     );

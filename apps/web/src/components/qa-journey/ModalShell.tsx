@@ -16,14 +16,14 @@ interface ModalShellProps {
 export function ModalShell({ title, onClose, footer, maxWidth = 'max-w-2xl', children }: ModalShellProps) {
     return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className={`bg-[#0A0C14] border border-white/10 rounded-2xl w-full ${maxWidth} shadow-2xl flex flex-col max-h-[90vh]`}>
-                <div className="p-6 border-b border-white/10 flex items-center justify-between">
-                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <div className={`bg-card border border-border rounded-2xl w-full ${maxWidth} shadow-2xl flex flex-col max-h-[90vh]`}>
+                <div className="p-6 border-b border-border flex items-center justify-between">
+                    <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
                         {title}
                     </h2>
                     <button
                         onClick={onClose}
-                        className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-white/5"
+                        className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-accent"
                         aria-label="Fechar"
                     >
                         <X className="w-4 h-4" />
@@ -35,7 +35,7 @@ export function ModalShell({ title, onClose, footer, maxWidth = 'max-w-2xl', chi
                 </div>
 
                 {footer && (
-                    <div className="p-6 pt-2 flex gap-3 justify-end border-t border-white/10">
+                    <div className="p-6 pt-2 flex gap-3 justify-end border-t border-border">
                         {footer}
                     </div>
                 )}

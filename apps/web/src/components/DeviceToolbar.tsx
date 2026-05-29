@@ -62,13 +62,13 @@ export function DeviceToolbar({ udid, deviceName, sendKeyevent }: DeviceToolbarP
 
     return (
         <>
-            <div className="flex items-center justify-between w-full bg-[#1A1D27] border border-white/10 rounded-2xl p-2 shadow-lg">
+            <div className="flex items-center justify-between w-full bg-popover border border-border rounded-2xl p-2 shadow-lg">
                 {tools.map((tool) => (
                     <button
                         key={tool.id}
                         onClick={tool.onClick}
                         title={tool.label}
-                        className="p-2.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-all active:scale-95"
+                        className="p-2.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-xl transition-all active:scale-95"
                     >
                         {tool.icon}
                     </button>

@@ -19,7 +19,7 @@ function renderWithLinks(text: string): React.ReactNode {
                     href={part}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="underline hover:text-red-200 inline-flex items-center gap-0.5 break-all"
+                    className="underline hover:text-danger inline-flex items-center gap-0.5 break-all"
                 >
                     {part} <ExternalLink className="w-3 h-3 shrink-0" />
                 </a>
@@ -72,9 +72,9 @@ export function StepSelectSheet({ state, update, onNext }: Props) {
 
     return (
         <div className="flex flex-col gap-5">
-            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3 text-xs text-amber-200 leading-relaxed">
-                <strong className="text-amber-100">⚠ Importante:</strong> a planilha precisa estar no formato <strong>nativo do Google Sheets</strong>.
-                Arquivos <code className="font-mono bg-amber-500/20 px-1 rounded">.xlsx</code> (Excel) hospedados no Drive <strong>não funcionam</strong>, mesmo abertos no Sheets — a API do Google retorna <em>&quot;This operation is not supported for this document&quot;</em>.
+            <div className="bg-warning/10 border border-warning/30 rounded-lg px-4 py-3 text-xs text-warning leading-relaxed">
+                <strong className="text-warning">⚠ Importante:</strong> a planilha precisa estar no formato <strong>nativo do Google Sheets</strong>.
+                Arquivos <code className="font-mono bg-warning/20 px-1 rounded">.xlsx</code> (Excel) hospedados no Drive <strong>não funcionam</strong>, mesmo abertos no Sheets — a API do Google retorna <em>&quot;This operation is not supported for this document&quot;</em>.
                 {' '}Para converter um .xlsx existente: abra-o no Sheets → menu <strong>Arquivo</strong> → <strong>Salvar como Planilhas Google</strong> → use a URL da cópia gerada (com <strong>permissão Leitor</strong> para o service account).
             </div>
 
@@ -90,19 +90,19 @@ export function StepSelectSheet({ state, update, onNext }: Props) {
                     <button
                         onClick={fetchTabs}
                         disabled={loading || !state.spreadsheetUrl.trim()}
-                        className="bg-brand text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50 flex items-center gap-2 shrink-0"
+                        className="bg-brand text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50 flex items-center gap-2 shrink-0"
                     >
                         {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                         Carregar abas
                     </button>
                 </div>
-                <p className="text-[10px] text-slate-500">
+                <p className="text-[10px] text-muted-foreground">
                     A planilha precisa estar compartilhada com o e-mail do service account configurado em Configurações &rarr; Integrações.
                 </p>
             </Field>
 
             {error && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-400 whitespace-pre-wrap break-words leading-relaxed">
+                <div className="bg-danger/10 border border-danger/30 rounded-lg px-3 py-2 text-xs text-danger whitespace-pre-wrap break-words leading-relaxed">
                     {renderWithLinks(error)}
                 </div>
             )}
@@ -135,11 +135,11 @@ export function StepSelectSheet({ state, update, onNext }: Props) {
                 </>
             )}
 
-            <div className="flex justify-end pt-4 border-t border-white/10">
+            <div className="flex justify-end pt-4 border-t border-border">
                 <button
                     onClick={onNext}
                     disabled={!state.spreadsheetId || !state.sheetName}
-                    className="bg-brand text-black px-5 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50"
+                    className="bg-brand text-white px-5 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50"
                 >
                     Avançar
                 </button>
@@ -148,12 +148,12 @@ export function StepSelectSheet({ state, update, onNext }: Props) {
     );
 }
 
-const inputClass = 'bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/50';
+const inputClass = 'bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">{label}</label>
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{label}</label>
             {children}
         </div>
     );

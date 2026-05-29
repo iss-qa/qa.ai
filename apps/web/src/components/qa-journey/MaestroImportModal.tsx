@@ -92,19 +92,19 @@ export function MaestroImportModal({ subflows, testCases, onClose, onSubflowUpda
             onClose={onClose}
             maxWidth="max-w-4xl"
             footer={
-                <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">
+                <button onClick={onClose} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">
                     Fechar
                 </button>
             }
         >
             <div className="flex flex-col gap-4">
-                <p className="text-xs text-slate-400 leading-relaxed">
-                    Vincule um <strong className="text-white">test case</strong> do Maestro (da pasta <code className="font-mono text-slate-200">/dashboard/tests</code>) a cada sub-fluxo desta jornada.
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                    Vincule um <strong className="text-foreground">test case</strong> do Maestro (da pasta <code className="font-mono text-foreground">/dashboard/tests</code>) a cada sub-fluxo desta jornada.
                     Sub-fluxos vinculados aparecem com ícone <Link2 className="w-3 h-3 inline" /> no mapa público.
                 </p>
 
                 {testCases.length === 0 && (
-                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-xs text-amber-200">
+                    <div className="bg-warning/10 border border-warning/30 rounded-lg px-3 py-2 text-xs text-warning">
                         Este projeto não tem nenhum test case Maestro cadastrado. Crie testes em <code className="font-mono">/dashboard/tests</code> primeiro.
                     </div>
                 )}
@@ -122,23 +122,23 @@ export function MaestroImportModal({ subflows, testCases, onClose, onSubflowUpda
                 )}
 
                 {error && (
-                    <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-400">
+                    <div className="bg-danger/10 border border-danger/30 rounded-lg px-3 py-2 text-xs text-danger">
                         {error}
                     </div>
                 )}
 
-                <div className="bg-white/[0.02] border border-white/10 rounded-xl overflow-hidden">
+                <div className="bg-foreground/[0.02] border border-border rounded-xl overflow-hidden">
                     <table className="w-full text-sm">
-                        <thead className="text-[10px] uppercase tracking-widest text-slate-400 font-bold border-b border-white/10">
+                        <thead className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold border-b border-border">
                             <tr className="text-left">
                                 <th className="px-4 py-3">Sub-fluxo</th>
                                 <th className="px-4 py-3">Test case Maestro</th>
                                 <th className="px-4 py-3 w-24"></th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-white/5">
+                        <tbody className="divide-y divide-border">
                             {subflows.length === 0 && (
-                                <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500 text-xs">
+                                <tr><td colSpan={3} className="px-4 py-6 text-center text-muted-foreground text-xs">
                                     Nenhum sub-fluxo cadastrado nesta jornada.
                                 </td></tr>
                             )}
@@ -148,18 +148,18 @@ export function MaestroImportModal({ subflows, testCases, onClose, onSubflowUpda
                                 const suggestedId = suggestions[s.id];
                                 const isSaving = savingId === s.id;
                                 return (
-                                    <tr key={s.id} className="hover:bg-white/[0.02]">
+                                    <tr key={s.id} className="hover:bg-accent">
                                         <td className="px-4 py-3">
-                                            <div className="text-white font-medium">{s.title}</div>
+                                            <div className="text-foreground font-medium">{s.title}</div>
                                             {s.description && (
-                                                <div className="text-[10px] text-slate-500 truncate max-w-[280px]">{s.description}</div>
+                                                <div className="text-[10px] text-muted-foreground truncate max-w-[280px]">{s.description}</div>
                                             )}
                                         </td>
                                         <td className="px-4 py-3">
                                             <select
                                                 value={currentTcId}
                                                 onChange={e => setAssignments(prev => ({ ...prev, [s.id]: e.target.value }))}
-                                                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/50 min-w-[280px]"
+                                                className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50 min-w-[280px]"
                                                 disabled={testCases.length === 0}
                                             >
                                                 <option value="">— Nenhum —</option>
@@ -178,7 +178,7 @@ export function MaestroImportModal({ subflows, testCases, onClose, onSubflowUpda
                                             <button
                                                 onClick={() => handleSave(s)}
                                                 disabled={!dirty || isSaving}
-                                                className="text-xs font-bold text-brand hover:underline disabled:opacity-30 disabled:no-underline disabled:text-slate-500 inline-flex items-center gap-1"
+                                                className="text-xs font-bold text-brand hover:underline disabled:opacity-30 disabled:no-underline disabled:text-muted-foreground inline-flex items-center gap-1"
                                             >
                                                 {isSaving && <Loader2 className="w-3 h-3 animate-spin" />}
                                                 Salvar

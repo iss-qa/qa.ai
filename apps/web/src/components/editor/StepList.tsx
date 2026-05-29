@@ -49,7 +49,7 @@ export function StepList() {
 
     if (steps.length === 0) {
         return (
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 border border-dashed border-white/10 rounded-xl my-4 text-textSecondary">
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 border border-dashed border-border rounded-xl my-4 text-textSecondary">
                 <p className="mb-2">Nenhum step adicionado ainda.</p>
                 <p className="text-sm">Use a IA acima ou grave no celular para começar.</p>
             </div>
@@ -84,7 +84,7 @@ export function StepList() {
 
             <button
                 onClick={() => addStep({})}
-                className="w-full mt-4 flex items-center justify-center gap-2 py-3 border border-dashed border-white/20 hover:border-brand/50 hover:bg-brand/5 text-textSecondary hover:text-white rounded-xl transition-all"
+                className="w-full mt-4 flex items-center justify-center gap-2 py-3 border border-dashed border-border hover:border-brand/50 hover:bg-brand/5 text-textSecondary hover:text-foreground rounded-xl transition-all"
             >
                 <Plus className="w-4 h-4" />
                 <span className="text-sm font-medium">Novo Step Vazio</span>

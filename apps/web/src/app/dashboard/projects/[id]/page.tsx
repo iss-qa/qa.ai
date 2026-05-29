@@ -1,74 +1,19 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Play, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, X, Download, Upload, FileUp, AlertTriangle, CheckCircle2, ScanSearch, Monitor, Square, ChevronDown, ChevronRight, MousePointerClick, Eye, Copy, Smartphone, Wand2, RefreshCw, ExternalLink, MoreVertical, Clapperboard } from 'lucide-react';
+import { ArrowLeft, Play, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, Download, Upload, ScanSearch, Eye, Wand2, MoreVertical, Clapperboard } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useDeviceStore } from '@/store/deviceStore';
-import { DevicePreview, type DevicePreviewHandle, type RecordedInteraction } from '@/components/DevicePreview';
-
-interface Project {
-    id: string;
-    name: string;
-    description: string;
-    platform: string;
-    status: string;
-}
-
-interface ScanElement {
-    class?: string;
-    id?: string;
-    index?: number;
-    text?: string;
-    hint?: string;
-    [key: string]: unknown;
-}
-
-interface ScanSelectorCommand {
-    type?: string;
-    strategy?: string;
-    command?: string;
-}
-
-interface ScanSelectorGroup {
-    element?: ScanElement;
-    commands?: ScanSelectorCommand[];
-}
-
-interface ScanScreen {
-    maestro_selectors?: ScanSelectorGroup[];
-    screenshot?: string;
-    activity?: string;
-}
-
-interface ScanResults {
-    screens?: Record<string, ScanScreen>;
-    stats?: { elements_found?: number; dumps_completed?: number };
-    app_package?: string;
-}
-
-interface TestStep {
-    id?: string;
-    num?: number;
-    action?: string;
-    target?: string;
-    value?: string;
-    engine?: string;
-    maestro_command?: string;
-}
-
-interface TestCase {
-    id: string;
-    name: string;
-    status: string;
-    last_run_at: string | null;
-    platform: string;
-    steps?: TestStep[];
-    tags?: string[];
-    raw_yaml?: string | null;
-    app_id?: string | null;
-}
+import { type DevicePreviewHandle, type RecordedInteraction } from '@/components/DevicePreview';
+import type { Project, ScanResults, TestStep, TestCase } from './project-types';
+import { extractAppIdFromYaml, parseMaestroYamlToSteps, extractElementName } from './project-utils';
+import { ImportYamlModal } from './_components/ImportYamlModal';
+import { ScannerModal } from './_components/ScannerModal';
+import { MaestroStudioModal } from './_components/MaestroStudioModal';
+import { SaveAsTestModal } from './_components/SaveAsTestModal';
+import { EditProjectModal } from './_components/EditProjectModal';
 
 export default function ProjectDetailPage() {
     const params = useParams();
@@ -287,113 +232,6 @@ export default function ProjectDetailPage() {
     const reloadMaestroStudio = () => {
         setMaestroReloadKey(Date.now());
         setMaestroPhase('ready');
-    };
-
-    // Parse a Maestro YAML test file into the step shape used by test_cases.steps.
-    // Shared between the "Importar YAML" upload flow and "Salvar como Teste" from
-    // the Maestro Studio iframe so both produce identical row shapes.
-    //
-    // Each step's `maestro_command` preserves the FULL multi-line block (parent +
-    // indented children). The editor's "Executar Teste" rebuilds the YAML by
-    // joining these commands; if we only captured the parent line, multi-line
-    // commands like `- tapOn:\n    id: "btn"` would lose their selector and the
-    // run would fail with "no element specified".
-    const extractAppIdFromYaml = (raw: string): string | null => {
-        // YAML header: first `appId:` line before `---`. Quoted or unquoted.
-        const headerEnd = raw.indexOf('---');
-        const header = headerEnd >= 0 ? raw.slice(0, headerEnd) : raw;
-        const m = header.match(/^\s*appId\s*:\s*["']?([^"'\n\r]+)["']?\s*$/m);
-        return m ? m[1].trim() : null;
-    };
-
-    const parseMaestroYamlToSteps = (rawContent: string): TestStep[] => {
-        const content = rawContent
-            .split('\n')
-            .filter(line => !line.trimStart().startsWith('#'))
-            .join('\n');
-        if (!content.includes('---')) return [];
-        const parts = content.split('---', 2);
-        if (!parts[0].includes('appId')) return [];
-        const lines = parts[1].split('\n');
-        const steps: TestStep[] = [];
-        let stepNum = 0;
-
-        const trimQuotes = (s: string) => s.trim().replace(/^"|"$/g, '');
-
-        for (let i = 0; i < lines.length; i++) {
-            const raw = lines[i];
-            const line = raw.trim();
-            if (!line || line.startsWith('#')) continue;
-            if (!line.startsWith('- ')) continue;
-
-            // Accumulate any subsequent indented child lines (Maestro block form).
-            const block: string[] = [raw];
-            while (i + 1 < lines.length) {
-                const nxt = lines[i + 1];
-                if (nxt.trim() === '' || nxt.startsWith('- ') || !/^\s/.test(nxt)) break;
-                if (nxt.trim().startsWith('#')) { i++; continue; }
-                block.push(nxt);
-                i++;
-            }
-            const fullCommand = block.join('\n');
-
-            stepNum++;
-            const cmdContent = line.substring(2).trim();
-            const children: Record<string, string> = {};
-            block.slice(1).forEach(l => {
-                const m = l.trim().match(/^([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$/);
-                if (m) children[m[1]] = trimQuotes(m[2]);
-            });
-
-            let action = '', target = '', value = '';
-
-            if (cmdContent === 'launchApp') { action = 'launchApp'; target = children.appId || 'Abre o aplicativo'; }
-            else if (cmdContent === 'clearState') { action = 'clearState'; target = 'Limpa estado do app'; }
-            else if (cmdContent === 'waitForAnimationToEnd') { action = 'waitForAnimationToEnd'; target = children.timeout || 'Aguarda transicao'; }
-            else if (cmdContent === 'hideKeyboard') { action = 'hideKeyboard'; target = 'Esconde teclado'; }
-            else if (cmdContent === 'back') { action = 'back'; target = 'Volta'; }
-            else if (cmdContent === 'scroll') { action = 'scroll'; target = 'Rola a tela'; }
-            else if (cmdContent.startsWith('launchApp:')) {
-                action = 'launchApp';
-                const inline = trimQuotes(cmdContent.replace('launchApp:', ''));
-                target = inline || children.appId || 'Abre o aplicativo';
-            }
-            else if (cmdContent === 'tapOn:' || cmdContent.startsWith('tapOn:')) {
-                action = 'tapOn';
-                const inline = trimQuotes(cmdContent.replace('tapOn:', ''));
-                target = inline || children.id || children.text || children.point || '';
-            }
-            else if (cmdContent === 'inputText:' || cmdContent.startsWith('inputText:')) {
-                action = 'inputText';
-                value = trimQuotes(cmdContent.replace('inputText:', '')) || children.text || '';
-                target = value ? `Digita: ${value}` : 'Digita texto';
-            }
-            else if (cmdContent === 'assertVisible:' || cmdContent.startsWith('assertVisible:')) {
-                action = 'assertVisible';
-                const inline = trimQuotes(cmdContent.replace('assertVisible:', ''));
-                target = inline || children.id || children.text || '';
-            }
-            else if (cmdContent.startsWith('extendedWaitUntil:')) {
-                action = 'extendedWaitUntil';
-                target = children.visible || '';
-                value = children.timeout || '5000';
-            }
-            else {
-                action = cmdContent.split(':')[0] || cmdContent;
-                target = Object.values(children).filter(Boolean).join(' ') || trimQuotes(cmdContent.split(':').slice(1).join(':')) || cmdContent;
-            }
-
-            steps.push({
-                id: String(stepNum),
-                num: stepNum,
-                action,
-                target,
-                value,
-                engine: 'maestro',
-                maestro_command: fullCommand,
-            });
-        }
-        return steps;
     };
 
     const openSaveAsTest = () => {
@@ -826,87 +664,6 @@ export default function ProjectDetailPage() {
         }
     };
 
-    const getSelectorsFromGroup = (selectorGroup: ScanSelectorGroup): { type: string; strategy: string; command: string }[] => {
-        return (selectorGroup?.commands || []).map((cmd: ScanSelectorCommand) => ({
-            type: cmd.type || 'tapOn',
-            strategy: cmd.strategy || '',
-            command: cmd.command || '',
-        }));
-    };
-
-    const copyToClipboard = (text: string) => {
-        navigator.clipboard.writeText(text);
-    };
-
-    /**
-     * Extract the UI element name from a user description.
-     * Removes action verbs and keeps only the element identifier.
-     *
-     * "Clica em Busque seu produto" -> "Busque seu produto"
-     * "Aguarda o elemento Busque seu produto aparecer na tela" -> "Busque seu produto"
-     * "Digita o email isaias@gmail.com" -> "isaias@gmail.com"
-     * "Valida que feijao e exibido" -> "feijao"
-     */
-    const extractElementName = (text: string): string => {
-        let label = text;
-
-        // 1. If there's quoted text, use it directly
-        const quoted = label.match(/"([^"]+)"/);
-        if (quoted) return quoted[1];
-
-        // 2. Remove action verb prefixes (order: longest first)
-        const actionPrefixes = [
-            'Aguarda o elemento ', 'Aguarda que o elemento ', 'Aguarda que ',
-            'Aguarda a transicao de tela apos ', 'Aguarda transicao de tela',
-            'Aguarda botao ', 'Aguarda o botao ', 'Aguarda campo de ',
-            'Aguarda aba ', 'Aguarda o ', 'Aguarda ',
-            'Clica no botao ', 'Clica no campo ', 'Clica em ', 'Clica no ', 'Clica na ',
-            'Toca no campo de ', 'Toca no campo ', 'Toca no botao ',
-            'Toca em ', 'Toca no ', 'Toca na ',
-            'Abre o app ', 'Abre o aplicativo ', 'Abre ',
-            'Digita o email ', 'Digita a senha ', 'Digita o ', 'Digita a ', 'Digita ',
-            'Valida que houve resultado e ', 'Valida que ', 'Valida se ',
-            'Verifica que ', 'Verifica se ', 'Confirma que ',
-            'Pressiona o botao ', 'Pressiona o ', 'Pressiona ', 'Esconde ',
-            'Seleciona o ', 'Seleciona a ', 'Seleciona ',
-        ];
-        for (const p of actionPrefixes) {
-            if (label.startsWith(p)) { label = label.substring(p.length); break; }
-        }
-
-        // 3. Remove trailing context phrases
-        const contextSuffixes = [
-            ' aparecer na tela inicial', ' aparecer na tela', ' aparecer nos resultados',
-            ' aparecer', ' apareca', ' na tela inicial', ' na tela',
-            ' para garantir que esta selecionada', ' para garantir', ' para confirmar',
-            ' para acessar', ' para fazer', ' para iniciar', ' para realizar',
-            ' e exibido na aba de produtos', ' e exibido', ' esta visivel',
-            ' nos resultados', ' na aba de produtos', ' no campo de busca',
-            ' carregar', ' ficar visivel', ' ficar habilitado', ' ficar',
-            ' apos tap', ' apos clicar', ' apos digitar',
-        ];
-        for (const s of contextSuffixes) {
-            const idx = label.indexOf(s);
-            if (idx > 0) { label = label.substring(0, idx); break; }
-        }
-
-        // 4. Remove leftover filler words that are never in UI
-        const fillerPrefixes = [
-            'botao ', 'o botao ', 'campo ', 'campo de ', 'o campo ',
-            'tela ', 'aba ', 'menu ', 'icone ', 'link ',
-            'elemento ', 'o elemento ',
-        ];
-        let labelLower = label.toLowerCase();
-        for (const fw of fillerPrefixes) {
-            if (labelLower.startsWith(fw)) {
-                label = label.substring(fw.length);
-                labelLower = label.toLowerCase();
-            }
-        }
-
-        return label.trim();
-    };
-
     // Export test as .yaml file — calls daemon to resolve appId
     const handleExportYaml = async (e: React.MouseEvent, test: TestCase) => {
         e.preventDefault();
@@ -1277,7 +1034,7 @@ export default function ProjectDetailPage() {
 
     if (!project) {
         return (
-            <div className="p-8 text-center text-slate-400">
+            <div className="p-8 text-center text-muted-foreground">
                 <p>Projeto não encontrado.</p>
                 <Link href="/dashboard/projects" className="text-brand hover:underline mt-2 inline-block">
                     ← Voltar para Projetos
@@ -1291,7 +1048,7 @@ export default function ProjectDetailPage() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <Link href="/dashboard/projects" className="text-slate-400 hover:text-white transition-colors">
+                    <Link href="/dashboard/projects" className="text-muted-foreground hover:text-foreground transition-colors">
                         <ArrowLeft className="w-5 h-5" />
                     </Link>
                     <div className="flex items-center gap-3">
@@ -1299,7 +1056,7 @@ export default function ProjectDetailPage() {
                             <LayoutGrid className="w-5 h-5" />
                         </div>
                         <div>
-                            <h1 className="text-2xl font-bold text-white">{project.name}</h1>
+                            <h1 className="text-2xl font-bold text-foreground">{project.name}</h1>
                             <p className="text-textSecondary/80 text-sm">{project.description}</p>
                         </div>
                     </div>
@@ -1307,7 +1064,7 @@ export default function ProjectDetailPage() {
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => setEditModalOpen(true)}
-                        className="px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors flex items-center gap-2 border border-white/10"
+                        className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors flex items-center gap-2 border border-border"
                     >
                         <Edit2 className="w-4 h-4" /> Editar
                     </button>
@@ -1322,29 +1079,29 @@ export default function ProjectDetailPage() {
 
             {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">TOTAL TESTES</p>
-                    <p className="text-2xl font-bold text-white mt-1">{tests.length}</p>
+                <div className="bg-foreground/5 border border-border rounded-xl p-4">
+                    <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">TOTAL TESTES</p>
+                    <p className="text-2xl font-bold text-foreground mt-1">{tests.length}</p>
                 </div>
-                <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">PLATAFORMA</p>
-                    <p className="text-2xl font-bold text-white mt-1 capitalize">{project.platform}</p>
+                <div className="bg-foreground/5 border border-border rounded-xl p-4">
+                    <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">PLATAFORMA</p>
+                    <p className="text-2xl font-bold text-foreground mt-1 capitalize">{project.platform}</p>
                 </div>
-                <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">STATUS</p>
+                <div className="bg-foreground/5 border border-border rounded-xl p-4">
+                    <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">STATUS</p>
                     <p className={`text-2xl font-bold mt-1 ${
                         tests.some(t => t.status === 'failed') ? 'text-red-400' :
                         tests.some(t => t.status === 'passed') ? 'text-green-400' :
-                        'text-slate-400'
+                        'text-muted-foreground'
                     }`}>
                         {tests.some(t => t.status === 'failed') ? 'Falha' :
                          tests.some(t => t.status === 'passed') ? 'Sucesso' :
                          tests.length > 0 ? 'Pendente' : '—'}
                     </p>
                 </div>
-                <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">ÚLTIMA EXECUÇÃO</p>
-                    <p className="text-2xl font-bold text-slate-400 mt-1">
+                <div className="bg-foreground/5 border border-border rounded-xl p-4">
+                    <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">ÚLTIMA EXECUÇÃO</p>
+                    <p className="text-2xl font-bold text-muted-foreground mt-1">
                         {(() => {
                             const lastRun = tests.find(t => t.last_run_at);
                             return lastRun?.last_run_at
@@ -1356,14 +1113,14 @@ export default function ProjectDetailPage() {
             </div>
 
             {/* Tests List */}
-            <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-                <div className="p-4 border-b border-white/10 flex items-center justify-between">
+            <div className="bg-foreground/5 border border-border rounded-2xl overflow-hidden">
+                <div className="p-4 border-b border-border flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         {/* Kebab menu (left) — secondary actions: scanner / map / import YAML */}
                         <div className="relative" ref={moreMenuRef}>
                             <button
                                 onClick={() => setShowMoreMenu(v => !v)}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                                 title="Mais ações"
                                 aria-haspopup="menu"
                                 aria-expanded={showMoreMenu}
@@ -1371,7 +1128,7 @@ export default function ProjectDetailPage() {
                                 <MoreVertical className="w-4 h-4" />
                             </button>
                             {showMoreMenu && (
-                                <div className="absolute left-0 top-full mt-1 w-56 bg-[#0A0C14] border border-white/10 rounded-lg shadow-2xl z-30 py-1">
+                                <div className="absolute left-0 top-full mt-1 w-56 bg-card border border-border rounded-lg shadow-2xl z-30 py-1">
                                     <button
                                         onClick={() => {
                                             setShowMoreMenu(false);
@@ -1379,7 +1136,7 @@ export default function ProjectDetailPage() {
                                             setScannerPhase('select_app');
                                             setScanResults(null);
                                         }}
-                                        className="w-full text-left px-3 py-2 text-xs font-medium text-cyan-300 hover:bg-white/5 flex items-center gap-2"
+                                        className="w-full text-left px-3 py-2 text-xs font-medium text-cyan-300 hover:bg-accent flex items-center gap-2"
                                     >
                                         <ScanSearch className="w-3.5 h-3.5" /> Scanear Aplicação
                                     </button>
@@ -1399,21 +1156,21 @@ export default function ProjectDetailPage() {
                                                     }
                                                 } catch (e) { console.error('Failed to load element map:', e); }
                                             }}
-                                            className="w-full text-left px-3 py-2 text-xs font-medium text-cyan-300/80 hover:bg-white/5 flex items-center gap-2"
+                                            className="w-full text-left px-3 py-2 text-xs font-medium text-cyan-300/80 hover:bg-accent flex items-center gap-2"
                                         >
                                             <Eye className="w-3.5 h-3.5" /> Ver Mapa
                                         </button>
                                     )}
                                     <button
                                         onClick={() => { setShowMoreMenu(false); setShowImportModal(true); }}
-                                        className="w-full text-left px-3 py-2 text-xs font-medium text-amber-300 hover:bg-white/5 flex items-center gap-2"
+                                        className="w-full text-left px-3 py-2 text-xs font-medium text-amber-300 hover:bg-accent flex items-center gap-2"
                                     >
                                         <Upload className="w-3.5 h-3.5" /> Importar YAML
                                     </button>
                                 </div>
                             )}
                         </div>
-                        <span className="text-sm font-bold text-white flex items-center gap-2">
+                        <span className="text-sm font-bold text-foreground flex items-center gap-2">
                             <FlaskConical className="w-4 h-4 text-brand" />
                             Testes do Projeto ({tests.length})
                         </span>
@@ -1437,39 +1194,39 @@ export default function ProjectDetailPage() {
                 </div>
 
                 {tests.length === 0 ? (
-                    <div className="py-12 text-center text-slate-400">
+                    <div className="py-12 text-center text-muted-foreground">
                         <FlaskConical className="w-8 h-8 mx-auto mb-3 opacity-50" />
                         <p className="text-sm font-medium">Nenhum teste neste projeto</p>
                         <p className="text-xs mt-1 opacity-70">Crie testes no editor e vincule a este projeto</p>
                     </div>
                 ) : (
-                    <div className="divide-y divide-white/5">
+                    <div className="divide-y divide-border">
                         {tests.map((test) => (
                             <Link
                                 key={test.id}
                                 href={`/dashboard/tests/editor?projectId=${projectId}&testId=${test.id}`}
-                                className="px-4 py-3 flex items-center justify-between hover:bg-white/5 transition-colors cursor-pointer block"
+                                className="px-4 py-3 flex items-center justify-between hover:bg-accent transition-colors cursor-pointer block"
                             >
                                 <div>
-                                    <p className="text-sm font-bold text-white">{test.name}</p>
-                                    <p className="text-xs text-slate-400 mt-0.5">
+                                    <p className="text-sm font-bold text-foreground">{test.name}</p>
+                                    <p className="text-xs text-muted-foreground mt-0.5">
                                         {Array.isArray(test.steps) ? `${test.steps.length} passos` : ''} • {test.last_run_at ? `Ultima exec: ${new Date(test.last_run_at).toLocaleDateString('pt-BR')}` : 'Nunca executado'}
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${test.status === 'passed' ? 'bg-green-500/20 text-green-400' : test.status === 'failed' ? 'bg-red-500/20 text-red-400' : 'bg-slate-500/20 text-slate-400'}`}>
+                                    <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${test.status === 'passed' ? 'bg-green-500/20 text-green-400' : test.status === 'failed' ? 'bg-red-500/20 text-red-400' : 'bg-slate-500/20 text-muted-foreground'}`}>
                                         {test.status === 'passed' ? 'Sucesso' : test.status === 'failed' ? 'Falha' : 'Pendente'}
                                     </span>
                                     <button
                                         onClick={(e) => handleDeleteTest(e, test.id)}
-                                        className="p-2 hover:bg-red-500/10 text-slate-400 hover:text-red-400 rounded-lg transition-colors border border-transparent hover:border-red-500/20"
+                                        className="p-2 hover:bg-red-500/10 text-muted-foreground hover:text-red-400 rounded-lg transition-colors border border-transparent hover:border-red-500/20"
                                         title="Excluir teste"
                                     >
                                         <Trash2 className="w-4 h-4" />
                                     </button>
                                     <button
                                         onClick={(e) => handleExportYaml(e, test)}
-                                        className="p-2 hover:bg-white/10 text-slate-400 hover:text-amber-400 rounded-lg transition-colors border border-transparent hover:border-white/10"
+                                        className="p-2 hover:bg-foreground/10 text-muted-foreground hover:text-amber-400 rounded-lg transition-colors border border-transparent hover:border-border"
                                         title="Exportar YAML"
                                     >
                                         <Download className="w-4 h-4" />
@@ -1495,12 +1252,12 @@ export default function ProjectDetailPage() {
 
             {/* Delete Confirmation */}
             {deleteConfirm && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
-                        <h3 className="text-lg font-bold text-white mb-2">Excluir Projeto?</h3>
-                        <p className="text-sm text-slate-400 mb-6">O projeto &quot;{project.name}&quot; será excluído permanentemente.</p>
+                <div className="fixed inset-0 bg-foreground/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-card border border-border rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+                        <h3 className="text-lg font-bold text-foreground mb-2">Excluir Projeto?</h3>
+                        <p className="text-sm text-muted-foreground mb-6">O projeto &quot;{project.name}&quot; será excluído permanentemente.</p>
                         <div className="flex gap-3 justify-end">
-                            <button onClick={() => setDeleteConfirm(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancelar</button>
+                            <button onClick={() => setDeleteConfirm(false)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">Cancelar</button>
                             <button onClick={handleDelete} className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 transition-colors">Excluir</button>
                         </div>
                     </div>
@@ -1509,14 +1266,14 @@ export default function ProjectDetailPage() {
 
             {/* Delete Test Confirmation */}
             {deletingTestId && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
-                        <h3 className="text-lg font-bold text-white mb-2">Excluir Teste?</h3>
-                        <p className="text-sm text-slate-400 mb-6">
+                <div className="fixed inset-0 bg-foreground/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-card border border-border rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+                        <h3 className="text-lg font-bold text-foreground mb-2">Excluir Teste?</h3>
+                        <p className="text-sm text-muted-foreground mb-6">
                             O teste &quot;{tests.find(t => t.id === deletingTestId)?.name}&quot; sera excluido permanentemente.
                         </p>
                         <div className="flex gap-3 justify-end">
-                            <button onClick={() => setDeletingTestId(null)} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancelar</button>
+                            <button onClick={() => setDeletingTestId(null)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">Cancelar</button>
                             <button onClick={confirmDeleteTest} className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 transition-colors">Excluir</button>
                         </div>
                     </div>
@@ -1525,595 +1282,84 @@ export default function ProjectDetailPage() {
 
             {/* Import YAML Modal */}
             {showImportModal && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl">
-                        <div className="flex items-center justify-between p-5 border-b border-white/10">
-                            <div className="flex items-center gap-2">
-                                <Upload className="w-5 h-5 text-brand" />
-                                <h2 className="text-lg font-bold text-white">Importar Teste Maestro</h2>
-                            </div>
-                            <button onClick={() => { setShowImportModal(false); setImportStatus({ type: 'idle', message: '' }); }} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-
-                        <div className="p-5">
-                            {/* Drop zone */}
-                            <div
-                                className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer ${
-                                    importDragActive
-                                        ? 'border-brand bg-brand/5 scale-[1.02]'
-                                        : 'border-white/10 hover:border-white/20 hover:bg-white/[0.02]'
-                                }`}
-                                onDragOver={(e) => { e.preventDefault(); setImportDragActive(true); }}
-                                onDragLeave={() => setImportDragActive(false)}
-                                onDrop={(e) => {
-                                    e.preventDefault();
-                                    setImportDragActive(false);
-                                    const files = Array.from(e.dataTransfer.files).filter(
-                                        f => f.name.endsWith('.yaml') || f.name.endsWith('.yml')
-                                    );
-                                    if (files.length === 0) {
-                                        setImportStatus({ type: 'error', message: 'Apenas arquivos .yaml ou .yml sao aceitos.' });
-                                    } else {
-                                        files.forEach(f => handleImportFile(f));
-                                    }
-                                }}
-                                onClick={() => {
-                                    const input = document.createElement('input');
-                                    input.type = 'file';
-                                    input.accept = '.yaml,.yml';
-                                    input.multiple = true;
-                                    input.onchange = (e) => {
-                                        const files = Array.from((e.target as HTMLInputElement).files || []);
-                                        files.forEach(f => handleImportFile(f));
-                                    };
-                                    input.click();
-                                }}
-                            >
-                                {importing ? (
-                                    <div className="flex flex-col items-center gap-3">
-                                        <Loader2 className="w-10 h-10 text-brand animate-spin" />
-                                        <p className="text-sm text-white font-medium">Importando teste...</p>
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col items-center gap-3">
-                                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-colors ${importDragActive ? 'bg-brand/20 text-brand' : 'bg-white/5 text-slate-400'}`}>
-                                            <FileUp className="w-7 h-7" />
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-medium text-white">
-                                                {importDragActive ? 'Solte os arquivos aqui' : 'Arraste e solte arquivos .yaml'}
-                                            </p>
-                                            <p className="text-xs text-slate-500 mt-1">Suporta multiplos arquivos simultaneamente</p>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Status message */}
-                            {importStatus.type !== 'idle' && (
-                                <div className={`mt-4 flex items-start gap-2 p-3 rounded-lg text-sm ${
-                                    importStatus.type === 'error' ? 'bg-red-500/10 border border-red-500/20 text-red-400' :
-                                    'bg-green-500/10 border border-green-500/20 text-green-400'
-                                }`}>
-                                    {importStatus.type === 'error' ? <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> : <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />}
-                                    <span>{importStatus.message}</span>
-                                </div>
-                            )}
-
-                            {/* Help text */}
-                            <div className="mt-4 bg-white/[0.03] rounded-lg p-3">
-                                <p className="text-[11px] text-slate-500 leading-relaxed">
-                                    O arquivo deve ser um YAML valido do Maestro com a estrutura:
-                                </p>
-                                <pre className="text-[10px] text-slate-600 font-mono mt-2 leading-relaxed">
-{`appId: com.app.example
----
-- launchApp
-- tapOn: "Botao"
-- inputText: "texto"`}
-                                </pre>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <ImportYamlModal
+                    importDragActive={importDragActive}
+                    setImportDragActive={setImportDragActive}
+                    importStatus={importStatus}
+                    setImportStatus={setImportStatus}
+                    importing={importing}
+                    onClose={() => { setShowImportModal(false); setImportStatus({ type: 'idle', message: '' }); }}
+                    handleImportFile={handleImportFile}
+                />
             )}
 
             {/* Scanner Modal (Scanear Aplicacao) — Full screen */}
             {showScannerModal && (
-                <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
-                    {/* Header bar */}
-                    <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 bg-[#0A0C14] shrink-0">
-                        <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-xl bg-cyan-500/10 flex items-center justify-center">
-                                <ScanSearch className="w-4 h-4 text-cyan-400" />
-                            </div>
-                            <div>
-                                <h2 className="text-base font-bold text-white">
-                                    {scannerPhase === 'results' ? 'Resultado do Scan' : scannerPhase === 'scanning' ? `Escaneando — ${scanAppLabel}` : 'Scanear Aplicacao'}
-                                </h2>
-                                <p className="text-xs text-slate-400">
-                                    {scannerPhase === 'results'
-                                        ? `${Object.keys(scanResults?.screens || {}).length} telas | ${scanResults?.stats?.elements_found || 0} elementos | ${scanResults?.app_package || ''}`
-                                        : scannerPhase === 'scanning'
-                                            ? `${scanAppPackage} | ${scannerStats.screens_found} telas | ${scannerStats.elements_found} elementos`
-                                            : 'Toque no app que deseja escanear'}
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            {scannerPhase === 'scanning' && (
-                                <button
-                                    onClick={handleStopScanner}
-                                    className="px-5 py-2 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition-all text-sm flex items-center gap-2"
-                                >
-                                    <Square className="w-3.5 h-3.5 fill-current" /> Finalizar Scan
-                                </button>
-                            )}
-                            <button
-                                onClick={async () => {
-                                    if (scannerPhase === 'scanning') await handleStopScanner();
-                                    setShowScannerModal(false);
-                                    setScanResults(null);
-                                    setScannerPhase('select_app');
-                                    setScanAppPackage(null);
-                                    setDetectingApp(false);
-                                }}
-                                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Content area */}
-                    <div className="flex-1 flex overflow-hidden">
-
-                        {/* ── PHASE 1: SELECT APP ── */}
-                        {scannerPhase === 'select_app' && (
-                            <div className="flex-1 flex items-center justify-center">
-                                {availableDeviceUdid ? (
-                                    <div className="relative h-full w-full max-w-[400px]">
-                                        <DevicePreview
-                                            ref={devicePreviewRef}
-                                            udid={availableDeviceUdid}
-                                            onInteraction={handleScannerInteraction}
-                                        />
-                                        {detectingApp ? (
-                                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center pointer-events-none">
-                                                <div className="bg-[#0A0C14]/90 border border-cyan-500/30 rounded-xl px-6 py-4 flex items-center gap-3">
-                                                    <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
-                                                    <span className="text-sm text-white font-medium">Detectando app...</span>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="absolute bottom-4 left-4 right-4 pointer-events-none">
-                                                <div className="bg-cyan-500 text-black rounded-xl px-4 py-3 text-center shadow-lg">
-                                                    <p className="text-sm font-bold">Toque no app que deseja escanear</p>
-                                                    <p className="text-xs opacity-70 mt-0.5">O app abrira e o scan comecara automaticamente</p>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col items-center gap-4 p-10">
-                                        <Smartphone className="w-12 h-12 text-red-400" />
-                                        <p className="text-sm text-red-400 text-center">Nenhum dispositivo detectado via ADB.</p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* ── PHASE 2: SCANNING (side-by-side) ── */}
-                        {scannerPhase === 'scanning' && availableDeviceUdid && (
-                            <>
-                                {/* Left: Device preview */}
-                                <div className="w-[360px] shrink-0 border-r border-white/10 relative bg-black">
-                                    <DevicePreview
-                                        ref={devicePreviewRef}
-                                        udid={availableDeviceUdid}
-                                    />
-                                </div>
-                                {/* Right: Live stats + element feed */}
-                                <div className="flex-1 flex flex-col overflow-hidden bg-[#0A0C14]">
-                                    {/* Stats bar */}
-                                    <div className="grid grid-cols-4 gap-2 p-4 border-b border-white/10 shrink-0">
-                                        <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-lg p-2.5 text-center">
-                                            <p className="text-xl font-bold text-cyan-400">{scannerStats.screens_found}</p>
-                                            <p className="text-[9px] text-slate-400 uppercase font-bold">Telas</p>
-                                        </div>
-                                        <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 text-center">
-                                            <p className="text-xl font-bold text-white">{scannerStats.elements_found}</p>
-                                            <p className="text-[9px] text-slate-400 uppercase font-bold">Elementos</p>
-                                        </div>
-                                        <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 text-center">
-                                            <p className="text-xl font-bold text-white">{scannerStats.dumps_completed}</p>
-                                            <p className="text-[9px] text-slate-400 uppercase font-bold">Capturas</p>
-                                        </div>
-                                        <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 text-center">
-                                            <p className="text-xl font-bold text-white">{Math.floor(scannerStats.elapsed_seconds / 60)}:{String(scannerStats.elapsed_seconds % 60).padStart(2, '0')}</p>
-                                            <p className="text-[9px] text-slate-400 uppercase font-bold">Tempo</p>
-                                        </div>
-                                    </div>
-                                    {/* Live feed area */}
-                                    <div className="flex-1 flex items-center justify-center p-6">
-                                        <div className="text-center">
-                                            <div className="relative inline-block mb-4">
-                                                <div className="w-16 h-16 rounded-full border-4 border-cyan-500/20 flex items-center justify-center">
-                                                    <div className="w-12 h-12 rounded-full border-4 border-transparent border-t-cyan-400 animate-spin" />
-                                                </div>
-                                                <div className="absolute inset-0 flex items-center justify-center">
-                                                    <ScanSearch className="w-5 h-5 text-cyan-400" />
-                                                </div>
-                                            </div>
-                                            <p className="text-white font-bold">Capturando elementos...</p>
-                                            <p className="text-xs text-slate-400 mt-2 max-w-xs">Navegue pelo app no celular. Abra telas, menus, preencha campos. Os elementos sao capturados a cada 4 segundos.</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </>
-                        )}
-
-                        {/* ── PHASE 3: RESULTS (side-by-side) ── */}
-                        {scannerPhase === 'results' && scanResults && (
-                            <div className="flex-1 flex flex-col overflow-hidden bg-[#0A0C14]">
-                                {/* Stats summary */}
-                                <div className="grid grid-cols-4 gap-2 p-4 border-b border-white/10 shrink-0">
-                                    <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-lg p-2.5 text-center">
-                                        <p className="text-xl font-bold text-cyan-400">{Object.keys(scanResults.screens || {}).length}</p>
-                                        <p className="text-[10px] text-slate-400 uppercase font-bold">Telas</p>
-                                    </div>
-                                    <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 text-center">
-                                        <p className="text-xl font-bold text-white">{scanResults.stats?.elements_found || 0}</p>
-                                        <p className="text-[10px] text-slate-400 uppercase font-bold">Elementos</p>
-                                    </div>
-                                    <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 text-center">
-                                        <p className="text-xl font-bold text-white">{scanResults.stats?.dumps_completed || 0}</p>
-                                        <p className="text-[10px] text-slate-400 uppercase font-bold">Capturas</p>
-                                    </div>
-                                    <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-2.5 text-center">
-                                        <p className="text-xl font-bold text-green-400">
-                                            {(() => { let t = 0; Object.values(scanResults.screens || {}).forEach((s: ScanScreen) => { (s.maestro_selectors || []).forEach((g: ScanSelectorGroup) => { t += (g.commands || []).length; }); }); return t; })()}
-                                        </p>
-                                        <p className="text-[10px] text-slate-400 uppercase font-bold">Seletores</p>
-                                    </div>
-                                </div>
-                                {/* Scrollable results */}
-                                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                                    {Object.entries(scanResults.screens || {}).map(([screenName, screenData]: [string, ScanScreen]) => {
-                                        const selectorGroups = screenData.maestro_selectors || [];
-                                        const screenshot = screenData.screenshot || '';
-                                        const activity = screenData.activity || '';
-                                        const isExpanded = expandedScreens[screenName] || false;
-                                        return (
-                                            <div key={screenName} className="border border-white/10 rounded-xl overflow-hidden">
-                                                {/* Screen header with thumbnail */}
-                                                <button
-                                                    onClick={() => setExpandedScreens(prev => ({ ...prev, [screenName]: !prev[screenName] }))}
-                                                    className="w-full flex items-center gap-3 px-4 py-3 bg-white/[0.03] hover:bg-white/[0.06] transition-colors"
-                                                >
-                                                    {/* Screenshot thumbnail */}
-                                                    {screenshot ? (
-                                                        <img
-                                                            src={`data:image/png;base64,${screenshot}`}
-                                                            alt={screenName}
-                                                            className="w-10 h-[52px] object-cover rounded-md border border-white/10 shrink-0"
-                                                        />
-                                                    ) : (
-                                                        <div className="w-10 h-[52px] rounded-md border border-white/10 bg-white/5 flex items-center justify-center shrink-0">
-                                                            <Monitor className="w-4 h-4 text-slate-500" />
-                                                        </div>
-                                                    )}
-                                                    <div className="flex-1 text-left min-w-0">
-                                                        <div className="flex items-center gap-2">
-                                                            {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-cyan-400 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
-                                                            <span className="font-bold text-sm text-white truncate">{screenName}</span>
-                                                        </div>
-                                                        {activity && <p className="text-[10px] text-slate-500 font-mono ml-5.5 truncate">{activity}</p>}
-                                                    </div>
-                                                    <span className="text-xs text-slate-400 shrink-0">{selectorGroups.length} elementos</span>
-                                                </button>
-
-                                                {/* Expanded: screenshot + elements */}
-                                                {isExpanded && (
-                                                    <div className="border-t border-white/5">
-                                                        {/* Large screenshot preview */}
-                                                        {screenshot && (
-                                                            <div className="p-3 bg-black/30 flex justify-center">
-                                                                <img
-                                                                    src={`data:image/png;base64,${screenshot}`}
-                                                                    alt={screenName}
-                                                                    className="max-h-[300px] rounded-lg border border-white/10 object-contain"
-                                                                />
-                                                            </div>
-                                                        )}
-                                                        {/* Elements */}
-                                                        <div className="max-h-[50vh] overflow-y-auto">
-                                                            {selectorGroups.map((group: ScanSelectorGroup, gIdx: number) => {
-                                                                const el: ScanElement = group.element || {};
-                                                                const selectors = getSelectorsFromGroup(group);
-                                                                if (selectors.length === 0) return null;
-                                                                return (
-                                                                    <div key={gIdx} className="border-b border-white/5 last:border-0">
-                                                                        <div className="px-4 py-2 bg-white/[0.02]">
-                                                                            <div className="flex items-center gap-2 flex-wrap">
-                                                                                <span className="text-xs font-mono text-slate-500">{el.class?.split('.').pop() || 'View'}</span>
-                                                                                {el.id && <span className="text-xs bg-cyan-500/10 text-cyan-400 px-1.5 py-0.5 rounded font-mono">id: {el.id}{'index' in el ? ` [${el.index}]` : ''}</span>}
-                                                                                {el.text && <span className="text-xs bg-white/5 text-white px-1.5 py-0.5 rounded truncate max-w-[250px]">&quot;{el.text}&quot;</span>}
-                                                                                {el.hint && el.hint !== el.text && <span className="text-xs bg-yellow-500/10 text-yellow-400 px-1.5 py-0.5 rounded truncate max-w-[200px]">hint: &quot;{el.hint}&quot;</span>}
-                                                                            </div>
-                                                                        </div>
-                                                                        <div className="px-4 py-1.5 space-y-1">
-                                                                            {selectors.map((sel, sIdx) => (
-                                                                                <div key={sIdx} className="flex items-center gap-2 group">
-                                                                                    <span className={`w-14 text-[10px] font-bold uppercase shrink-0 ${sel.type === 'tapOn' ? 'text-green-400' : 'text-blue-400'}`}>
-                                                                                        {sel.type === 'tapOn' ? <span className="flex items-center gap-1"><MousePointerClick className="w-3 h-3" /> tap</span> : <span className="flex items-center gap-1"><Eye className="w-3 h-3" /> assert</span>}
-                                                                                    </span>
-                                                                                    <code className="flex-1 text-xs text-slate-300 font-mono bg-black/30 px-2 py-1 rounded whitespace-pre">{sel.command}</code>
-                                                                                    <button onClick={() => copyToClipboard(sel.command)} className="p-1 text-slate-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity" title="Copiar"><Copy className="w-3 h-3" /></button>
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                                {/* Bottom actions */}
-                                <div className="flex gap-3 p-4 border-t border-white/10 shrink-0">
-                                    <button onClick={() => { setScanResults(null); setScannerPhase('select_app'); setScanAppPackage(null); }} className="flex-1 px-4 py-2.5 bg-cyan-500 text-black font-bold rounded-xl hover:bg-cyan-400 text-sm flex items-center justify-center gap-2">
-                                        <ScanSearch className="w-4 h-4" /> Novo Scan
-                                    </button>
-                                    <button onClick={() => { setShowScannerModal(false); setScanResults(null); setScannerPhase('select_app'); }} className="flex-1 px-4 py-2.5 bg-white/5 text-white font-bold rounded-xl hover:bg-white/10 text-sm border border-white/10">
-                                        Fechar
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
+                <ScannerModal
+                    scannerPhase={scannerPhase}
+                    setScannerPhase={setScannerPhase}
+                    scannerStats={scannerStats}
+                    scanResults={scanResults}
+                    setScanResults={setScanResults}
+                    expandedScreens={expandedScreens}
+                    setExpandedScreens={setExpandedScreens}
+                    scanAppPackage={scanAppPackage}
+                    setScanAppPackage={setScanAppPackage}
+                    scanAppLabel={scanAppLabel}
+                    detectingApp={detectingApp}
+                    availableDeviceUdid={availableDeviceUdid}
+                    devicePreviewRef={devicePreviewRef}
+                    handleScannerInteraction={handleScannerInteraction}
+                    handleStopScanner={handleStopScanner}
+                    onCloseFromHeader={async () => {
+                        if (scannerPhase === 'scanning') await handleStopScanner();
+                        setShowScannerModal(false);
+                        setScanResults(null);
+                        setScannerPhase('select_app');
+                        setScanAppPackage(null);
+                        setDetectingApp(false);
+                    }}
+                    onCloseFromResults={() => { setShowScannerModal(false); setScanResults(null); setScannerPhase('select_app'); }}
+                />
             )}
 
             {/* Maestro Studio Webview Modal */}
             {showMaestroStudio && (
-                <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
-                    {/* Header — compact single-line bar */}
-                    <div className="flex items-center justify-between px-4 h-9 border-b border-white/10 bg-[#0A0C14] shrink-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                            <Wand2 className="w-3.5 h-3.5 text-violet-400 shrink-0" />
-                            <h2 className="text-xs font-bold text-white whitespace-nowrap">Maestro Studio</h2>
-                            <span className="text-[10px] text-slate-500 font-mono truncate flex items-center gap-1.5">
-                                {MAESTRO_STUDIO_API_URL}
-                                {maestroPhase === 'ready' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block animate-pulse" />}
-                            </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                            <button
-                                onClick={openSaveAsTest}
-                                className="px-2.5 h-7 text-xs font-semibold text-white bg-violet-500 hover:bg-violet-600 rounded-md transition-colors flex items-center gap-1.5 mr-1"
-                                title="Salvar o arquivo aberto no editor como um teste do projeto"
-                            >
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                Salvar como Teste
-                            </button>
-                            <button
-                                onClick={reloadMaestroStudio}
-                                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-white/5 transition-colors"
-                                title="Recarregar"
-                            >
-                                <RefreshCw className="w-3.5 h-3.5" />
-                            </button>
-                            <a
-                                href={MAESTRO_STUDIO_EMBED_URL}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-white/5 transition-colors"
-                                title="Abrir em nova aba (tela cheia)"
-                            >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                            </a>
-                            <button
-                                onClick={() => setShowMaestroStudio(false)}
-                                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-white/5 transition-colors"
-                                title="Fechar"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Content area */}
-                    <div className="flex-1 relative overflow-hidden">
-
-                        {/* ── STARTING: quick ping in progress ── */}
-                        {maestroPhase === 'starting' && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-[#0A0C14] z-10">
-                                <div className="w-12 h-12 rounded-full border-4 border-transparent border-t-violet-400 animate-spin" />
-                            </div>
-                        )}
-
-                        {/* ── ERROR: no device connected ── */}
-                        {maestroPhase === 'error' && (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-[#0A0C14] z-10 p-8">
-                                <div className="w-20 h-20 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-                                    <Smartphone className="w-10 h-10 text-amber-400" />
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-white font-bold text-xl">Nenhum dispositivo conectado</p>
-                                    <p className="text-slate-400 text-sm mt-2">Conecte um dispositivo Android via USB para usar o Maestro Studio</p>
-                                </div>
-                                <button
-                                    onClick={openMaestroStudio}
-                                    className="px-8 py-3 bg-violet-500 text-white font-bold rounded-xl hover:bg-violet-600 active:scale-95 transition-all flex items-center gap-2 text-sm"
-                                >
-                                    <RefreshCw className="w-4 h-4" /> Tentar novamente
-                                </button>
-                            </div>
-                        )}
-
-                        {/* ── READY: render the embedded Maestro Studio frontend ── */}
-                        {maestroPhase === 'ready' && (
-                            <iframe
-                                ref={maestroIframeRef}
-                                key={maestroReloadKey}
-                                src={MAESTRO_STUDIO_EMBED_URL}
-                                className="w-full h-full border-0"
-                                allow="clipboard-read; clipboard-write"
-                                title="Maestro Studio"
-                            />
-                        )}
-                    </div>
-                </div>
+                <MaestroStudioModal
+                    maestroPhase={maestroPhase}
+                    maestroReloadKey={maestroReloadKey}
+                    maestroIframeRef={maestroIframeRef}
+                    embedUrl={MAESTRO_STUDIO_EMBED_URL}
+                    apiUrl={MAESTRO_STUDIO_API_URL}
+                    onSaveAsTest={openSaveAsTest}
+                    onReload={reloadMaestroStudio}
+                    onRetry={openMaestroStudio}
+                    onClose={() => setShowMaestroStudio(false)}
+                />
             )}
 
             {/* "Salvar como Teste" Modal */}
             {saveAsTestOpen && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-                    <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl">
-                        <div className="p-6 border-b border-white/10 flex items-center justify-between">
-                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                                <CheckCircle2 className="w-5 h-5 text-violet-400" /> Salvar como Teste
-                            </h3>
-                            <button
-                                onClick={() => setSaveAsTestOpen(false)}
-                                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-white/5"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-
-                        <div className="p-6">
-                            {saveAsTestPhase === 'loading' && (
-                                <div className="flex items-center gap-3 text-slate-300 text-sm">
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                    Lendo arquivo aberto no editor...
-                                </div>
-                            )}
-
-                            {saveAsTestPhase === 'error' && (
-                                <div className="flex flex-col gap-3">
-                                    <div className="flex items-start gap-2 text-red-400 text-sm">
-                                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                                        <span>{saveAsTestError}</span>
-                                    </div>
-                                    <p className="text-xs text-slate-500">
-                                        Abra um arquivo .yaml no editor do Maestro Studio antes de salvar.
-                                    </p>
-                                </div>
-                            )}
-
-                            {saveAsTestPhase === 'review' && saveAsTestData && (
-                                <div className="flex flex-col gap-4">
-                                    <div className="flex flex-col gap-1">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Arquivo</label>
-                                        <div className="text-xs text-slate-300 font-mono truncate">{saveAsTestData.path}</div>
-                                    </div>
-                                    <div className="flex flex-col gap-1.5">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Nome do teste</label>
-                                        <input
-                                            type="text"
-                                            value={saveAsTestName}
-                                            onChange={(e) => setSaveAsTestName(e.target.value)}
-                                            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-brand/50"
-                                            autoFocus
-                                        />
-                                    </div>
-                                    <div className="flex items-center gap-2 text-xs text-slate-400">
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 font-bold">{saveAsTestData.steps.length} passos</span>
-                                        <span>parseados do YAML</span>
-                                    </div>
-                                </div>
-                            )}
-
-                            {saveAsTestPhase === 'saving' && (
-                                <div className="flex items-center gap-3 text-slate-300 text-sm">
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                    Salvando no projeto...
-                                </div>
-                            )}
-
-                            {saveAsTestPhase === 'success' && (
-                                <div className="flex items-center gap-2 text-green-400 text-sm">
-                                    <CheckCircle2 className="w-4 h-4" />
-                                    Teste salvo. Atualizando lista...
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="p-6 pt-2 flex gap-3 justify-end border-t border-white/10">
-                            <button
-                                onClick={() => setSaveAsTestOpen(false)}
-                                className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
-                            >
-                                {saveAsTestPhase === 'success' ? 'Fechar' : 'Cancelar'}
-                            </button>
-                            {saveAsTestPhase === 'review' && (
-                                <button
-                                    onClick={confirmSaveAsTest}
-                                    disabled={!saveAsTestName.trim()}
-                                    className="px-5 py-2 bg-violet-500 text-white text-sm font-bold rounded-lg hover:bg-violet-600 disabled:opacity-50 transition-all flex items-center gap-2"
-                                >
-                                    <CheckCircle2 className="w-4 h-4" /> Salvar teste
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>
+                <SaveAsTestModal
+                    saveAsTestPhase={saveAsTestPhase}
+                    saveAsTestData={saveAsTestData}
+                    saveAsTestName={saveAsTestName}
+                    setSaveAsTestName={setSaveAsTestName}
+                    saveAsTestError={saveAsTestError}
+                    onClose={() => setSaveAsTestOpen(false)}
+                    onConfirm={confirmSaveAsTest}
+                />
             )}
 
             {/* Edit Modal */}
             {editModalOpen && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl relative">
-                        <button onClick={() => setEditModalOpen(false)} className="absolute right-4 top-4 p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors">
-                            <X className="w-5 h-5" />
-                        </button>
-                        <div className="p-6 border-b border-white/10">
-                            <h2 className="text-xl font-bold text-white">Editar Projeto</h2>
-                        </div>
-                        <div className="p-6 flex flex-col gap-4">
-                            <div className="flex flex-col gap-1.5">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Nome</label>
-                                <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-brand/50" />
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Descrição</label>
-                                <textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} rows={3} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-brand/50 resize-none" />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Plataforma</label>
-                                    <select value={formData.platform} onChange={(e) => setFormData({ ...formData, platform: e.target.value })} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-brand/50">
-                                        <option value="android">Android</option>
-                                        <option value="ios">iOS</option>
-                                        <option value="web">Web</option>
-                                        <option value="multi">Multi-plataforma</option>
-                                    </select>
-                                </div>
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Status</label>
-                                    <select value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value })} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-brand/50">
-                                        <option value="Ativo">Ativo</option>
-                                        <option value="Arquivado">Arquivado</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="p-6 pt-2 flex gap-3 justify-end">
-                            <button onClick={() => setEditModalOpen(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancelar</button>
-                            <button onClick={handleSaveEdit} disabled={saving || !formData.name.trim()} className="px-5 py-2 bg-brand text-black text-sm font-bold rounded-lg hover:bg-brand/90 disabled:opacity-50 transition-all flex items-center gap-2">
-                                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                                Salvar Alterações
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <EditProjectModal
+                    formData={formData}
+                    setFormData={setFormData}
+                    saving={saving}
+                    onClose={() => setEditModalOpen(false)}
+                    onSave={handleSaveEdit}
+                />
             )}
         </div>
     );

@@ -36,14 +36,14 @@ export function AmbiguityDialog({ runId }: AmbiguityDialogProps) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-      <div className="bg-[#1A1D27] border border-white/10 rounded-2xl shadow-2xl max-w-lg w-full p-6">
-        <h3 className="text-sm font-bold text-white mb-1">Elemento Ambiguo Detectado</h3>
+      <div className="bg-popover border border-border rounded-2xl shadow-2xl max-w-lg w-full p-6">
+        <h3 className="text-sm font-bold text-foreground mb-1">Elemento Ambiguo Detectado</h3>
         <p className="text-xs text-zinc-400 mb-4">
           {ambiguityEvent.reason || 'Foram encontrados multiplos elementos similares. Selecione o correto.'}
         </p>
 
         {/* Screenshot with numbered markers */}
-        <div className="relative rounded-lg overflow-hidden mb-4 border border-white/10">
+        <div className="relative rounded-lg overflow-hidden mb-4 border border-border">
           <img
             src={`data:image/jpeg;base64,${ambiguityEvent.screenshotBase64}`}
             alt="Device screenshot"
@@ -71,7 +71,7 @@ export function AmbiguityDialog({ runId }: AmbiguityDialogProps) {
             <button
               key={c.index}
               onClick={() => handleChoice(c)}
-              className="flex-1 bg-white/5 border border-white/10 rounded-lg py-2.5 text-xs text-zinc-300 hover:bg-brand/20 hover:border-brand/50 hover:text-white transition-colors font-medium"
+              className="flex-1 bg-foreground/5 border border-border rounded-lg py-2.5 text-xs text-zinc-300 hover:bg-brand/20 hover:border-brand/50 hover:text-foreground transition-colors font-medium"
             >
               {c.index} — {c.label}
             </button>

@@ -195,16 +195,16 @@ export function ExecutionOverlay({ isVisible, onComplete }: ExecutionOverlayProp
                 const animKey = isHolding ? `hold-${holdingIdx}` : `phase-${phase}`;
                 return (
                     <div className="text-center mb-6" key={animKey}>
-                        <p className="text-base font-semibold text-white mb-1 animate-[fadeIn_0.3s_ease-out]">
+                        <p className="text-base font-semibold text-foreground mb-1 animate-[fadeIn_0.3s_ease-out]">
                             {text}
                         </p>
-                        <p className="text-xs text-slate-500">{subtitle}</p>
+                        <p className="text-xs text-muted-foreground">{subtitle}</p>
                     </div>
                 );
             })()}
 
             {/* Progress bar */}
-            <div className="w-64 h-1.5 bg-white/[0.06] rounded-full overflow-hidden mb-4">
+            <div className="w-64 h-1.5 bg-foreground/[0.06] rounded-full overflow-hidden mb-4">
                 <div
                     className="h-full rounded-full transition-all duration-500 ease-out"
                     style={{
@@ -223,11 +223,11 @@ export function ExecutionOverlay({ isVisible, onComplete }: ExecutionOverlayProp
                     const isHolding = holdingIdx >= 0;
                     const cls = isHolding
                         ? (i === PHASES.length - 1
-                            ? 'bg-white scale-150 shadow-[0_0_8px_rgba(255,255,255,0.5)] animate-pulse'
+                            ? 'bg-foreground scale-150 shadow-[0_0_8px_rgba(255,255,255,0.5)] animate-pulse'
                             : 'bg-brand scale-100')
                         : (i < phase ? 'bg-brand scale-100' :
-                           i === phase ? 'bg-white scale-150 shadow-[0_0_8px_rgba(255,255,255,0.5)]' :
-                           'bg-white/10 scale-100');
+                           i === phase ? 'bg-foreground scale-150 shadow-[0_0_8px_rgba(255,255,255,0.5)]' :
+                           'bg-foreground/10 scale-100');
                     return <div key={i} className={`w-2 h-2 rounded-full transition-all duration-500 ${cls}`} />;
                 })}
             </div>

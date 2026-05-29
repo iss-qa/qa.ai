@@ -49,9 +49,9 @@ export function PromptInput({ projectId }: { projectId: string }) {
     };
 
     return (
-        <div className="bg-bgSecondary rounded-xl p-4 border border-white/5 space-y-3">
+        <div className="bg-bgSecondary rounded-xl p-4 border border-border space-y-3">
             <textarea
-                className="w-full bg-bgPrimary border border-white/10 rounded-lg p-3 text-textPrimary placeholder:text-textSecondary/50 focus:outline-none focus:ring-1 focus:ring-brand min-h-[80px] resize-y"
+                className="w-full bg-bgPrimary border border-border rounded-lg p-3 text-textPrimary placeholder:text-textSecondary/50 focus:outline-none focus:ring-1 focus:ring-brand min-h-[80px] resize-y"
                 placeholder="Descreva o que o teste deve fazer... (ex: Abrir o app BancoX, fazer login com user@teste.com e validar o saldo)"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
@@ -64,7 +64,7 @@ export function PromptInput({ projectId }: { projectId: string }) {
                 disabled={isGenerating || isRecording}
             />
 
-            {error && <p className="text-red-400 text-sm">{error}</p>}
+            {error && <p className="text-danger text-sm">{error}</p>}
 
             <div className="flex gap-3 items-center">
                 <div className="relative">
@@ -77,7 +77,7 @@ export function PromptInput({ projectId }: { projectId: string }) {
                             }
                             setPlatform(e.target.value as 'android' | 'web');
                         }}
-                        className="bg-bgPrimary border border-white/10 text-white text-sm rounded-lg pl-8 pr-8 py-2 appearance-none focus:outline-none focus:border-brand"
+                        className="bg-bgPrimary border border-border text-foreground text-sm rounded-lg pl-8 pr-8 py-2 appearance-none focus:outline-none focus:border-brand"
                     >
                         <option value="android">📱 Android</option>
                         <option value="web">🌐 Web {!isPro && '(Pro)'}</option>
@@ -97,7 +97,7 @@ export function PromptInput({ projectId }: { projectId: string }) {
                     <button
                         onClick={() => setIsRecording(true)}
                         disabled={isGenerating || isRecording}
-                        className="flex-1 max-w-[200px] flex items-center justify-center gap-2 bg-white/5 text-textPrimary hover:bg-white/10 disabled:opacity-50 transition-colors py-2 px-4 rounded-lg font-medium text-sm"
+                        className="flex-1 max-w-[200px] flex items-center justify-center gap-2 bg-foreground/5 text-textPrimary hover:bg-accent disabled:opacity-50 transition-colors py-2 px-4 rounded-lg font-medium text-sm"
                     >
                         <Smartphone className="w-4 h-4" />
                         Gravar no Celular

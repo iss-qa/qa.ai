@@ -52,9 +52,9 @@ export function DevicePreview({ status, udid = 'emulator-5554' }: DevicePreviewP
             {/* Device Frame */}
             <div className={`relative w-[320px] h-[680px] rounded-[3rem] border-[12px] shadow-2xl overflow-hidden transition-colors duration-500
         ${status === 'running' ? 'border-brand/40 shadow-[0_0_40px_rgba(59,130,246,0.15)] ring-4 ring-brand/10' :
-                    status === 'passed' ? 'border-green-500/40 shadow-[0_0_40px_rgba(34,197,94,0.15)] ring-4 ring-green-500/10' :
-                        status === 'failed' ? 'border-red-500/40 shadow-[0_0_40px_rgba(239,68,68,0.15)] ring-4 ring-red-500/10' :
-                            'border-white/10'
+                    status === 'passed' ? 'border-success/40 shadow-[0_0_40px_rgba(34,197,94,0.15)] ring-4 ring-success/10' :
+                        status === 'failed' ? 'border-danger/40 shadow-[0_0_40px_rgba(239,68,68,0.15)] ring-4 ring-danger/10' :
+                            'border-border'
                 }
       `}>
                 {/* Dynamic Island Mock */}

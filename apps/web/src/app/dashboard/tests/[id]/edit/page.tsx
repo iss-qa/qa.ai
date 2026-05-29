@@ -38,21 +38,21 @@ export default function TestEditorPage({ params }: { params: { id: string } }) {
         <div className="flex flex-col h-[calc(100vh-64px)] overflow-hidden">
 
             {/* Editor Header */}
-            <div className="flex-none bg-bgSecondary border-b border-white/5 p-4 flex items-center justify-between z-10">
+            <div className="flex-none bg-bgSecondary border-b border-border p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between z-10">
                 <div className="flex items-center gap-4">
-                    <Link href="/tests" className="p-2 -ml-2 text-textSecondary hover:text-white rounded-lg transition-colors">
+                    <Link href="/tests" className="p-2 -ml-2 text-textSecondary hover:text-foreground rounded-lg transition-colors">
                         <ChevronLeft className="w-5 h-5" />
                     </Link>
                     <div>
-                        <h1 className="text-xl font-semibold text-white">{testCase?.name || 'Carregando...'}</h1>
+                        <h1 className="text-xl font-semibold text-foreground">{testCase?.name || 'Carregando...'}</h1>
                         <div className="flex items-center gap-2 mt-1">
                             <span className="text-xs text-textSecondary flex items-center gap-1">
                                 {isSaving ? (
-                                    <><span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" /> Salvando...</>
+                                    <><span className="w-2 h-2 rounded-full bg-warning animate-pulse" /> Salvando...</>
                                 ) : isDirty ? (
-                                    <><span className="w-2 h-2 rounded-full bg-yellow-400" /> Alterações não salvas</>
+                                    <><span className="w-2 h-2 rounded-full bg-warning" /> Alterações não salvas</>
                                 ) : (
-                                    <><span className="w-2 h-2 rounded-full bg-green-400" />
+                                    <><span className="w-2 h-2 rounded-full bg-success" />
                                         Salvo {lastSavedAt ? `às ${lastSavedAt.toLocaleTimeString()}` : 'agora'}
                                     </>
                                 )}
@@ -62,7 +62,7 @@ export default function TestEditorPage({ params }: { params: { id: string } }) {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <button className="flex items-center gap-2 text-textSecondary hover:text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors border border-white/10 hover:bg-white/5">
+                    <button className="flex items-center gap-2 text-textSecondary hover:text-foreground font-medium text-sm px-4 py-2 rounded-lg transition-colors border border-border hover:bg-accent">
                         <Clock className="w-4 h-4" />
                         Histórico
                     </button>
@@ -77,14 +77,14 @@ export default function TestEditorPage({ params }: { params: { id: string } }) {
             </div>
 
             {/* Editor Body */}
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
 
                 {/* Left Panel: Step List */}
-                <div className="w-[420px] flex-none border-r border-white/5 flex flex-col bg-bgPrimary p-4">
+                <div className="w-full lg:w-[420px] flex-none border-b lg:border-b-0 lg:border-r border-border flex flex-col bg-bgPrimary p-4">
                     {(!testCase?.steps || testCase.steps.length === 0) ? (
                         <div className="flex-1 flex flex-col">
                             <div className="mb-6">
-                                <h2 className="text-sm font-medium text-white mb-1">Como você quer começar?</h2>
+                                <h2 className="text-sm font-medium text-foreground mb-1">Como você quer começar?</h2>
                                 <p className="text-xs text-textSecondary mb-4">
                                     Descreva o que o teste deve fazer ou grave os passos diretamente no dispositivo.
                                 </p>

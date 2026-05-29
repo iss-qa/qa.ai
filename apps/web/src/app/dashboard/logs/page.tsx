@@ -226,20 +226,20 @@ export default function LogsPage() {
     };
 
     return (
-        <div className="p-6 max-w-[1800px] mx-auto">
+        <div className="p-4 sm:p-6 max-w-[1800px] mx-auto">
             {/* Header */}
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
                 <div>
                     <h1 className="text-2xl font-bold">Logs</h1>
-                    <p className="text-sm text-slate-400 mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                         Montagem de testes, execuções, sessões, device e erros
                     </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     {/* Auto-refresh selector */}
-                    <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs">
-                        <RefreshCw className={`w-3.5 h-3.5 text-slate-400 ${autoRefreshMs > 0 ? 'animate-spin' : ''}`} />
-                        <span className="text-slate-400">Auto:</span>
+                    <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-foreground/5 border border-border text-xs">
+                        <RefreshCw className={`w-3.5 h-3.5 text-muted-foreground ${autoRefreshMs > 0 ? 'animate-spin' : ''}`} />
+                        <span className="text-muted-foreground">Auto:</span>
                         {AUTO_REFRESH_OPTIONS.map(opt => (
                             <button
                                 key={opt.value}
@@ -247,7 +247,7 @@ export default function LogsPage() {
                                 className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
                                     autoRefreshMs === opt.value
                                         ? 'bg-brand/20 text-brand'
-                                        : 'text-slate-500 hover:text-slate-300'
+                                        : 'text-muted-foreground hover:text-foreground'
                                 }`}
                             >
                                 {opt.label}
@@ -256,7 +256,7 @@ export default function LogsPage() {
                     </div>
                     <button
                         onClick={fetchLogs}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-sm hover:bg-white/10 transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-foreground/5 border border-border text-sm hover:bg-accent transition-colors"
                     >
                         <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                         Atualizar
@@ -273,7 +273,7 @@ export default function LogsPage() {
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                             category === cat.key
                                 ? 'bg-brand/10 text-brand border border-brand/30'
-                                : 'bg-white/5 text-slate-400 border border-white/5 hover:bg-white/10'
+                                : 'bg-foreground/5 text-muted-foreground border border-border hover:bg-accent'
                         }`}
                     >
                         <cat.icon className="w-4 h-4" />
@@ -282,27 +282,27 @@ export default function LogsPage() {
                 ))}
             </div>
 
-            <div className="flex gap-4 h-[calc(100vh-230px)]">
+            <div className="flex flex-col lg:flex-row gap-4 lg:h-[calc(100vh-230px)]">
                 {/* File List */}
-                <div className="w-72 shrink-0 bg-white/[0.02] border border-white/5 rounded-xl overflow-hidden flex flex-col">
-                    <div className="p-2 border-b border-white/5">
+                <div className="w-full lg:w-72 shrink-0 bg-foreground/[0.02] border border-border rounded-xl overflow-hidden flex flex-col max-h-72 lg:max-h-none">
+                    <div className="p-2 border-b border-border">
                         <div className="relative">
-                            <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                            <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                             <input
                                 type="text"
                                 placeholder="Filtrar arquivos..."
                                 value={fileSearch}
                                 onChange={e => setFileSearch(e.target.value)}
-                                className="w-full pl-7 pr-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-brand/30"
+                                className="w-full pl-7 pr-3 py-1.5 bg-foreground/5 border border-border rounded-lg text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-brand/30"
                             />
                         </div>
-                        <div className="text-[10px] text-slate-500 mt-1.5 px-1">
+                        <div className="text-[10px] text-muted-foreground mt-1.5 px-1">
                             {filteredFiles.length} de {logs.length} arquivos
                         </div>
                     </div>
                     <div className="flex-1 overflow-y-auto">
                         {filteredFiles.length === 0 && !loading && (
-                            <div className="p-4 text-sm text-slate-500 text-center">
+                            <div className="p-4 text-sm text-muted-foreground text-center">
                                 Nenhum log encontrado
                             </div>
                         )}
@@ -310,7 +310,7 @@ export default function LogsPage() {
                             <button
                                 key={file.path}
                                 onClick={() => fetchContent(file)}
-                                className={`w-full text-left p-3 border-b border-white/5 hover:bg-white/5 transition-colors ${
+                                className={`w-full text-left p-3 border-b border-border hover:bg-accent transition-colors ${
                                     selectedFile?.path === file.path ? 'bg-brand/5 border-l-2 border-l-brand' : ''
                                 }`}
                             >
@@ -319,13 +319,13 @@ export default function LogsPage() {
                                         {file.category}
                                     </span>
                                     {file.compressed && (
-                                        <span className="text-[10px] text-slate-500">.gz</span>
+                                        <span className="text-[10px] text-muted-foreground">.gz</span>
                                     )}
                                 </div>
-                                <div className="text-xs font-mono text-slate-300 truncate">
+                                <div className="text-xs font-mono text-foreground truncate">
                                     {file.filename}
                                 </div>
-                                <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-500">
+                                <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
                                     <span>{formatFileSize(file.size_bytes)}</span>
                                     <span>{formatDate(file.modified)}</span>
                                 </div>
@@ -335,16 +335,16 @@ export default function LogsPage() {
                 </div>
 
                 {/* Log Viewer */}
-                <div className="flex-1 bg-white/[0.02] border border-white/5 rounded-xl overflow-hidden flex flex-col min-w-0">
+                <div className="flex-1 bg-foreground/[0.02] border border-border rounded-xl overflow-hidden flex flex-col min-w-0 min-h-[400px] lg:min-h-0">
                     {selectedFile ? (
                         <>
                             {/* Viewer Header */}
-                            <div className="p-3 border-b border-white/5 flex items-center justify-between gap-3 flex-wrap">
+                            <div className="p-3 border-b border-border flex items-center justify-between gap-3 flex-wrap">
                                 <div className="flex items-center gap-2 text-sm min-w-0">
-                                    <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                                    <span className="font-mono text-slate-300 truncate">{selectedFile.filename}</span>
-                                    <ChevronRight className="w-3 h-3 text-slate-600 shrink-0" />
-                                    <span className="text-slate-500 shrink-0">
+                                    <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                                    <span className="font-mono text-foreground truncate">{selectedFile.filename}</span>
+                                    <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                                    <span className="text-muted-foreground shrink-0">
                                         {filteredLines.length} linhas
                                         {content && filteredLines.length !== content.total_lines && (
                                             <span> / {content.total_lines} total</span>
@@ -359,7 +359,7 @@ export default function LogsPage() {
                                         className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${
                                             liveTail
                                                 ? 'bg-brand/20 border-brand/40 text-brand'
-                                                : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                                                : 'bg-foreground/5 border-border text-muted-foreground hover:bg-accent'
                                         }`}
                                     >
                                         <ChevronsDown className="w-3 h-3" />
@@ -369,7 +369,7 @@ export default function LogsPage() {
                                     <button
                                         onClick={copyAll}
                                         title="Copiar linhas filtradas"
-                                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs hover:bg-white/10 transition-colors text-slate-400"
+                                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-foreground/5 border border-border text-xs hover:bg-accent transition-colors text-muted-foreground"
                                     >
                                         {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                                     </button>
@@ -377,14 +377,14 @@ export default function LogsPage() {
                                     <button
                                         onClick={refreshContent}
                                         title="Recarregar arquivo"
-                                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs hover:bg-white/10 transition-colors text-slate-400"
+                                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-foreground/5 border border-border text-xs hover:bg-accent transition-colors text-muted-foreground"
                                     >
                                         <RefreshCw className="w-3 h-3" />
                                     </button>
                                     {/* Download */}
                                     <button
                                         onClick={() => downloadFile(selectedFile)}
-                                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs hover:bg-white/10 transition-colors"
+                                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-foreground/5 border border-border text-xs hover:bg-accent transition-colors"
                                     >
                                         <Download className="w-3 h-3" />
                                         Download
@@ -394,7 +394,7 @@ export default function LogsPage() {
 
                             {/* Stats bar */}
                             {content && (
-                                <div className="px-3 py-1.5 border-b border-white/5 flex items-center gap-3 flex-wrap">
+                                <div className="px-3 py-1.5 border-b border-border flex items-center gap-3 flex-wrap">
                                     {stats.ERROR > 0 && (
                                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 font-mono">
                                             {stats.ERROR} ERROR
@@ -425,16 +425,16 @@ export default function LogsPage() {
                                             {stats.SMART_RETRY} RETRY
                                         </span>
                                     )}
-                                    <span className="text-[10px] text-slate-600 ml-auto">
+                                    <span className="text-[10px] text-muted-foreground ml-auto">
                                         {content.total_lines} linhas totais
                                     </span>
                                 </div>
                             )}
 
                             {/* Filters */}
-                            <div className="p-2.5 border-b border-white/5 flex items-center gap-3">
+                            <div className="p-2.5 border-b border-border flex items-center gap-3">
                                 <div className="flex items-center gap-1 text-xs">
-                                    <Filter className="w-3 h-3 text-slate-400" />
+                                    <Filter className="w-3 h-3 text-muted-foreground" />
                                     {LEVEL_FILTERS.map(level => (
                                         <button
                                             key={level}
@@ -447,7 +447,7 @@ export default function LogsPage() {
                                                     : level === 'INFO' ? 'bg-emerald-500/20 text-emerald-400'
                                                     : level === 'DEBUG' ? 'bg-slate-500/20 text-slate-400'
                                                     : 'bg-brand/20 text-brand'
-                                                    : 'text-slate-500 hover:text-slate-300'
+                                                    : 'text-muted-foreground hover:text-foreground'
                                             }`}
                                         >
                                             {level}
@@ -455,13 +455,13 @@ export default function LogsPage() {
                                     ))}
                                 </div>
                                 <div className="flex-1 relative">
-                                    <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                                    <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                                     <input
                                         type="text"
                                         placeholder="Buscar no log... (ex: SMART_RETRY, element_map, YAML)"
                                         value={searchText}
                                         onChange={e => setSearchText(e.target.value)}
-                                        className="w-full pl-8 pr-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-brand/30"
+                                        className="w-full pl-8 pr-3 py-1.5 bg-foreground/5 border border-border rounded-lg text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-brand/30"
                                     />
                                 </div>
                             </div>
@@ -472,12 +472,12 @@ export default function LogsPage() {
                                 className="flex-1 overflow-y-auto font-mono text-xs leading-5 p-1"
                             >
                                 {loadingContent ? (
-                                    <div className="flex items-center justify-center h-full text-slate-500">
+                                    <div className="flex items-center justify-center h-full text-muted-foreground">
                                         <RefreshCw className="w-4 h-4 animate-spin mr-2" />
                                         Carregando...
                                     </div>
                                 ) : filteredLines.length === 0 ? (
-                                    <div className="flex items-center justify-center h-full text-slate-600 text-sm">
+                                    <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
                                         Nenhuma linha encontrada
                                         {(levelFilter !== 'ALL' || searchText) && ' com os filtros aplicados'}
                                     </div>
@@ -488,18 +488,18 @@ export default function LogsPage() {
                                         return (
                                             <div
                                                 key={i}
-                                                className={`px-3 py-px hover:bg-white/[0.04] border-l-2 ${border} ${bg} flex gap-2 group`}
+                                                className={`px-3 py-px hover:bg-accent border-l-2 ${border} ${bg} flex gap-2 group`}
                                             >
-                                                <span className="text-slate-700 select-none w-8 shrink-0 text-right">
+                                                <span className="text-muted-foreground select-none w-8 shrink-0 text-right">
                                                     {i + 1}
                                                 </span>
                                                 {parsed.timestamp ? (
                                                     <span className={`${color} flex gap-2 min-w-0 flex-1`}>
-                                                        <span className="text-slate-600 shrink-0 hidden xl:inline">
+                                                        <span className="text-muted-foreground shrink-0 hidden xl:inline">
                                                             {parsed.timestamp}
                                                         </span>
                                                         {parsed.context && (
-                                                            <span className="text-slate-500 shrink-0 hidden lg:inline">
+                                                            <span className="text-muted-foreground shrink-0 hidden lg:inline">
                                                                 [{parsed.context}]
                                                             </span>
                                                         )}
@@ -530,11 +530,11 @@ export default function LogsPage() {
                             </div>
                         </>
                     ) : (
-                        <div className="flex-1 flex items-center justify-center text-slate-500">
+                        <div className="flex-1 flex items-center justify-center text-muted-foreground">
                             <div className="text-center">
                                 <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
                                 <p className="text-sm">Selecione um arquivo para visualizar</p>
-                                <p className="text-xs mt-1 text-slate-600">
+                                <p className="text-xs mt-1 text-muted-foreground">
                                     Use a aba <span className="text-teal-400">Montagem</span> para ver logs de geração de testes
                                 </p>
                             </div>
@@ -553,7 +553,7 @@ function highlightSearch(text: string, search: string): React.ReactNode {
         <>
             {parts.map((part, i) =>
                 part.toLowerCase() === search.toLowerCase() ? (
-                    <mark key={i} className="bg-brand/30 text-white rounded-sm px-0.5">
+                    <mark key={i} className="bg-brand/30 text-foreground rounded-sm px-0.5">
                         {part}
                     </mark>
                 ) : part

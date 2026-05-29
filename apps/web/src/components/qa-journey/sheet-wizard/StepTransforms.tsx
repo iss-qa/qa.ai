@@ -93,9 +93,9 @@ export function StepTransforms({ state, update, onNext, onBack }: Props) {
                     <Info className="w-4 h-4 shrink-0 mt-0.5" />
                     Nenhum campo categórico mapeado a partir de coluna — nada para transformar. Pode avançar.
                 </div>
-                <div className="flex justify-between pt-4 border-t border-white/10">
-                    <button onClick={onBack} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Voltar</button>
-                    <button onClick={onNext} className="bg-brand text-black px-5 py-2 rounded-lg text-sm font-bold hover:bg-brand/90">Avançar</button>
+                <div className="flex justify-between pt-4 border-t border-border">
+                    <button onClick={onBack} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Voltar</button>
+                    <button onClick={onNext} className="bg-brand text-white px-5 py-2 rounded-lg text-sm font-bold hover:bg-brand/90">Avançar</button>
                 </div>
             </div>
         );
@@ -103,7 +103,7 @@ export function StepTransforms({ state, update, onNext, onBack }: Props) {
 
     return (
         <div className="flex flex-col gap-6">
-            <p className="text-sm text-slate-300">
+            <p className="text-sm text-muted-foreground">
                 Para cada valor encontrado nas colunas categóricas da planilha, escolha o equivalente QAMind.
                 Valores não mapeados serão tratados como o default do campo (ou ignorados).
             </p>
@@ -113,27 +113,27 @@ export function StepTransforms({ state, update, onNext, onBack }: Props) {
                 const values = Array.from(uniqueValuesByField[field.key] || []).sort();
                 const options = fieldKey === 'priority' ? PRIORITY_OPTIONS : AUTOMATION_STATUS_OPTIONS;
                 return (
-                    <div key={field.key} className="bg-white/[0.02] border border-white/10 rounded-xl overflow-hidden">
-                        <div className="px-4 py-3 bg-white/[0.02] border-b border-white/10">
-                            <div className="text-xs font-bold text-white">{field.label}</div>
-                            <div className="text-[10px] text-slate-500 mt-0.5">Coluna: <span className="font-mono">{state.columnMap[field.key]}</span></div>
+                    <div key={field.key} className="bg-foreground/[0.02] border border-border rounded-xl overflow-hidden">
+                        <div className="px-4 py-3 bg-foreground/[0.02] border-b border-border">
+                            <div className="text-xs font-bold text-foreground">{field.label}</div>
+                            <div className="text-[10px] text-muted-foreground mt-0.5">Coluna: <span className="font-mono">{state.columnMap[field.key]}</span></div>
                         </div>
                         {values.length === 0 ? (
-                            <div className="p-4 text-xs text-slate-500">Nenhum valor encontrado nas primeiras 10 linhas. Será aplicado o default.</div>
+                            <div className="p-4 text-xs text-muted-foreground">Nenhum valor encontrado nas primeiras 10 linhas. Será aplicado o default.</div>
                         ) : (
                             <table className="w-full text-sm">
                                 <thead>
-                                    <tr className="border-b border-white/5 text-left">
-                                        <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-slate-400 font-bold w-1/2">Valor na planilha</th>
-                                        <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-slate-400 font-bold">→ QAMind</th>
+                                    <tr className="border-b border-border text-left">
+                                        <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-muted-foreground font-bold w-1/2">Valor na planilha</th>
+                                        <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-muted-foreground font-bold">→ QAMind</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {values.map(value => {
                                         const target = guessTarget(fieldKey, value);
                                         return (
-                                            <tr key={value} className="border-b border-white/5">
-                                                <td className="px-4 py-2 font-mono text-xs text-slate-300">&quot;{value}&quot;</td>
+                                            <tr key={value} className="border-b border-border">
+                                                <td className="px-4 py-2 font-mono text-xs text-muted-foreground">&quot;{value}&quot;</td>
                                                 <td className="px-4 py-2">
                                                     <select
                                                         value={target}
@@ -154,12 +154,12 @@ export function StepTransforms({ state, update, onNext, onBack }: Props) {
                 );
             })}
 
-            <div className="flex justify-between pt-4 border-t border-white/10">
-                <button onClick={onBack} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Voltar</button>
-                <button onClick={onNext} className="bg-brand text-black px-5 py-2 rounded-lg text-sm font-bold hover:bg-brand/90">Avançar</button>
+            <div className="flex justify-between pt-4 border-t border-border">
+                <button onClick={onBack} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Voltar</button>
+                <button onClick={onNext} className="bg-brand text-white px-5 py-2 rounded-lg text-sm font-bold hover:bg-brand/90">Avançar</button>
             </div>
         </div>
     );
 }
 
-const inputClass = 'bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/50';
+const inputClass = 'bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50';

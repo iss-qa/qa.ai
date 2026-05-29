@@ -104,6 +104,45 @@ apps/api/src/
 - RLS bloqueia leitura cliente em `org_integrations`: apenas `service_role` (Fastify) lê creds cifradas.
 - A org "default" da instalação vem de `DEFAULT_ORG_SLUG` (env). Quando auth multi-org existir, substituir por lookup de sessão.
 
+### Camadas Web (`apps/web/`)
+
+```
+apps/web/src/
+├── app/                    # App Router (Next 14)
+│   ├── layout.tsx          # Root: injeta THEME_INIT_SCRIPT (anti-FOUC) + ThemeProvider
+│   ├── globals.css         # Tokens semânticos (:root = light, .dark = dark) em canais RGB
+│   └── dashboard/
+│       ├── layout.tsx      # force-dynamic + PageWrapper
+│       └── <seg>/loading.tsx  # Skeleton por segmento → commit instantâneo da navegação
+├── components/
+│   ├── layout/             # Shell: Sidebar, Header, PageWrapper, shell-context (nav + drawer)
+│   ├── theme/              # ThemeProvider + useTheme + ThemeToggle
+│   └── ui/                 # Primitivos (button, dialog, skeleton, ...)
+├── lib/                    # chart-theme (useChartTheme), supabase, utils, ...
+└── store/                  # Zustand (deviceStore, recordingStore, testEditor, visionStore)
+```
+
+**Regras de arquitetura (web) — OBRIGATÓRIAS:**
+- **Nenhum arquivo > 1.500 linhas.** Ao crescer, extrair responsabilidades coesas em arquivos dedicados (a página principal só importa e compõe). Páginas grandes: extrair `*-types.ts`, `*-utils.ts`, hooks e modais/painéis prop-driven para `_components/`.
+- **Um domínio por arquivo:** componentes, hooks, utils e types em arquivos separados por domínio. Não misturar lógica de negócio em componentes de UI.
+- **Naming:** `PascalCase` para componentes e arquivos de componente; `camelCase` para hooks (`useX`), utils e variáveis; `kebab-case` ok para módulos não-componente (`chart-theme.ts`, `shell-context.tsx`).
+
+**Regras de Tema (light/dark) — OBRIGATÓRIAS para todo componente novo:**
+- **Nunca** usar cores hardcoded (`bg-white`, `text-slate-*`, `bg-[#hex]`, `border-white/x`, `text-black`). Usar SEMPRE tokens semânticos: `bg-background`, `bg-card`, `bg-popover`, `bg-surface`/`bg-surface-muted`, `bg-sidebar*`, `text-foreground`, `text-muted-foreground`, `border-border`, `bg-accent`, `bg-primary`, feedback (`text-success`/`bg-success/10`, `text-warning`, `text-danger`). Marca = `bg-brand`/`text-brand` (azul fixo nos dois temas).
+- Tokens vivem em `globals.css` (canais RGB → modificadores de opacidade funcionam: `bg-card/80`). `darkMode: 'class'` no Tailwind; classe `dark` é aplicada em `<html>`.
+- Overlays sutis: usar `bg-foreground/5` (inverte por tema), não `bg-white/5`.
+- **Gráficos (Recharts):** cores de eixo/grid/tooltip via `useChartTheme()` (`@/lib/chart-theme`) — nunca hardcode `#fff`/`#64748b` em chart props.
+- Default = dark; preferência do SO respeitada no 1º acesso; escolha persiste em `localStorage('qamind-theme')`. Toggle global no `Header`.
+
+**Regras de Navegação / UX — OBRIGATÓRIAS:**
+- **Feedback visual imediato (optimistic UI):** navegação passa por `useShell().navigate(href)` (`shell-context`) → highlight ativo move no clique + spinner no item + barra de progresso no topo, antes do destino renderizar.
+- Toda rota de `dashboard/*` deve ter `loading.tsx` (Suspense) para commit instantâneo da navegação e skeleton temático (`page-skeletons.tsx`).
+- Bundles pesados (React Flow, editores) via `next/dynamic` (`ssr:false` + `loading`) para não inflar o First Load JS da rota.
+
+**Responsividade — OBRIGATÓRIA (mobile-first, 4 breakpoints):**
+- Mobile `<640px`, tablet `640–1024px`, desktop `1024–1440px`, wide `>1440px`.
+- Padding de página: `p-4 sm:p-6 lg:p-8`. Grids empilham no mobile (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-N`). Headers com título+ações: `flex-col gap-3 sm:flex-row sm:items-center sm:justify-between`. Tabelas sempre em wrapper `overflow-x-auto custom-scrollbar`. Sidebar vira drawer no mobile (já no shell). Sem scroll horizontal no body.
+
 ## Stack
 
 - **Daemon**: Python 3.11+, FastAPI, uvicorn, httpx, uiautomator2, PIL

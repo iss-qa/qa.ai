@@ -35,19 +35,19 @@ export function StepColumnMap({ state, update, onNext, onBack }: Props) {
 
     return (
         <div className="flex flex-col gap-5">
-            <p className="text-sm text-slate-300">
+            <p className="text-sm text-muted-foreground">
                 Para cada campo do QAMind, escolha qual coluna da planilha contém esse dado.
-                Os campos marcados com <span className="text-red-400 font-bold">*</span> são obrigatórios.
+                Os campos marcados com <span className="text-danger font-bold">*</span> são obrigatórios.
                 Para os outros, você pode deixar sem coluna e definir um valor padrão.
             </p>
 
-            <div className="bg-white/[0.02] border border-white/10 rounded-xl overflow-hidden">
+            <div className="bg-foreground/[0.02] border border-border rounded-xl overflow-hidden">
                 <table className="w-full text-sm">
                     <thead>
-                        <tr className="border-b border-white/10 text-left">
-                            <th className="px-4 py-3 text-[10px] uppercase tracking-widest text-slate-400 font-bold">Campo QAMind</th>
-                            <th className="px-4 py-3 text-[10px] uppercase tracking-widest text-slate-400 font-bold">Coluna da planilha</th>
-                            <th className="px-4 py-3 text-[10px] uppercase tracking-widest text-slate-400 font-bold">Default</th>
+                        <tr className="border-b border-border text-left">
+                            <th className="px-4 py-3 text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Campo QAMind</th>
+                            <th className="px-4 py-3 text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Coluna da planilha</th>
+                            <th className="px-4 py-3 text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Default</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -59,10 +59,10 @@ export function StepColumnMap({ state, update, onNext, onBack }: Props) {
                                 field.key === 'last_run_status' ? state.defaults.last_run_status :
                                 undefined;
                             return (
-                                <tr key={field.key} className="border-b border-white/5">
-                                    <td className="px-4 py-3 text-white font-medium">
+                                <tr key={field.key} className="border-b border-border">
+                                    <td className="px-4 py-3 text-foreground font-medium">
                                         {field.label}
-                                        {field.required && <span className="text-red-400 ml-1">*</span>}
+                                        {field.required && <span className="text-danger ml-1">*</span>}
                                     </td>
                                     <td className="px-4 py-3">
                                         <select
@@ -114,7 +114,7 @@ export function StepColumnMap({ state, update, onNext, onBack }: Props) {
                                             />
                                         )}
                                         {!field.categorical && field.key !== 'last_run_status' && (
-                                            <span className="text-slate-500 text-xs">{selectedColumn ? '—' : 'não aplicável'}</span>
+                                            <span className="text-muted-foreground text-xs">{selectedColumn ? '—' : 'não aplicável'}</span>
                                         )}
                                     </td>
                                 </tr>
@@ -125,7 +125,7 @@ export function StepColumnMap({ state, update, onNext, onBack }: Props) {
             </div>
 
             {missingRequired.length > 0 && (
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-xs text-amber-300 flex items-start gap-2">
+                <div className="bg-warning/10 border border-warning/30 rounded-lg px-3 py-2 text-xs text-warning flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                     <div>
                         Falta mapear: <strong>{missingRequired.map(f => f.label).join(', ')}</strong>. Esses campos são obrigatórios.
@@ -133,12 +133,12 @@ export function StepColumnMap({ state, update, onNext, onBack }: Props) {
                 </div>
             )}
 
-            <div className="flex justify-between pt-4 border-t border-white/10">
-                <button onClick={onBack} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Voltar</button>
+            <div className="flex justify-between pt-4 border-t border-border">
+                <button onClick={onBack} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Voltar</button>
                 <button
                     onClick={onNext}
                     disabled={missingRequired.length > 0}
-                    className="bg-brand text-black px-5 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50"
+                    className="bg-brand text-white px-5 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50"
                 >
                     Avançar
                 </button>
@@ -147,4 +147,4 @@ export function StepColumnMap({ state, update, onNext, onBack }: Props) {
     );
 }
 
-const inputClass = 'bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/50';
+const inputClass = 'bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50';

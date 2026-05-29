@@ -266,15 +266,15 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
     return (
         <div
             ref={containerRef}
-            className="relative w-full h-full bg-[#05060a] rounded-2xl overflow-hidden border border-white/5"
+            className="relative w-full h-full bg-card rounded-2xl overflow-hidden border border-border"
         >
             <ParticleBackground />
 
             {/* Top bar */}
             <div className="absolute top-4 left-4 right-4 z-10 flex items-center justify-between gap-3 pointer-events-none">
-                <div className="bg-[#0A0C14]/80 backdrop-blur border border-white/10 rounded-lg px-3 py-2 flex items-center gap-2 pointer-events-auto">
+                <div className="bg-popover/80 backdrop-blur border border-border rounded-lg px-3 py-2 flex items-center gap-2 pointer-events-auto">
                     <Sparkles className="w-3.5 h-3.5 text-brand" />
-                    <span className="text-[11px] font-mono text-slate-300">
+                    <span className="text-[11px] font-mono text-muted-foreground">
                         {exploredJourneys.toString().padStart(2, '0')} de {totalJourneys.toString().padStart(2, '0')} blocos explorados
                     </span>
                 </div>
@@ -283,7 +283,7 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                         <button
                             type="button"
                             onClick={resetLayout}
-                            className="bg-[#0A0C14]/80 backdrop-blur border border-white/10 rounded-lg p-2 text-amber-400 hover:text-amber-300"
+                            className="bg-popover/80 backdrop-blur border border-border rounded-lg p-2 text-amber-400 hover:text-amber-300"
                             title="Resetar layout (volta para auto-organização)"
                         >
                             <LayoutGrid className="w-4 h-4" />
@@ -292,7 +292,7 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                     <button
                         type="button"
                         onClick={exportPng}
-                        className="bg-[#0A0C14]/80 backdrop-blur border border-white/10 rounded-lg p-2 text-slate-400 hover:text-white"
+                        className="bg-popover/80 backdrop-blur border border-border rounded-lg p-2 text-muted-foreground hover:text-foreground"
                         title="Exportar PNG (para apresentação)"
                     >
                         <Download className="w-4 h-4" />
@@ -300,7 +300,7 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                     <button
                         type="button"
                         onClick={toggleFullscreen}
-                        className="bg-[#0A0C14]/80 backdrop-blur border border-white/10 rounded-lg p-2 text-slate-400 hover:text-white"
+                        className="bg-popover/80 backdrop-blur border border-border rounded-lg p-2 text-muted-foreground hover:text-foreground"
                         title={isFullscreen ? 'Sair do modo apresentação' : 'Modo apresentação'}
                     >
                         {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -310,7 +310,7 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
 
             {/* Tip de drag (some apos primeira interacao) */}
             {!hasCustomLayout && (
-                <div className="absolute bottom-4 left-4 z-10 bg-[#0A0C14]/80 backdrop-blur border border-white/10 rounded-lg px-3 py-1.5 text-[10px] text-slate-400 pointer-events-none">
+                <div className="absolute bottom-4 left-4 z-10 bg-popover/80 backdrop-blur border border-border rounded-lg px-3 py-1.5 text-[10px] text-muted-foreground pointer-events-none">
                     💡 Arraste os nós para reposicionar · selecione e arraste a borda para redimensionar
                 </div>
             )}
@@ -334,14 +334,14 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                 <Background variant={BackgroundVariant.Dots} gap={32} size={1} color="#1a1d2e" />
                 <Controls
                     showInteractive={false}
-                    className="!bg-[#0A0C14]/80 !border-white/10 [&>button]:!bg-transparent [&>button]:!text-slate-400 [&>button]:!border-white/10 [&>button:hover]:!text-white"
+                    className="!bg-popover/80 !border-border [&>button]:!bg-transparent [&>button]:!text-muted-foreground [&>button]:!border-border [&>button:hover]:!text-foreground"
                 />
                 <MiniMap
                     pannable
                     zoomable
                     nodeColor={n => (n.type === 'journey' ? '#7c3aed' : '#3b82f6')}
                     maskColor="rgba(5, 6, 10, 0.7)"
-                    className="!bg-[#0A0C14]/80 !border !border-white/10 !rounded-lg"
+                    className="!bg-popover/80 !border !border-border !rounded-lg"
                 />
             </ReactFlow>
 

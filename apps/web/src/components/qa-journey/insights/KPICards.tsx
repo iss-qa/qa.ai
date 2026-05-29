@@ -60,7 +60,7 @@ export function KPICards({ aggregate }: Props) {
                 hint="executados manualmente"
             />
             <KPI
-                icon={<Workflow className="w-4 h-4 text-slate-400" />}
+                icon={<Workflow className="w-4 h-4 text-muted-foreground" />}
                 label="Sem cobertura"
                 value={aggregate.no_coverage_subflows.toString()}
                 hint="risco — não testados"
@@ -83,15 +83,15 @@ function KPI({ icon, label, value, hint, accent = 'neutral' }: KPIProps) {
         accent === 'green' ? 'text-green-600'
         : accent === 'amber' ? 'text-amber-600'
         : accent === 'red' ? 'text-red-600'
-        : 'text-slate-900';
+        : 'text-foreground';
     return (
-        <div className="bg-white rounded-2xl border border-black/5 p-5 flex flex-col gap-1.5">
-            <div className="flex items-center justify-between text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+        <div className="bg-card rounded-2xl border border-border p-5 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
                 <span>{label}</span>
                 {icon}
             </div>
             <div className={`text-2xl font-bold ${valueColor}`}>{value}</div>
-            {hint && <div className="text-[11px] text-slate-500">{hint}</div>}
+            {hint && <div className="text-[11px] text-muted-foreground">{hint}</div>}
         </div>
     );
 }

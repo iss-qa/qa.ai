@@ -1,11 +1,18 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useQueryState } from 'nuqs';
 import { BarChart3, Loader2, Map as MapIcon, Settings } from 'lucide-react';
 
-import { JourneyMap } from '@/components/qa-journey/map/JourneyMap';
+// JourneyMap pulls in React Flow (~300kB). Lazy-load it so the page shell +
+// header paint instantly and the heavy canvas bundle only downloads when a
+// project actually has a map to render. ssr:false — it's a client-only canvas.
+const JourneyMap = dynamic(
+    () => import('@/components/qa-journey/map/JourneyMap').then(m => m.JourneyMap),
+    { ssr: false, loading: () => <LoadingState /> },
+);
 import { MigrationMissingBanner } from '@/components/qa-journey/MigrationMissingBanner';
 import {
     loadJourneys,
@@ -133,18 +140,18 @@ export default function QAJourneyPublicPage() {
     }, [cases]);
 
     return (
-        <div className="p-6 max-w-[1600px] mx-auto flex flex-col gap-4 h-full">
+        <div className="p-4 sm:p-6 max-w-[1600px] mx-auto flex flex-col gap-4 h-full">
             {/* Header */}
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
                 <div className="flex items-center gap-3">
                     <MapIcon className="w-6 h-6 text-brand" />
-                    <h1 className="text-2xl font-bold text-white">Jornada do QA</h1>
+                    <h1 className="text-2xl font-bold text-foreground">Jornada do QA</h1>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                     <select
                         value={projectId}
                         onChange={e => setProjectId(e.target.value || null)}
-                        className="bg-white border border-black/5 rounded-lg px-4 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/20 min-w-[200px]"
+                        className="bg-card border border-border rounded-lg px-4 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 min-w-[160px] sm:min-w-[200px]"
                         disabled={projects.length === 0}
                     >
                         {projects.length === 0 && <option value="">Sem projetos cadastrados</option>}
@@ -152,13 +159,13 @@ export default function QAJourneyPublicPage() {
                     </select>
                     <Link
                         href={`/dashboard/qa-journey/insights?project=${projectId}`}
-                        className="text-xs text-slate-400 hover:text-white border border-white/10 rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
+                        className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-2 inline-flex items-center gap-1.5 transition-colors"
                     >
                         <BarChart3 className="w-3.5 h-3.5" /> Insights
                     </Link>
                     <Link
                         href={`/dashboard/qa-journey/admin?project=${projectId}`}
-                        className="text-xs text-slate-400 hover:text-white border border-white/10 rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
+                        className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-2 inline-flex items-center gap-1.5 transition-colors"
                     >
                         <Settings className="w-3.5 h-3.5" /> Admin
                     </Link>
@@ -188,7 +195,7 @@ export default function QAJourneyPublicPage() {
 
 function LoadingState() {
     return (
-        <div className="bg-[#05060a] border border-white/5 rounded-2xl h-full flex items-center justify-center text-slate-400 text-sm">
+        <div className="bg-card border border-border rounded-2xl h-full flex items-center justify-center text-muted-foreground text-sm">
             <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
             Carregando jornadas…
         </div>
@@ -197,16 +204,16 @@ function LoadingState() {
 
 function EmptyState({ projectId }: { projectId: string | null }) {
     return (
-        <div className="bg-[#05060a] border border-white/5 rounded-2xl h-full flex flex-col items-center justify-center text-center gap-3 p-10">
-            <p className="text-slate-300 text-sm">
+        <div className="bg-card border border-border rounded-2xl h-full flex flex-col items-center justify-center text-center gap-3 p-10">
+            <p className="text-foreground text-sm">
                 Nenhuma jornada publicada para este projeto ainda.
             </p>
-            <p className="text-slate-500 text-xs max-w-md">
+            <p className="text-muted-foreground text-xs max-w-md">
                 Cadastre Jornadas no admin e marque &quot;Publicar no mapa público&quot; para que apareçam aqui.
             </p>
             <Link
                 href={`/dashboard/qa-journey/admin?project=${projectId || ''}`}
-                className="bg-brand text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 transition-all"
+                className="bg-brand text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 transition-all"
             >
                 Ir para o admin
             </Link>

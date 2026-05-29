@@ -37,9 +37,9 @@ function formatLastRun(iso: string | null): string {
 }
 
 function statusBadge(status: string | null): { label: string; classes: string } {
-    if (status === 'passed') return { label: 'Sucesso', classes: 'bg-green-100 text-green-700' };
-    if (status === 'failed') return { label: 'Falha', classes: 'bg-red-100 text-red-700' };
-    return { label: 'Pendente', classes: 'bg-slate-100 text-slate-500' };
+    if (status === 'passed') return { label: 'Sucesso', classes: 'bg-success/10 text-success' };
+    if (status === 'failed') return { label: 'Falha', classes: 'bg-danger/10 text-danger' };
+    return { label: 'Pendente', classes: 'bg-muted text-muted-foreground' };
 }
 
 export default function TestsPage() {
@@ -76,39 +76,39 @@ export default function TestsPage() {
     }, [tests, search]);
 
     return (
-        <div className="p-8 max-w-7xl mx-auto flex flex-col gap-8">
-            <div className="flex items-center justify-between">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto flex flex-col gap-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-white">Testes</h1>
+                    <h1 className="text-2xl font-bold text-foreground">Testes</h1>
                     <p className="text-textSecondary/80 text-sm mt-1">Gerencie e execute seus casos de teste.</p>
                 </div>
-                <Link href="/dashboard/tests/editor" prefetch={true} className="bg-brand text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 transition-all flex items-center gap-2">
+                <Link href="/dashboard/tests/editor" prefetch={true} className="bg-brand text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 transition-all flex items-center gap-2">
                     <Plus className="w-4 h-4" /> NOVO TESTE
                 </Link>
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm border border-black/5 flex flex-col overflow-hidden">
-                <div className="p-4 border-b border-black/5 flex items-center justify-between bg-slate-50/50">
+            <div className="bg-card rounded-2xl shadow-sm border border-border flex flex-col overflow-hidden">
+                <div className="p-4 border-b border-border flex items-center justify-between bg-surface-muted/50">
                     <div className="relative">
-                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                         <input
                             type="text"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             placeholder="Buscar testes..."
-                            className="pl-10 pr-4 py-2 bg-white border border-black/5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 w-64 text-slate-900"
+                            className="pl-10 pr-4 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 w-64 text-foreground"
                         />
                     </div>
                     <div className="flex items-center gap-2">
-                        <button className="p-2 hover:bg-black/5 rounded-lg transition-colors text-slate-500">
+                        <button className="p-2 hover:bg-accent rounded-lg transition-colors text-muted-foreground">
                             <Filter className="w-4 h-4" />
                         </button>
                     </div>
                 </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm text-slate-600">
-                        <thead className="text-[10px] uppercase bg-slate-50/50 text-slate-400 font-bold tracking-widest">
+                <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left text-sm text-muted-foreground whitespace-nowrap">
+                        <thead className="text-[10px] uppercase bg-surface-muted/50 text-muted-foreground font-bold tracking-widest">
                             <tr>
                                 <th className="px-6 py-4">Nome do Teste</th>
                                 <th className="px-6 py-4">Projeto</th>
@@ -118,10 +118,10 @@ export default function TestsPage() {
                                 <th className="px-6 py-4 text-right">Ações</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-black/[0.03]">
+                        <tbody className="divide-y divide-border">
                             {loading && (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-10 text-center text-slate-400">
+                                    <td colSpan={6} className="px-6 py-10 text-center text-muted-foreground">
                                         <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
                                         Carregando testes...
                                     </td>
@@ -129,7 +129,7 @@ export default function TestsPage() {
                             )}
                             {!loading && filtered.length === 0 && (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-10 text-center text-slate-400 text-sm">
+                                    <td colSpan={6} className="px-6 py-10 text-center text-muted-foreground text-sm">
                                         {search ? 'Nenhum teste encontrado para esta busca.' : 'Nenhum teste cadastrado ainda.'}
                                     </td>
                                 </tr>
@@ -139,11 +139,11 @@ export default function TestsPage() {
                                 const projName = test.projects?.name || '—';
                                 const platform = test.projects?.platform || '—';
                                 return (
-                                    <tr key={test.id} className="hover:bg-slate-50/30 transition-colors">
-                                        <td className="px-6 py-4 font-bold text-slate-900">{test.name}</td>
+                                    <tr key={test.id} className="hover:bg-accent transition-colors">
+                                        <td className="px-6 py-4 font-bold text-foreground">{test.name}</td>
                                         <td className="px-6 py-4">{projName}</td>
                                         <td className="px-6 py-4">
-                                            <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium text-[10px] uppercase">
+                                            <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground font-medium text-[10px] uppercase">
                                                 {platform}
                                             </span>
                                         </td>
@@ -173,7 +173,7 @@ export default function TestsPage() {
                                                     </Link>
                                                 ) : (
                                                     <span
-                                                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 text-slate-400 rounded-lg text-xs font-bold cursor-not-allowed"
+                                                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-muted text-muted-foreground rounded-lg text-xs font-bold cursor-not-allowed"
                                                         title="Teste sem projeto: salve via Maestro Studio para habilitar"
                                                     >
                                                         <Wand2 className="w-3.5 h-3.5" />

@@ -51,13 +51,13 @@ export function SubflowFormModal({ journeyId, initial, defaultSequence = 0, test
             onClose={onClose}
             footer={
                 <>
-                    <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">
+                    <button onClick={onClose} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
                         Cancelar
                     </button>
                     <button
                         onClick={submit}
                         disabled={!canSave}
-                        className="px-5 py-2 bg-brand text-black text-sm font-bold rounded-lg hover:bg-brand/90 disabled:opacity-50 transition-all flex items-center gap-2"
+                        className="px-5 py-2 bg-brand text-white text-sm font-bold rounded-lg hover:bg-brand/90 disabled:opacity-50 transition-all flex items-center gap-2"
                     >
                         {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                         {isEdit ? 'Salvar alterações' : 'Criar Sub-fluxo'}
@@ -125,7 +125,7 @@ export function SubflowFormModal({ journeyId, initial, defaultSequence = 0, test
                             <option key={tc.id} value={tc.id}>{tc.name}</option>
                         ))}
                     </select>
-                    <p className="text-[10px] text-slate-500">
+                    <p className="text-[10px] text-muted-foreground">
                         Liga este sub-fluxo a um teste automatizado já existente.
                     </p>
                 </div>
@@ -134,8 +134,8 @@ export function SubflowFormModal({ journeyId, initial, defaultSequence = 0, test
     );
 }
 
-const inputClass = 'bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/50';
+const inputClass = 'bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50';
 
 function Label({ children }: { children: React.ReactNode }) {
-    return <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">{children}</label>;
+    return <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{children}</label>;
 }

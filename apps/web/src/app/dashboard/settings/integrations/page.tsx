@@ -86,9 +86,9 @@ export default function IntegrationsSettingsPage() {
     };
 
     return (
-        <div className="p-8 max-w-[1100px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-[1100px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
             <div>
-                <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
                     <Plug className="w-6 h-6 text-brand" />
                     Integrações
                 </h1>
@@ -99,16 +99,16 @@ export default function IntegrationsSettingsPage() {
             </div>
 
             {loadError && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-sm text-red-400">
+                <div className="bg-danger/10 border border-danger/30 rounded-2xl p-4 text-sm text-danger">
                     Falha ao carregar integrações: {loadError}
-                    <div className="text-[11px] text-slate-400 mt-1">
+                    <div className="text-[11px] text-muted-foreground mt-1">
                         Verifique se o backend Fastify está rodando ({process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}) e se a migration <code className="font-mono">supabase/migrations/007_organizations.sql</code> foi aplicada.
                     </div>
                 </div>
             )}
 
             {loading && !loadError && (
-                <div className="bg-white rounded-2xl p-8 text-center text-textSecondary text-sm border border-black/5">
+                <div className="bg-card rounded-2xl p-8 text-center text-textSecondary text-sm border border-border">
                     <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Carregando integrações…
                 </div>
             )}
@@ -191,10 +191,10 @@ function renderGoogleMetadata(m: GoogleSheetsMetadata) {
     return (
         <div className="flex flex-col gap-1 text-xs">
             {m.client_email && (
-                <div><span className="text-slate-500">Service account:</span> <span className="font-mono text-slate-300 break-all">{m.client_email}</span></div>
+                <div><span className="text-muted-foreground">Service account:</span> <span className="font-mono text-foreground break-all">{m.client_email}</span></div>
             )}
             {m.project_id && (
-                <div><span className="text-slate-500">Projeto GCP:</span> <span className="font-mono text-slate-300">{m.project_id}</span></div>
+                <div><span className="text-muted-foreground">Projeto GCP:</span> <span className="font-mono text-foreground">{m.project_id}</span></div>
             )}
         </div>
     );
@@ -203,8 +203,8 @@ function renderGoogleMetadata(m: GoogleSheetsMetadata) {
 function renderJiraMetadata(m: JiraMetadata) {
     return (
         <div className="flex flex-col gap-1 text-xs">
-            {m.host && (<div><span className="text-slate-500">Host:</span> <span className="font-mono text-slate-300">{m.host}</span></div>)}
-            {m.email && (<div><span className="text-slate-500">E-mail:</span> <span className="text-slate-300">{m.email}</span></div>)}
+            {m.host && (<div><span className="text-muted-foreground">Host:</span> <span className="font-mono text-foreground">{m.host}</span></div>)}
+            {m.email && (<div><span className="text-muted-foreground">E-mail:</span> <span className="text-foreground">{m.email}</span></div>)}
         </div>
     );
 }
@@ -236,50 +236,50 @@ function IntegrationCard({
     const lastTested = record?.last_tested_at;
 
     return (
-        <div className="bg-white rounded-2xl border border-black/5 p-6 flex flex-col gap-4">
+        <div className="bg-card rounded-2xl border border-border p-6 flex flex-col gap-4">
             <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-xl bg-surface-muted flex items-center justify-center">
                         {icon}
                     </div>
                     <div>
-                        <h3 className="font-bold text-slate-900">{title}</h3>
+                        <h3 className="font-bold text-foreground">{title}</h3>
                         <p className="text-xs text-textSecondary max-w-md">{description}</p>
                     </div>
                 </div>
                 {docsHref && (
                     <a href={docsHref} target="_blank" rel="noopener noreferrer"
-                       className="text-[10px] text-slate-400 hover:text-brand inline-flex items-center gap-1">
+                       className="text-[10px] text-muted-foreground hover:text-brand inline-flex items-center gap-1">
                         Docs <ExternalLink className="w-3 h-3" />
                     </a>
                 )}
             </div>
 
-            <div className="border-t border-black/5 pt-4">
+            <div className="border-t border-border pt-4">
                 {isConfigured ? (
                     <div className="flex flex-col gap-3">
                         <StatusPill status={lastStatus} lastTested={lastTested} />
                         {metadataView}
                         {testResult && (
-                            <div className={`text-xs rounded-md px-3 py-2 ${testResult.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                            <div className={`text-xs rounded-md px-3 py-2 ${testResult.ok ? 'bg-success/10 text-success border border-success/20' : 'bg-danger/10 text-danger border border-danger/20'}`}>
                                 {testResult.detail}
                             </div>
                         )}
                         {record?.last_test_error && !testResult && (
-                            <div className="text-[10px] text-red-600 bg-red-50 border border-red-100 rounded-md px-2 py-1">
+                            <div className="text-[10px] text-danger bg-danger/10 border border-danger/20 rounded-md px-2 py-1">
                                 Último erro: {record.last_test_error}
                             </div>
                         )}
                     </div>
                 ) : (
-                    <p className="text-sm text-slate-500">Nenhuma credencial configurada.</p>
+                    <p className="text-sm text-muted-foreground">Nenhuma credencial configurada.</p>
                 )}
             </div>
 
             <div className="flex items-center gap-2 pt-2">
                 <button
                     onClick={onConfigure}
-                    className="bg-brand text-black px-4 py-2 rounded-lg text-xs font-bold hover:bg-brand/90"
+                    className="bg-brand text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-brand/90"
                 >
                     {isConfigured ? 'Atualizar credenciais' : 'Configurar'}
                 </button>
@@ -288,14 +288,14 @@ function IntegrationCard({
                         <button
                             onClick={onTest}
                             disabled={isTesting}
-                            className="border border-black/10 text-slate-700 px-3 py-2 rounded-lg text-xs font-bold hover:bg-slate-50 disabled:opacity-50 flex items-center gap-1"
+                            className="border border-border text-foreground px-3 py-2 rounded-lg text-xs font-bold hover:bg-accent disabled:opacity-50 flex items-center gap-1"
                         >
                             {isTesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />}
                             Testar conexão
                         </button>
                         <button
                             onClick={onDelete}
-                            className="ml-auto text-slate-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50"
+                            className="ml-auto text-muted-foreground hover:text-danger p-2 rounded-lg hover:bg-danger/10"
                             title="Remover integração"
                         >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -312,20 +312,20 @@ function StatusPill({ status, lastTested }: { status?: 'ok' | 'error' | null; la
     const testedLabel = tested ? tested.toLocaleString('pt-BR') : 'nunca testada';
     if (status === 'ok') {
         return (
-            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-green-600">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Conectada · <span className="font-normal text-slate-500">testada em {testedLabel}</span>
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-success">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Conectada · <span className="font-normal text-muted-foreground">testada em {testedLabel}</span>
             </div>
         );
     }
     if (status === 'error') {
         return (
-            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600">
-                <XCircle className="w-3.5 h-3.5" /> Erro no último teste · <span className="font-normal text-slate-500">{testedLabel}</span>
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-danger">
+                <XCircle className="w-3.5 h-3.5" /> Erro no último teste · <span className="font-normal text-muted-foreground">{testedLabel}</span>
             </div>
         );
     }
     return (
-        <div className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-600">
+        <div className="inline-flex items-center gap-1.5 text-xs font-bold text-warning">
             <RefreshCcw className="w-3.5 h-3.5" /> Configurada · ainda não testada
         </div>
     );

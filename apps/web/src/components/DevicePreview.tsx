@@ -224,7 +224,7 @@ export const DevicePreview = forwardRef<DevicePreviewHandle, DevicePreviewProps>
     return (
         <div
             ref={containerRef}
-            className="absolute inset-0 w-full h-full select-none flex flex-col items-center justify-center bg-black/50"
+            className="absolute inset-0 w-full h-full select-none flex flex-col items-center justify-center bg-background"
             style={{ touchAction: 'none', overscrollBehavior: 'none' }}
         >
             <canvas
@@ -246,8 +246,8 @@ export const DevicePreview = forwardRef<DevicePreviewHandle, DevicePreviewProps>
 
             {streamStatus !== 'streaming' && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-                    <Smartphone className="w-12 h-12 text-white/10 mb-3" />
-                    <p className="text-white/30 text-xs font-medium">
+                    <Smartphone className="w-12 h-12 text-foreground/10 mb-3" />
+                    <p className="text-foreground/30 text-xs font-medium">
                         {streamStatus === 'connecting' ? 'Conectando ao espelhamento...' :
                          streamStatus === 'error' ? 'Falha na conexao. Reconectando...' :
                          'Aguardando espelhamento...'}

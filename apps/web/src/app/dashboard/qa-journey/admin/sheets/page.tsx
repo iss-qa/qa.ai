@@ -101,16 +101,16 @@ export default function SheetConfigsListPage() {
     const deletingTarget = deletingId ? configs.find(c => c.id === deletingId) : null;
 
     return (
-        <div className="p-8 max-w-[1400px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
 
             <div className="flex flex-col gap-2">
-                <Link href="/dashboard/qa-journey/admin" className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-white">
+                <Link href="/dashboard/qa-journey/admin" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                     <ArrowLeft className="w-3 h-3" /> Voltar para Jornadas
                 </Link>
 
-                <div className="flex items-end justify-between gap-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-4">
                     <div>
-                        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
                             <FileSpreadsheet className="w-6 h-6 text-brand" />
                             Sync de Planilhas
                         </h1>
@@ -118,11 +118,11 @@ export default function SheetConfigsListPage() {
                             Configure como o QAMind lê suas planilhas do Google Sheets — cada projeto pode ter N mapeamentos.
                         </p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                         <select
                             value={projectId}
                             onChange={e => setProjectId(e.target.value || null)}
-                            className="bg-white border border-black/5 rounded-lg px-4 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/20 min-w-[200px]"
+                            className="bg-card border border-border rounded-lg px-4 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/20 min-w-[200px]"
                             disabled={projects.length === 0}
                         >
                             {projects.length === 0 && <option value="">Sem projetos</option>}
@@ -130,13 +130,13 @@ export default function SheetConfigsListPage() {
                         </select>
                         <Link
                             href={`/dashboard/qa-journey/admin/syncs?project=${projectId}`}
-                            className="text-xs text-slate-400 hover:text-white border border-white/10 rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
+                            className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
                         >
                             <History className="w-3.5 h-3.5" /> Histórico
                         </Link>
                         <Link
                             href={`/dashboard/qa-journey/admin/sheets/new?project=${projectId}`}
-                            className={`bg-brand text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 transition-all flex items-center gap-2 ${!projectId ? 'opacity-50 pointer-events-none' : ''}`}
+                            className={`bg-brand text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 transition-all flex items-center gap-2 ${!projectId ? 'opacity-50 pointer-events-none' : ''}`}
                         >
                             <Plus className="w-4 h-4" /> Novo mapeamento
                         </Link>
@@ -145,24 +145,24 @@ export default function SheetConfigsListPage() {
             </div>
 
             {loadError && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-sm text-red-400">
+                <div className="bg-danger/10 border border-danger/30 rounded-2xl p-4 text-sm text-danger">
                     Falha ao carregar configs: {loadError}
-                    <div className="text-[11px] text-slate-400 mt-1">
+                    <div className="text-[11px] text-muted-foreground mt-1">
                         Verifique se o backend Fastify está rodando ({process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}).
                     </div>
                 </div>
             )}
 
             {loading && !loadError && (
-                <div className="bg-white rounded-2xl p-8 text-center text-textSecondary text-sm border border-black/5">
+                <div className="bg-card rounded-2xl p-8 text-center text-textSecondary text-sm border border-border">
                     <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Carregando…
                 </div>
             )}
 
             {!loading && !loadError && sortedConfigs.length === 0 && (
-                <div className="bg-white rounded-2xl p-10 text-center border border-black/5 flex flex-col gap-3 items-center">
-                    <FileSpreadsheet className="w-10 h-10 text-slate-300" />
-                    <p className="text-sm text-slate-600 font-bold">Nenhum mapeamento ainda.</p>
+                <div className="bg-card rounded-2xl p-10 text-center border border-border flex flex-col gap-3 items-center">
+                    <FileSpreadsheet className="w-10 h-10 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground font-bold">Nenhum mapeamento ainda.</p>
                     <p className="text-xs text-textSecondary max-w-md">
                         Crie um mapeamento para sincronizar uma aba do Google Sheets com a Jornada deste projeto.
                         Cada mapeamento define qual coluna da planilha corresponde a cada campo do QAMind.
@@ -175,17 +175,17 @@ export default function SheetConfigsListPage() {
                     {sortedConfigs.map(config => {
                         const result = lastResult[config.id];
                         return (
-                            <div key={config.id} className="bg-white rounded-2xl border border-black/5 overflow-hidden">
+                            <div key={config.id} className="bg-card rounded-2xl border border-border overflow-hidden">
                                 <div className="px-6 py-4 flex items-center justify-between gap-4">
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-2">
-                                            <span className="font-bold text-slate-900">{config.sheet_name}</span>
-                                            <span className="text-[10px] text-slate-400 font-mono">{config.spreadsheet_id.slice(0, 12)}…</span>
+                                            <span className="font-bold text-foreground">{config.sheet_name}</span>
+                                            <span className="text-[10px] text-muted-foreground font-mono">{config.spreadsheet_id.slice(0, 12)}…</span>
                                             {!config.is_active && (
-                                                <span className="text-[10px] font-bold uppercase bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded">Inativo</span>
+                                                <span className="text-[10px] font-bold uppercase bg-muted text-muted-foreground px-1.5 py-0.5 rounded">Inativo</span>
                                             )}
                                         </div>
-                                        <div className="text-xs text-slate-500 mt-1 flex items-center gap-3">
+                                        <div className="text-xs text-muted-foreground mt-1 flex items-center gap-3">
                                             <span>Header linha {config.header_row}</span>
                                             <span>Dados a partir da linha {config.data_start_row}</span>
                                             <a
@@ -207,7 +207,7 @@ export default function SheetConfigsListPage() {
                                         <button
                                             onClick={() => handleSync(config.id)}
                                             disabled={syncing === config.id}
-                                            className="bg-brand text-black px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-brand/90 disabled:opacity-50 flex items-center gap-1.5"
+                                            className="bg-brand text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-brand/90 disabled:opacity-50 flex items-center gap-1.5"
                                         >
                                             {syncing === config.id
                                                 ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -216,7 +216,7 @@ export default function SheetConfigsListPage() {
                                         </button>
                                         <button
                                             onClick={() => setDeletingId(config.id)}
-                                            className="text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50"
+                                            className="text-muted-foreground hover:text-danger p-1.5 rounded-lg hover:bg-danger/10"
                                             title="Excluir mapeamento"
                                         >
                                             <Trash2 className="w-3.5 h-3.5" />
@@ -224,14 +224,14 @@ export default function SheetConfigsListPage() {
                                     </div>
                                 </div>
                                 {result && (
-                                    <div className={`px-6 py-3 border-t text-xs ${result.status === 'success' ? 'bg-green-50 border-green-100 text-green-800' : 'bg-red-50 border-red-100 text-red-800'}`}>
+                                    <div className={`px-6 py-3 border-t text-xs ${result.status === 'success' ? 'bg-success/10 border-success/20 text-success' : 'bg-danger/10 border-danger/20 text-danger'}`}>
                                         {result.status === 'success' ? (
                                             <>
                                                 <strong>Sync concluído.</strong> {result.rows_imported} novos, {result.rows_updated} atualizados, {result.rows_skipped} pulados.
                                                 {result.skipped_reasons.length > 0 && (
                                                     <details className="mt-1">
-                                                        <summary className="cursor-pointer text-[11px] text-slate-600">Ver linhas puladas ({result.skipped_reasons.length})</summary>
-                                                        <ul className="mt-1 text-[11px] text-slate-600 list-disc pl-5">
+                                                        <summary className="cursor-pointer text-[11px] text-muted-foreground">Ver linhas puladas ({result.skipped_reasons.length})</summary>
+                                                        <ul className="mt-1 text-[11px] text-muted-foreground list-disc pl-5">
                                                             {result.skipped_reasons.slice(0, 20).map((r, i) => (
                                                                 <li key={i}>Linha {r.row}: {r.reason}</li>
                                                             ))}

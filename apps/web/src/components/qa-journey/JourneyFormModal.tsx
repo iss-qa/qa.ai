@@ -61,13 +61,13 @@ export function JourneyFormModal({ projectId, initial, defaultSequence = 0, onCl
             onClose={onClose}
             footer={
                 <>
-                    <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">
+                    <button onClick={onClose} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
                         Cancelar
                     </button>
                     <button
                         onClick={submit}
                         disabled={!canSave}
-                        className="px-5 py-2 bg-brand text-black text-sm font-bold rounded-lg hover:bg-brand/90 disabled:opacity-50 transition-all flex items-center gap-2"
+                        className="px-5 py-2 bg-brand text-white text-sm font-bold rounded-lg hover:bg-brand/90 disabled:opacity-50 transition-all flex items-center gap-2"
                     >
                         {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                         {isEdit ? 'Salvar alterações' : 'Criar Jornada'}
@@ -107,7 +107,7 @@ export function JourneyFormModal({ projectId, initial, defaultSequence = 0, onCl
                     placeholder="ex: autenticacao"
                     className={`${inputClass} font-mono text-xs`}
                 />
-                <p className="text-[10px] text-slate-500">
+                <p className="text-[10px] text-muted-foreground">
                     Identificador único na URL. Gerado a partir do título — edite se quiser sobrescrever.
                 </p>
             </div>
@@ -145,7 +145,7 @@ export function JourneyFormModal({ projectId, initial, defaultSequence = 0, onCl
                             type="color"
                             value={draft.color || COLOR_SUGGESTIONS[0]}
                             onChange={e => setDraft({ ...draft, color: e.target.value })}
-                            className="w-10 h-10 rounded-md bg-transparent border border-white/10 cursor-pointer"
+                            className="w-10 h-10 rounded-md bg-transparent border border-border cursor-pointer"
                         />
                         <input
                             type="text"
@@ -161,7 +161,7 @@ export function JourneyFormModal({ projectId, initial, defaultSequence = 0, onCl
                                 key={c}
                                 type="button"
                                 onClick={() => setDraft({ ...draft, color: c })}
-                                className="w-5 h-5 rounded-full border border-white/20 hover:scale-110 transition-transform"
+                                className="w-5 h-5 rounded-full border border-border hover:scale-110 transition-transform"
                                 style={{ background: c }}
                                 title={c}
                             />
@@ -170,12 +170,12 @@ export function JourneyFormModal({ projectId, initial, defaultSequence = 0, onCl
                 </div>
             </div>
 
-            <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer select-none">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
                 <input
                     type="checkbox"
                     checked={Boolean(draft.is_published)}
                     onChange={e => setDraft({ ...draft, is_published: e.target.checked })}
-                    className="w-4 h-4 rounded bg-white/5 border-white/20 accent-brand"
+                    className="w-4 h-4 rounded bg-foreground/5 border-border accent-brand"
                 />
                 Publicar no mapa público
             </label>
@@ -183,8 +183,8 @@ export function JourneyFormModal({ projectId, initial, defaultSequence = 0, onCl
     );
 }
 
-const inputClass = 'bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/50';
+const inputClass = 'bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50';
 
 function Label({ children }: { children: React.ReactNode }) {
-    return <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">{children}</label>;
+    return <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{children}</label>;
 }

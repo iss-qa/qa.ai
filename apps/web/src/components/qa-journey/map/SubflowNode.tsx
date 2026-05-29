@@ -21,10 +21,10 @@ export const SubflowNode = memo(function SubflowNode({ data, selected }: { data:
         <button
             type="button"
             onClick={() => onSelect(subflow.id)}
-            className={`relative bg-[#0f1220]/90 backdrop-blur-sm border rounded-xl px-3 py-2.5 w-full h-full text-left transition-all overflow-hidden ${
+            className={`relative bg-card/90 backdrop-blur-sm border rounded-xl px-3 py-2.5 w-full h-full text-left transition-all overflow-hidden ${
                 isActive
                     ? 'border-brand ring-2 ring-brand/30'
-                    : 'border-white/10 hover:border-brand/40'
+                    : 'border-border hover:border-brand/40'
             }`}
         >
             <NodeResizer
@@ -42,9 +42,9 @@ export const SubflowNode = memo(function SubflowNode({ data, selected }: { data:
             <div className="flex items-start gap-2">
                 <GitBranch className="w-3.5 h-3.5 text-brand mt-0.5 shrink-0" />
                 <div className="flex-1 min-w-0">
-                    <div className="text-xs font-bold text-white truncate">{subflow.title}</div>
+                    <div className="text-xs font-bold text-foreground truncate">{subflow.title}</div>
                     {subflow.description && (
-                        <div className="text-[10px] text-slate-400 truncate">{subflow.description}</div>
+                        <div className="text-[10px] text-muted-foreground truncate">{subflow.description}</div>
                     )}
                 </div>
             </div>
@@ -55,7 +55,7 @@ export const SubflowNode = memo(function SubflowNode({ data, selected }: { data:
                         {statusOpt.label}
                     </span>
                 )}
-                <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                     {subflow.test_case_id && (
                         <span className="inline-flex items-center gap-0.5 text-brand" title="Vinculado a um teste Maestro">
                             <Link2 className="w-2.5 h-2.5" />

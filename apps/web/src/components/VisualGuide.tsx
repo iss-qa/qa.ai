@@ -27,7 +27,7 @@ function SessionThumbnail({ id, index, previewUrl, isConverting, fileName, onRem
   return (
     <div
       ref={setNodeRef} style={style} title={fileName}
-      className={`relative flex-shrink-0 w-[80px] h-[80px] rounded-lg border overflow-hidden group cursor-grab active:cursor-grabbing ${isDragging ? 'border-brand ring-2 ring-brand/50' : 'border-white/10 hover:border-white/30'}`}
+      className={`relative flex-shrink-0 w-[80px] h-[80px] rounded-lg border overflow-hidden group cursor-grab active:cursor-grabbing ${isDragging ? 'border-brand ring-2 ring-brand/50' : 'border-border hover:border-foreground/30'}`}
       {...attributes} {...listeners}
     >
       <div className="absolute top-1 left-1 z-10 w-5 h-5 rounded-full bg-brand text-white text-[10px] font-bold flex items-center justify-center">{index + 1}</div>
@@ -59,7 +59,7 @@ function StoredThumbnail({ image, onRemove }: { image: StoredImage; onRemove: ()
   const label = image.filename.replace(/\.[^.]+$/, '').replace(/-\d{10,}$/, '');
 
   return (
-    <div className="relative flex-shrink-0 w-[100px] h-[160px] rounded-lg border border-white/10 hover:border-white/30 overflow-hidden group transition-colors bg-white/5">
+    <div className="relative flex-shrink-0 w-[100px] h-[160px] rounded-lg border border-border hover:border-foreground/30 overflow-hidden group transition-colors bg-foreground/5">
       <button onClick={async (e) => { e.stopPropagation(); setIsDeleting(true); await onRemove(); setIsDeleting(false); }} disabled={isDeleting}
         className="absolute top-1.5 right-1.5 z-10 w-5 h-5 rounded-full bg-red-500/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500 disabled:opacity-50">
         {isDeleting ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <X className="w-3 h-3" />}
@@ -172,7 +172,7 @@ export function VisualGuide({ projectId }: { projectId?: string }) {
     <div className="mb-2">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-left"
+        className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-foreground/5 hover:bg-accent border border-border transition-colors text-left"
       >
         <div className="flex items-center gap-2 text-xs font-semibold text-zinc-400">
           {headerIcon}
@@ -183,7 +183,7 @@ export function VisualGuide({ projectId }: { projectId?: string }) {
       </button>
 
       {isOpen && (
-        <div className="mt-1.5 rounded-lg border border-white/10 bg-white/5 overflow-hidden">
+        <div className="mt-1.5 rounded-lg border border-border bg-foreground/5 overflow-hidden">
 
           {/* ── Maestro mode: persistent stored thumbnails ── */}
           {isMaestroMode && (
@@ -226,7 +226,7 @@ export function VisualGuide({ projectId }: { projectId?: string }) {
             onDragLeave={() => setIsDragOver(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            className={`flex items-center justify-center gap-2 px-4 py-3 cursor-pointer transition-colors ${(isMaestroMode ? storedCount : sessionCount) > 0 ? 'border-t border-dashed border-white/10' : ''} ${isDragOver ? 'bg-brand/10' : 'hover:bg-white/5'}`}
+            className={`flex items-center justify-center gap-2 px-4 py-3 cursor-pointer transition-colors ${(isMaestroMode ? storedCount : sessionCount) > 0 ? 'border-t border-dashed border-border' : ''} ${isDragOver ? 'bg-brand/10' : 'hover:bg-accent'}`}
           >
             {isUploading ? <Loader2 className="w-4 h-4 animate-spin text-zinc-500" /> : <Plus className="w-4 h-4 text-zinc-500" />}
             <span className="text-xs text-zinc-500">

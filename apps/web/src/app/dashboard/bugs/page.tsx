@@ -209,35 +209,35 @@ export default function BugTrackerPage() {
     }, [tests, editing?.project_id]);
 
     return (
-        <div className="p-8 max-w-[1400px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
 
             {/* Header & Filters */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                    <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
                         <Bug className="w-6 h-6 text-brand" /> Bug Tracker
                     </h1>
                     <p className="text-textSecondary mt-1">Bugs reportados manualmente ou capturados automaticamente em execuções que falharam.</p>
                 </div>
 
-                <div className="flex items-center gap-3">
-                    <div className="relative">
-                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative flex-1 min-w-[180px]">
+                        <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
                         <input
                             type="text"
                             placeholder="Buscar bugs..."
                             value={globalFilter}
                             onChange={(e) => setGlobalFilter(e.target.value)}
-                            className="h-9 bg-white border border-black/5 rounded-lg pl-9 pr-4 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/20 w-[250px]"
+                            className="h-9 bg-card border border-border rounded-lg pl-9 pr-4 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/20 w-full sm:w-[250px]"
                         />
                     </div>
 
                     <div className="relative">
-                        <Filter className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <Filter className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
                         <select
                             value={severityFilter}
                             onChange={(e) => setSeverityFilter(e.target.value)}
-                            className="h-9 bg-white border border-black/5 rounded-lg pl-9 pr-4 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/20 appearance-none min-w-[160px]"
+                            className="h-9 bg-card border border-border rounded-lg pl-9 pr-4 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/20 appearance-none min-w-[160px]"
                         >
                             <option value="all">Todas Severidades</option>
                             <option value="critical">Crítico</option>
@@ -251,7 +251,7 @@ export default function BugTrackerPage() {
                     <button
                         onClick={openNewBug}
                         disabled={migrationMissing}
-                        className="h-9 bg-brand text-black px-4 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all inline-flex items-center gap-2"
+                        className="h-9 bg-brand text-white px-4 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all inline-flex items-center gap-2"
                         title={migrationMissing ? 'Aplique a migration antes de criar bugs' : 'Reportar novo bug'}
                     >
                         <Plus className="w-4 h-4" /> Novo Bug
@@ -260,10 +260,10 @@ export default function BugTrackerPage() {
             </div>
 
             {/* Table */}
-            <div className="bg-white rounded-2xl shadow-sm border border-black/5 flex flex-col overflow-hidden">
+            <div className="bg-card rounded-2xl shadow-sm border border-border flex flex-col overflow-hidden">
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm text-slate-600 whitespace-nowrap">
-                        <thead className="text-[10px] uppercase bg-slate-50/50 text-slate-400 font-bold tracking-widest border-b border-black/[0.03]">
+                    <table className="w-full text-left text-sm text-muted-foreground whitespace-nowrap">
+                        <thead className="text-[10px] uppercase bg-surface-muted/50 text-muted-foreground font-bold tracking-widest border-b border-border">
                             <tr>
                                 <th className="px-6 py-4">Severidade</th>
                                 <th className="px-6 py-4">Título</th>
@@ -275,12 +275,12 @@ export default function BugTrackerPage() {
                                 <th className="px-6 py-4 text-right">Ações</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-black/[0.03]">
+                        <tbody className="divide-y divide-border">
                             {pagedBugs.map(bug => (
                                 <tr
                                     key={bug.id}
                                     onClick={() => setEditing(bug)}
-                                    className="hover:bg-slate-50/40 transition-colors cursor-pointer"
+                                    className="hover:bg-accent transition-colors cursor-pointer"
                                     title="Clique para visualizar/editar"
                                 >
                                     <td className="px-6 py-4">
@@ -288,25 +288,25 @@ export default function BugTrackerPage() {
                                             {bug.severity}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 font-bold text-slate-900 max-w-[320px] truncate" title={bug.title}>
+                                    <td className="px-6 py-4 font-bold text-foreground max-w-[320px] truncate" title={bug.title}>
                                         {bug.title}
                                     </td>
                                     <td className="px-6 py-4 text-xs">{bug.projects?.name || '—'}</td>
                                     <td className="px-6 py-4">
                                         {bug.test_cases?.name
                                             ? <span className="text-brand font-medium">{bug.test_cases.name}</span>
-                                            : <span className="text-slate-400">—</span>}
+                                            : <span className="text-muted-foreground">—</span>}
                                     </td>
                                     <td className="px-6 py-4 text-xs">
                                         {bug.source === 'automation'
                                             ? <span className="inline-flex px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 text-[10px] font-bold">AUTO</span>
-                                            : <span className="inline-flex px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold">MANUAL</span>}
+                                            : <span className="inline-flex px-1.5 py-0.5 rounded bg-surface-muted text-muted-foreground text-[10px] font-bold">MANUAL</span>}
                                     </td>
                                     <td className="px-6 py-4 text-xs">{statusLabel[bug.status]}</td>
                                     <td className="px-6 py-4 text-xs">{formatBugDate(bug.created_at)}</td>
                                     {/* Action links use stopPropagation so they don't also trigger the row's edit-open click. */}
                                     <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                                        <div className="flex items-center justify-end gap-3 text-slate-500">
+                                        <div className="flex items-center justify-end gap-3 text-muted-foreground">
                                             {bug.jira_url && (
                                                 <a href={bug.jira_url} target="_blank" rel="noopener noreferrer"
                                                    className="hover:text-brand flex items-center gap-1 text-xs"
@@ -329,7 +329,7 @@ export default function BugTrackerPage() {
                                                 </a>
                                             )}
                                             <button onClick={() => setDeletingId(bug.id)}
-                                                    className="text-slate-400 hover:text-red-500 transition-colors"
+                                                    className="text-muted-foreground hover:text-danger transition-colors"
                                                     title="Excluir bug">
                                                 <Trash2 className="w-3.5 h-3.5" />
                                             </button>
@@ -351,7 +351,7 @@ export default function BugTrackerPage() {
                 {!loading && filteredBugs.length === 0 && (
                     <div className="p-8 text-center text-textSecondary text-sm">
                         {migrationMissing
-                            ? <span className="inline-flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-amber-500" /> A tabela <code className="font-mono bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">bug_reports</code> ainda não existe. Aplique a migration <code className="font-mono bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">supabase/migrations/002_test_runs_bugs.sql</code>.</span>
+                            ? <span className="inline-flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-amber-500" /> A tabela <code className="font-mono bg-warning/10 text-warning px-1.5 py-0.5 rounded">bug_reports</code> ainda não existe. Aplique a migration <code className="font-mono bg-warning/10 text-warning px-1.5 py-0.5 rounded">supabase/migrations/002_test_runs_bugs.sql</code>.</span>
                             : bugs.length === 0
                                 ? 'Nenhum bug registrado ainda. Clique em "Novo Bug" para reportar um.'
                                 : 'Nenhum bug encontrado com os filtros atuais.'}
@@ -361,27 +361,27 @@ export default function BugTrackerPage() {
                 {/* Pagination footer — only shown when there's more than one
                     page so a small dataset doesn't get a permanent footer. */}
                 {!loading && filteredBugs.length > PAGE_SIZE && (
-                    <div className="px-6 py-3 border-t border-black/[0.04] bg-slate-50/40 flex items-center justify-between text-xs text-slate-500">
+                    <div className="px-6 py-3 border-t border-border bg-surface-muted/40 flex items-center justify-between text-xs text-muted-foreground">
                         <span>
-                            Mostrando <span className="font-bold text-slate-700">{((currentPage - 1) * PAGE_SIZE) + 1}</span>
-                            – <span className="font-bold text-slate-700">{Math.min(currentPage * PAGE_SIZE, filteredBugs.length)}</span>
-                            {' '}de <span className="font-bold text-slate-700">{filteredBugs.length}</span> bugs
+                            Mostrando <span className="font-bold text-foreground">{((currentPage - 1) * PAGE_SIZE) + 1}</span>
+                            – <span className="font-bold text-foreground">{Math.min(currentPage * PAGE_SIZE, filteredBugs.length)}</span>
+                            {' '}de <span className="font-bold text-foreground">{filteredBugs.length}</span> bugs
                         </span>
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                                 disabled={currentPage === 1}
-                                className="inline-flex items-center gap-1 px-3 h-8 rounded-md border border-black/5 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-600 font-medium"
+                                className="inline-flex items-center gap-1 px-3 h-8 rounded-md border border-border bg-card hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed text-muted-foreground font-medium"
                             >
                                 <ChevronLeft className="w-3.5 h-3.5" /> Anterior
                             </button>
                             <span className="px-2">
-                                Página <span className="font-bold text-slate-700">{currentPage}</span> de <span className="font-bold text-slate-700">{totalPages}</span>
+                                Página <span className="font-bold text-foreground">{currentPage}</span> de <span className="font-bold text-foreground">{totalPages}</span>
                             </span>
                             <button
                                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                                 disabled={currentPage >= totalPages}
-                                className="inline-flex items-center gap-1 px-3 h-8 rounded-md border border-black/5 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-600 font-medium"
+                                className="inline-flex items-center gap-1 px-3 h-8 rounded-md border border-border bg-card hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed text-muted-foreground font-medium"
                             >
                                 Próximo <ChevronRight className="w-3.5 h-3.5" />
                             </button>
@@ -393,13 +393,13 @@ export default function BugTrackerPage() {
             {/* Create / Edit Modal */}
             {editing && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
-                        <div className="p-6 border-b border-white/10 flex items-center justify-between">
-                            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <div className="bg-card border border-border rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
+                        <div className="p-6 border-b border-border flex items-center justify-between">
+                            <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
                                 <Bug className="w-5 h-5 text-brand" />
                                 {editing.id ? 'Editar Bug' : 'Novo Bug'}
                             </h2>
-                            <button onClick={() => setEditing(null)} className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-white/5">
+                            <button onClick={() => setEditing(null)} className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-accent">
                                 <X className="w-4 h-4" />
                             </button>
                         </div>
@@ -407,22 +407,22 @@ export default function BugTrackerPage() {
                         <div className="p-6 flex flex-col gap-4 overflow-y-auto">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div className="md:col-span-2 flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Título *</label>
+                                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Título *</label>
                                     <input
                                         type="text"
                                         value={editing.title || ''}
                                         onChange={e => setEditing({ ...editing, title: e.target.value })}
                                         placeholder="Resumo curto do bug"
-                                        className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/50"
+                                        className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50"
                                         autoFocus
                                     />
                                 </div>
                                 <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Severidade *</label>
+                                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Severidade *</label>
                                     <select
                                         value={editing.severity || 'medium'}
                                         onChange={e => setEditing({ ...editing, severity: e.target.value as Severity })}
-                                        className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/50"
+                                        className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50"
                                     >
                                         <option value="critical">Crítico</option>
                                         <option value="high">Alta</option>
@@ -433,19 +433,19 @@ export default function BugTrackerPage() {
                             </div>
 
                             <div className="flex flex-col gap-1.5">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Descrição</label>
+                                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Descrição</label>
                                 <textarea
                                     value={editing.description || ''}
                                     onChange={e => setEditing({ ...editing, description: e.target.value })}
                                     placeholder="Passos para reproduzir, comportamento esperado vs observado, ambiente, etc."
                                     rows={5}
-                                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/50 resize-none"
+                                    className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50 resize-none"
                                 />
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Projeto</label>
+                                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Projeto</label>
                                     <select
                                         value={editing.project_id || ''}
                                         onChange={e => setEditing({
@@ -454,18 +454,18 @@ export default function BugTrackerPage() {
                                             // Reset test if it doesn't belong to the new project
                                             test_case_id: tests.find(t => t.id === editing.test_case_id)?.project_id === e.target.value ? editing.test_case_id : null,
                                         })}
-                                        className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/50"
+                                        className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50"
                                     >
                                         <option value="">— Nenhum —</option>
                                         {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                     </select>
                                 </div>
                                 <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Teste relacionado</label>
+                                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Teste relacionado</label>
                                     <select
                                         value={editing.test_case_id || ''}
                                         onChange={e => setEditing({ ...editing, test_case_id: e.target.value || null })}
-                                        className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/50 disabled:opacity-50"
+                                        className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50 disabled:opacity-50"
                                         disabled={projectScopedTests.length === 0}
                                     >
                                         <option value="">— Nenhum —</option>
@@ -476,7 +476,7 @@ export default function BugTrackerPage() {
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                                         <Paperclip className="w-3 h-3" /> Anexo (URL)
                                     </label>
                                     <input
@@ -484,11 +484,11 @@ export default function BugTrackerPage() {
                                         value={editing.attachment_url || ''}
                                         onChange={e => setEditing({ ...editing, attachment_url: e.target.value })}
                                         placeholder="https://drive.google.com/..."
-                                        className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/50"
+                                        className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50"
                                     />
                                 </div>
                                 <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                                         <Link2 className="w-3 h-3" /> Link do Jira
                                     </label>
                                     <input
@@ -496,17 +496,17 @@ export default function BugTrackerPage() {
                                         value={editing.jira_url || ''}
                                         onChange={e => setEditing({ ...editing, jira_url: e.target.value })}
                                         placeholder="https://foxbit.atlassian.net/browse/ISS-123"
-                                        className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/50"
+                                        className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50"
                                     />
                                 </div>
                             </div>
 
                             <div className="flex flex-col gap-1.5">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Status</label>
+                                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Status</label>
                                 <select
                                     value={editing.status || 'open'}
                                     onChange={e => setEditing({ ...editing, status: e.target.value as BugStatus })}
-                                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/50 max-w-xs"
+                                    className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50 max-w-xs"
                                 >
                                     <option value="open">Aberto</option>
                                     <option value="in_progress">Em andamento</option>
@@ -516,14 +516,14 @@ export default function BugTrackerPage() {
                             </div>
                         </div>
 
-                        <div className="p-6 pt-2 flex gap-3 justify-end border-t border-white/10">
-                            <button onClick={() => setEditing(null)} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">
+                        <div className="p-6 pt-2 flex gap-3 justify-end border-t border-border">
+                            <button onClick={() => setEditing(null)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
                                 Cancelar
                             </button>
                             <button
                                 onClick={submitBug}
                                 disabled={saving || !(editing.title || '').trim()}
-                                className="px-5 py-2 bg-brand text-black text-sm font-bold rounded-lg hover:bg-brand/90 disabled:opacity-50 transition-all flex items-center gap-2"
+                                className="px-5 py-2 bg-brand text-white text-sm font-bold rounded-lg hover:bg-brand/90 disabled:opacity-50 transition-all flex items-center gap-2"
                             >
                                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                                 {editing.id ? 'Salvar alterações' : 'Reportar Bug'}
@@ -539,11 +539,11 @@ export default function BugTrackerPage() {
                 const title = target?.title || '';
                 return (
                     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                        <div className="bg-[#0A0C14] border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
-                            <h3 className="text-lg font-bold text-white mb-2">Excluir Bug?</h3>
-                            <p className="text-sm text-slate-400 mb-6">O bug &quot;{title}&quot; será excluído permanentemente.</p>
+                        <div className="bg-card border border-border rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+                            <h3 className="text-lg font-bold text-foreground mb-2">Excluir Bug?</h3>
+                            <p className="text-sm text-muted-foreground mb-6">O bug &quot;{title}&quot; será excluído permanentemente.</p>
                             <div className="flex gap-3 justify-end">
-                                <button onClick={() => setDeletingId(null)} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancelar</button>
+                                <button onClick={() => setDeletingId(null)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">Cancelar</button>
                                 <button onClick={confirmDelete} className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 transition-colors">Excluir</button>
                             </div>
                         </div>

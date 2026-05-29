@@ -57,15 +57,15 @@ export default function SyncHistoryPage() {
     useEffect(() => { void reload(); /* eslint-disable-next-line */ }, [projectId]);
 
     return (
-        <div className="p-8 max-w-[1400px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
 
             <div className="flex flex-col gap-2">
-                <Link href={`/dashboard/qa-journey/admin/sheets?project=${projectId}`} className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-white">
+                <Link href={`/dashboard/qa-journey/admin/sheets?project=${projectId}`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                     <ArrowLeft className="w-3 h-3" /> Voltar para mapeamentos
                 </Link>
-                <div className="flex items-end justify-between gap-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-4">
                     <div>
-                        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
                             <History className="w-6 h-6 text-brand" />
                             Histórico de syncs
                         </h1>
@@ -77,13 +77,13 @@ export default function SyncHistoryPage() {
                         <select
                             value={projectId}
                             onChange={e => setProjectId(e.target.value || null)}
-                            className="bg-white border border-black/5 rounded-lg px-4 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/20 min-w-[200px]"
+                            className="bg-card border border-border rounded-lg px-4 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/20 min-w-[200px]"
                         >
                             {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                         <button
                             onClick={reload}
-                            className="text-xs text-slate-400 hover:text-white border border-white/10 rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
+                            className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
                         >
                             <RefreshCcw className="w-3.5 h-3.5" /> Recarregar
                         </button>
@@ -92,27 +92,28 @@ export default function SyncHistoryPage() {
             </div>
 
             {error && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-sm text-red-400">
+                <div className="bg-danger/10 border border-danger/30 rounded-2xl p-4 text-sm text-danger">
                     Falha ao carregar: {error}
                 </div>
             )}
 
             {loading && !error && (
-                <div className="bg-white rounded-2xl p-8 text-center text-textSecondary text-sm border border-black/5">
+                <div className="bg-card rounded-2xl p-8 text-center text-textSecondary text-sm border border-border">
                     <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Carregando histórico…
                 </div>
             )}
 
             {!loading && !error && syncs.length === 0 && (
-                <div className="bg-white rounded-2xl p-10 text-center text-sm text-textSecondary border border-black/5">
+                <div className="bg-card rounded-2xl p-10 text-center text-sm text-textSecondary border border-border">
                     Nenhum sync registrado ainda para este projeto.
                 </div>
             )}
 
             {!loading && !error && syncs.length > 0 && (
-                <div className="bg-white rounded-2xl shadow-sm border border-black/5 overflow-hidden">
-                    <table className="w-full text-left text-sm text-slate-600 whitespace-nowrap">
-                        <thead className="text-[10px] uppercase bg-slate-50/50 text-slate-400 font-bold tracking-widest border-b border-black/[0.03]">
+                <div className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden">
+                    <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left text-sm text-muted-foreground whitespace-nowrap">
+                        <thead className="text-[10px] uppercase bg-surface-muted/50 text-muted-foreground font-bold tracking-widest border-b border-border">
                             <tr>
                                 <th className="px-6 py-4 w-24">Status</th>
                                 <th className="px-6 py-4">Fonte</th>
@@ -124,20 +125,20 @@ export default function SyncHistoryPage() {
                                 <th className="px-6 py-4">Detalhe</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-black/[0.03]">
+                        <tbody className="divide-y divide-border">
                             {syncs.map(s => {
                                 const started = new Date(s.started_at);
                                 const finished = s.finished_at ? new Date(s.finished_at) : null;
                                 const duration = finished ? Math.round((finished.getTime() - started.getTime()) / 1000) : null;
                                 return (
-                                    <tr key={s.id} className="hover:bg-slate-50/30">
+                                    <tr key={s.id} className="hover:bg-accent">
                                         <td className="px-6 py-3">
                                             <StatusPill status={s.status} />
                                         </td>
                                         <td className="px-6 py-3 text-xs">{SYNC_SOURCE_LABEL[s.source] || s.source}</td>
                                         <td className="px-6 py-3 text-xs">
                                             <span className="inline-flex items-center gap-1">
-                                                <Clock className="w-3 h-3 text-slate-400" />
+                                                <Clock className="w-3 h-3 text-muted-foreground" />
                                                 {started.toLocaleString('pt-BR')}
                                             </span>
                                         </td>
@@ -147,9 +148,9 @@ export default function SyncHistoryPage() {
                                         <td className="px-6 py-3 text-xs font-mono text-amber-600">{s.rows_skipped}</td>
                                         <td className="px-6 py-3 text-xs max-w-[400px]">
                                             {s.status === 'error' && s.error_message ? (
-                                                <span className="text-red-600 line-clamp-2" title={s.error_message}>{s.error_message}</span>
+                                                <span className="text-danger line-clamp-2" title={s.error_message}>{s.error_message}</span>
                                             ) : (
-                                                <span className="text-slate-400">{s.source_ref || '—'}</span>
+                                                <span className="text-muted-foreground">{s.source_ref || '—'}</span>
                                             )}
                                         </td>
                                     </tr>
@@ -157,6 +158,7 @@ export default function SyncHistoryPage() {
                             })}
                         </tbody>
                     </table>
+                    </div>
                 </div>
             )}
         </div>
@@ -165,17 +167,17 @@ export default function SyncHistoryPage() {
 
 function StatusPill({ status }: { status: 'running' | 'success' | 'error' }) {
     if (status === 'success') return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-green-500/20 text-green-700">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-success/10 text-success">
             <CheckCircle2 className="w-3 h-3" /> OK
         </span>
     );
     if (status === 'error') return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-red-500/20 text-red-700">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-danger/10 text-danger">
             <XCircle className="w-3 h-3" /> Erro
         </span>
     );
     return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-500/20 text-amber-700">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-warning/10 text-warning">
             <Loader2 className="w-3 h-3 animate-spin" /> Rodando
         </span>
     );

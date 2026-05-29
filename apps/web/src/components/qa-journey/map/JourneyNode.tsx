@@ -46,10 +46,10 @@ export const JourneyNode = memo(function JourneyNode({ data, selected }: { data:
         <button
             type="button"
             onClick={() => onToggle(journey.id)}
-            className={`relative bg-[#0f1220] border rounded-2xl px-4 py-3 w-full h-full text-left transition-all shadow-lg hover:shadow-xl overflow-hidden ${
+            className={`relative bg-card border rounded-2xl px-4 py-3 w-full h-full text-left transition-all shadow-lg hover:shadow-xl overflow-hidden ${
                 isExpanded
                     ? 'border-brand ring-2 ring-brand/30'
-                    : 'border-white/10 hover:border-white/30'
+                    : 'border-border hover:border-foreground/30'
             }`}
             style={{ boxShadow: `0 0 20px ${color}22` }}
         >
@@ -89,17 +89,17 @@ export const JourneyNode = memo(function JourneyNode({ data, selected }: { data:
 
             <div className="flex items-center gap-3">
                 <span
-                    className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border border-white/10"
+                    className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border border-border"
                     style={{ background: `${color}22` }}
                 >
                     <Icon className="w-4 h-4" />
                 </span>
                 <div className="flex-1 min-w-0">
-                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Jornada</div>
-                    <div className="text-sm font-bold text-white truncate">{journey.title}</div>
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Jornada</div>
+                    <div className="text-sm font-bold text-foreground truncate">{journey.title}</div>
                 </div>
                 <ChevronRight
-                    className={`w-4 h-4 text-slate-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                    className={`w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`}
                 />
             </div>
 
@@ -107,11 +107,11 @@ export const JourneyNode = memo(function JourneyNode({ data, selected }: { data:
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold ${coverageColor(pct, totalSubflows)}`}>
                     {totalSubflows === 0 ? 'Sem sub-fluxos' : `${automatedSubflows}/${totalSubflows} automatizados`}
                 </span>
-                <span className="text-[10px] font-mono text-slate-500">{totalSubflows === 0 ? '—' : `${pct}%`}</span>
+                <span className="text-[10px] font-mono text-muted-foreground">{totalSubflows === 0 ? '—' : `${pct}%`}</span>
             </div>
 
             {/* Progress bar */}
-            <div className="mt-2 h-1 rounded-full bg-white/5 overflow-hidden">
+            <div className="mt-2 h-1 rounded-full bg-foreground/5 overflow-hidden">
                 <div
                     className="h-full rounded-full transition-all"
                     style={{

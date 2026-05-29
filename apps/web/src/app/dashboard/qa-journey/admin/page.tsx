@@ -128,12 +128,12 @@ export default function QAJourneyAdminPage() {
     };
 
     return (
-        <div className="p-8 max-w-[1400px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
 
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                    <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
                         <MapIcon className="w-6 h-6 text-brand" />
                         Jornada do QA — Admin
                     </h1>
@@ -142,11 +142,11 @@ export default function QAJourneyAdminPage() {
                     </p>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                     <select
                         value={projectId}
                         onChange={e => setProjectId(e.target.value || null)}
-                        className="bg-white border border-black/5 rounded-lg px-4 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/20 min-w-[200px]"
+                        className="bg-card border border-border rounded-lg px-4 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/20 min-w-[200px]"
                         disabled={projects.length === 0}
                     >
                         {projects.length === 0 && <option value="">Sem projetos cadastrados</option>}
@@ -155,21 +155,21 @@ export default function QAJourneyAdminPage() {
 
                     <Link
                         href={`/dashboard/qa-journey/insights?project=${projectId}`}
-                        className="text-xs text-slate-400 hover:text-white border border-white/10 rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
+                        className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
                     >
                         <BarChart3 className="w-3.5 h-3.5" /> Insights
                     </Link>
 
                     <Link
                         href={`/dashboard/qa-journey/admin/sheets?project=${projectId}`}
-                        className="text-xs text-slate-400 hover:text-white border border-white/10 rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
+                        className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
                     >
                         <FileSpreadsheet className="w-3.5 h-3.5" /> Sync Sheets
                     </Link>
 
                     <Link
                         href={`/dashboard/qa-journey/admin/syncs?project=${projectId}`}
-                        className="text-xs text-slate-400 hover:text-white border border-white/10 rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
+                        className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
                     >
                         <History className="w-3.5 h-3.5" /> Histórico
                     </Link>
@@ -177,7 +177,7 @@ export default function QAJourneyAdminPage() {
                     <button
                         onClick={() => setCreating(true)}
                         disabled={!projectId || migrationMissing}
-                        className="bg-brand text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+                        className="bg-brand text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
                     >
                         <Plus className="w-4 h-4" /> Nova Jornada
                     </button>
@@ -189,10 +189,10 @@ export default function QAJourneyAdminPage() {
 
             {/* List */}
             {!migrationMissing && (
-                <div className="bg-white rounded-2xl shadow-sm border border-black/5 flex flex-col overflow-hidden">
+                <div className="bg-card rounded-2xl shadow-sm border border-border flex flex-col overflow-hidden">
                     <div className="overflow-x-auto">
-                        <table className="w-full text-left text-sm text-slate-600 whitespace-nowrap">
-                            <thead className="text-[10px] uppercase bg-slate-50/50 text-slate-400 font-bold tracking-widest border-b border-black/[0.03]">
+                        <table className="w-full text-left text-sm text-muted-foreground whitespace-nowrap">
+                            <thead className="text-[10px] uppercase bg-surface-muted/50 text-muted-foreground font-bold tracking-widest border-b border-border">
                                 <tr>
                                     <th className="px-6 py-4 w-12">Ordem</th>
                                     <th className="px-6 py-4">Jornada</th>
@@ -201,36 +201,36 @@ export default function QAJourneyAdminPage() {
                                     <th className="px-6 py-4 text-right">Ações</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-black/[0.03]">
+                            <tbody className="divide-y divide-border">
                                 {sortedJourneys.map(j => (
-                                    <tr key={j.id} className="hover:bg-slate-50/30 transition-colors">
-                                        <td className="px-6 py-4 text-xs text-slate-400 font-mono">{j.sequence}</td>
+                                    <tr key={j.id} className="hover:bg-accent transition-colors">
+                                        <td className="px-6 py-4 text-xs text-muted-foreground font-mono">{j.sequence}</td>
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 <span
-                                                    className="w-3 h-3 rounded-full border border-black/10 shrink-0"
+                                                    className="w-3 h-3 rounded-full border border-border shrink-0"
                                                     style={{ background: j.color || '#7c3aed' }}
                                                 />
                                                 <Link
                                                     href={`/dashboard/qa-journey/admin/${j.id}`}
-                                                    className="font-bold text-slate-900 hover:text-brand flex items-center gap-1"
+                                                    className="font-bold text-foreground hover:text-brand flex items-center gap-1"
                                                 >
                                                     {j.title}
-                                                    <ChevronRight className="w-4 h-4 text-slate-300" />
+                                                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
                                                 </Link>
                                             </div>
                                             {j.description && (
-                                                <p className="text-xs text-slate-500 mt-1 max-w-md truncate">{j.description}</p>
+                                                <p className="text-xs text-muted-foreground mt-1 max-w-md truncate">{j.description}</p>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 text-xs font-mono text-slate-500">{j.slug}</td>
+                                        <td className="px-6 py-4 text-xs font-mono text-muted-foreground">{j.slug}</td>
                                         <td className="px-6 py-4">
                                             <button
                                                 onClick={() => togglePublished(j)}
                                                 className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-bold uppercase tracking-wide transition-colors ${
                                                     j.is_published
-                                                        ? 'bg-green-500/20 text-green-600 hover:bg-green-500/30'
-                                                        : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
+                                                        ? 'bg-success/10 text-success hover:bg-success/20'
+                                                        : 'bg-muted text-muted-foreground hover:bg-accent'
                                                 }`}
                                                 title={j.is_published ? 'Visível no mapa público' : 'Oculta do mapa público'}
                                             >
@@ -242,7 +242,7 @@ export default function QAJourneyAdminPage() {
                                             <div className="flex items-center justify-end gap-1">
                                                 <button
                                                     onClick={() => setEditing(j)}
-                                                    className="p-2 rounded-lg text-slate-500 hover:bg-brand/10 hover:text-brand transition-all"
+                                                    className="p-2 rounded-lg text-muted-foreground hover:bg-brand/10 hover:text-brand transition-all"
                                                     title="Editar Jornada"
                                                     aria-label="Editar"
                                                 >
@@ -250,7 +250,7 @@ export default function QAJourneyAdminPage() {
                                                 </button>
                                                 <button
                                                     onClick={() => setDeletingId(j.id)}
-                                                    className="p-2 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all"
+                                                    className="p-2 rounded-lg text-muted-foreground hover:bg-danger/10 hover:text-danger transition-all"
                                                     title="Excluir Jornada"
                                                     aria-label="Excluir"
                                                 >

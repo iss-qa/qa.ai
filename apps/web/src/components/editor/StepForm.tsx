@@ -47,7 +47,7 @@ export function StepForm() {
         return (
             <div className="flex-1 flex flex-col items-center justify-center text-textSecondary p-8 h-full">
                 <Settings className="w-12 h-12 mb-4 opacity-20" />
-                <h3 className="text-lg font-medium text-white mb-2">Editor de Step</h3>
+                <h3 className="text-lg font-medium text-foreground mb-2">Editor de Step</h3>
                 <p className="text-sm text-center max-w-sm">
                     Selecione um step na lista à esquerda para ajustar seus seletores, valores ou configurar asserções.
                 </p>
@@ -60,16 +60,16 @@ export function StepForm() {
     return (
         <div className="flex flex-col h-full overflow-y-auto">
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-white/5">
+            <div className="flex items-center justify-between p-4 border-b border-border">
                 <div>
-                    <h3 className="text-lg font-medium text-white flex items-center gap-2">
+                    <h3 className="text-lg font-medium text-foreground flex items-center gap-2">
                         Detalhes do Step
                     </h3>
                     <p className="text-xs text-textSecondary font-mono mt-1">ID: {localStep.id}</p>
                 </div>
                 <button
                     onClick={() => setSelectedStepId(null)}
-                    className="p-2 text-textSecondary hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                    className="p-2 text-textSecondary hover:text-foreground hover:bg-accent rounded-lg transition-colors"
                 >
                     <X className="w-5 h-5" />
                 </button>
@@ -84,7 +84,7 @@ export function StepForm() {
                     <select
                         value={localStep.action}
                         onChange={(e) => handleChange('action', e.target.value as StepAction)}
-                        className="w-full bg-bgSecondary border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-1 focus:ring-brand"
+                        className="w-full bg-bgSecondary border border-border rounded-lg p-3 text-foreground focus:outline-none focus:ring-1 focus:ring-brand"
                     >
                         {Object.keys(FIELDS_BY_ACTION).map(action => (
                             <option key={action} value={action}>{action}</option>
@@ -99,13 +99,13 @@ export function StepForm() {
                         type="text"
                         value={localStep.description || ''}
                         onChange={(e) => handleChange('description', e.target.value)}
-                        className="w-full bg-bgSecondary border border-white/10 rounded-lg p-3 text-white placeholder:text-white/20 focus:outline-none focus:ring-1 focus:ring-brand"
+                        className="w-full bg-bgSecondary border border-border rounded-lg p-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand"
                         placeholder="O que esta ação faz visualmente?"
                     />
                 </div>
 
                 {/* Dynamic Fields */}
-                <div className="grid grid-cols-1 gap-6 pt-4 border-t border-white/5">
+                <div className="grid grid-cols-1 gap-6 pt-4 border-t border-border">
                     {activeFields.includes('target') && (
                         <div className="space-y-2">
                             <div className="flex justify-between items-center">
@@ -118,7 +118,7 @@ export function StepForm() {
                                 type="text"
                                 value={localStep.target || ''}
                                 onChange={(e) => handleChange('target', e.target.value)}
-                                className="w-full bg-bgSecondary border border-white/10 rounded-lg p-3 text-white placeholder:text-white/20 focus:outline-none focus:ring-1 focus:ring-brand font-mono text-sm"
+                                className="w-full bg-bgSecondary border border-border rounded-lg p-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand font-mono text-sm"
                                 placeholder="Ex: com.app:id/btn_login, texto 'Entrar', 540,1200"
                             />
                         </div>
@@ -131,7 +131,7 @@ export function StepForm() {
                                 type="text"
                                 value={localStep.value || ''}
                                 onChange={(e) => handleChange('value', e.target.value)}
-                                className="w-full bg-bgSecondary border border-white/10 rounded-lg p-3 text-white placeholder:text-white/20 focus:outline-none focus:ring-1 focus:ring-brand font-mono text-sm"
+                                className="w-full bg-bgSecondary border border-border rounded-lg p-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand font-mono text-sm"
                                 placeholder={localStep.action === 'wait' ? 'Ex: 2000 (ms)' : 'Ex: texto para digitar, url, up/down'}
                             />
                         </div>
@@ -139,8 +139,8 @@ export function StepForm() {
                 </div>
 
                 {/* Advanced Settings */}
-                <div className="space-y-4 pt-6 border-t border-white/5">
-                    <h4 className="text-sm font-medium text-white flex items-center gap-2">
+                <div className="space-y-4 pt-6 border-t border-border">
+                    <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
                         <Settings className="w-4 h-4 text-textSecondary" />
                         Configurações Avançadas
                     </h4>
@@ -151,7 +151,7 @@ export function StepForm() {
                             type="number"
                             value={localStep.timeout_ms || 10000}
                             onChange={(e) => handleChange('timeout_ms', parseInt(e.target.value))}
-                            className="w-full bg-bgSecondary border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-1 focus:ring-brand font-mono text-sm"
+                            className="w-full bg-bgSecondary border border-border rounded-lg p-3 text-foreground focus:outline-none focus:ring-1 focus:ring-brand font-mono text-sm"
                         />
                     </div>
                 </div>

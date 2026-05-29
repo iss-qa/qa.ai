@@ -8,6 +8,7 @@ import {
 import { Activity, Bug, CheckCircle2, Clock, Loader2, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { useChartTheme } from '@/lib/chart-theme';
 
 type TestRunRow = {
     id: string;
@@ -74,6 +75,7 @@ export default function DashboardPage() {
     const [totalTests, setTotalTests] = useState(0);
     const [testsCreatedToday, setTestsCreatedToday] = useState(0);
     const [loading, setLoading] = useState(true);
+    const chart = useChartTheme();
 
     useEffect(() => {
         let cancelled = false;
@@ -189,23 +191,23 @@ export default function DashboardPage() {
     const recentRuns = useMemo(() => runs.slice(0, 8), [runs]);
 
     return (
-        <div className="p-8 max-w-7xl mx-auto flex flex-col gap-8 h-full overflow-y-auto custom-scrollbar">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto flex flex-col gap-6 lg:gap-8 h-full overflow-y-auto custom-scrollbar">
 
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-white leading-tight">Dashboard</h1>
-                    <p className="text-textSecondary/80 text-sm mt-1">Visão geral das execuções e saúde dos testes.</p>
+                    <h1 className="text-2xl font-bold text-foreground leading-tight">Dashboard</h1>
+                    <p className="text-muted-foreground text-sm mt-1">Visão geral das execuções e saúde dos testes.</p>
                 </div>
                 {loading && (
-                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
                         <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando…
                     </div>
                 )}
             </div>
 
             {/* KPIs */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <KPICard
                     title="Total de Testes"
                     value={String(totalTests)}
@@ -253,32 +255,29 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                 {/* Line Chart — runs por dia */}
-                <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-black/5 min-h-[350px]">
-                    <h3 className="text-sm font-bold text-slate-800 mb-6 uppercase tracking-wider">Execuções — Últimos 7 dias</h3>
+                <div className="lg:col-span-2 bg-card rounded-2xl p-4 sm:p-6 shadow-sm border border-border min-h-[350px]">
+                    <h3 className="text-sm font-bold text-foreground mb-6 uppercase tracking-wider">Execuções — Últimos 7 dias</h3>
                     <div className="h-[280px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={dailyStats} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-                                <XAxis dataKey="date" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
-                                <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
-                                <Tooltip
-                                    contentStyle={{ backgroundColor: '#fff', border: '1px solid rgba(0,0,0,0.05)', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                                    itemStyle={{ fontSize: '13px', color: '#1e293b' }}
-                                />
-                                <Line type="monotone" name="Passou" dataKey="passed" stroke="#22c55e" strokeWidth={4} dot={{ r: 4, fill: '#22c55e', strokeWidth: 2, stroke: '#fff' }} />
-                                <Line type="monotone" name="Falhou" dataKey="failed" stroke="#ef4444" strokeWidth={4} dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }} />
+                                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
+                                <XAxis dataKey="date" stroke={chart.axis} fontSize={11} tickLine={false} axisLine={false} />
+                                <YAxis stroke={chart.axis} fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                                <Tooltip contentStyle={chart.tooltip} itemStyle={chart.tooltipItem} />
+                                <Line type="monotone" name="Passou" dataKey="passed" stroke={chart.series.passed} strokeWidth={4} dot={{ r: 4, fill: chart.series.passed, strokeWidth: 2, stroke: chart.dotStroke }} />
+                                <Line type="monotone" name="Falhou" dataKey="failed" stroke={chart.series.failed} strokeWidth={4} dot={{ r: 4, fill: chart.series.failed, strokeWidth: 2, stroke: chart.dotStroke }} />
                             </LineChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
 
                 {/* Donut — bugs por severidade */}
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-black/5 min-h-[350px] flex flex-col">
-                    <h3 className="text-sm font-bold text-slate-800 mb-6 uppercase tracking-wider">Bugs por Severidade (30d)</h3>
+                <div className="bg-card rounded-2xl p-4 sm:p-6 shadow-sm border border-border min-h-[350px] flex flex-col">
+                    <h3 className="text-sm font-bold text-foreground mb-6 uppercase tracking-wider">Bugs por Severidade (30d)</h3>
                     <div className="flex-1 flex items-center justify-center -mt-4">
                         <div className="h-[200px] w-full">
                             {bugs.length === 0 ? (
-                                <div className="h-full flex items-center justify-center text-slate-400 text-xs text-center px-4">
+                                <div className="h-full flex items-center justify-center text-muted-foreground text-xs text-center px-4">
                                     Nenhum bug registrado nos últimos 30 dias
                                 </div>
                             ) : (
@@ -296,10 +295,7 @@ export default function DashboardPage() {
                                                 <Cell key={`cell-${index}`} fill={entry.color} />
                                             ))}
                                         </Pie>
-                                        <Tooltip
-                                            contentStyle={{ backgroundColor: '#fff', border: '1px solid rgba(0,0,0,0.05)', borderRadius: '12px' }}
-                                            itemStyle={{ fontSize: '12px', color: '#1e293b' }}
-                                        />
+                                        <Tooltip contentStyle={chart.tooltip} itemStyle={chart.tooltipItem} />
                                     </PieChart>
                                 </ResponsiveContainer>
                             )}
@@ -307,9 +303,9 @@ export default function DashboardPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-3 mt-4">
                         {severityData.map(item => (
-                            <div key={item.name} className="flex items-center gap-2 text-xs text-slate-500">
+                            <div key={item.name} className="flex items-center gap-2 text-xs text-muted-foreground">
                                 <span className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
-                                <span className="font-semibold">{item.name}:</span> <span className="text-slate-900 font-bold">{item.value}</span>
+                                <span className="font-semibold">{item.name}:</span> <span className="text-foreground font-bold">{item.value}</span>
                             </div>
                         ))}
                     </div>
@@ -318,13 +314,13 @@ export default function DashboardPage() {
             </div>
 
             {/* Recent Runs Table */}
-            <div className="bg-white rounded-2xl shadow-sm border border-black/5 flex flex-col overflow-hidden">
-                <div className="p-6 border-b border-black/5">
-                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Execuções Recentes</h3>
+            <div className="bg-card rounded-2xl shadow-sm border border-border flex flex-col overflow-hidden">
+                <div className="p-6 border-b border-border">
+                    <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">Execuções Recentes</h3>
                 </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm text-slate-600">
-                        <thead className="text-[10px] uppercase bg-slate-50/50 text-slate-400 font-bold tracking-widest">
+                <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left text-sm text-muted-foreground">
+                        <thead className="text-[10px] uppercase bg-surface-muted/50 text-muted-foreground font-bold tracking-widest">
                             <tr>
                                 <th className="px-6 py-4">Teste</th>
                                 <th className="px-6 py-4">Projeto</th>
@@ -334,10 +330,10 @@ export default function DashboardPage() {
                                 <th className="px-6 py-4 text-right">Ação</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-black/[0.03]">
+                        <tbody className="divide-y divide-border">
                             {loading && (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-10 text-center text-slate-400 text-sm">
+                                    <td colSpan={6} className="px-6 py-10 text-center text-muted-foreground text-sm">
                                         <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
                                         Carregando...
                                     </td>
@@ -345,20 +341,20 @@ export default function DashboardPage() {
                             )}
                             {!loading && recentRuns.length === 0 && (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-10 text-center text-slate-400 text-sm">
+                                    <td colSpan={6} className="px-6 py-10 text-center text-muted-foreground text-sm">
                                         Nenhuma execução registrada ainda. Rode um teste no editor ou no Maestro Studio.
                                     </td>
                                 </tr>
                             )}
                             {!loading && recentRuns.map((run) => (
-                                <tr key={run.id} className="hover:bg-slate-50/30 transition-colors">
-                                    <td className="px-6 py-4 font-bold text-slate-900">{run.test_cases?.name || '—'}</td>
+                                <tr key={run.id} className="hover:bg-accent/40 transition-colors">
+                                    <td className="px-6 py-4 font-bold text-foreground">{run.test_cases?.name || '—'}</td>
                                     <td className="px-6 py-4 text-xs">{run.projects?.name || '—'}</td>
                                     <td className="px-6 py-4">
                                         <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${
-                                            run.status === 'passed' ? 'bg-green-500/10 text-green-700' :
-                                            run.status === 'failed' ? 'bg-red-500/10 text-red-700' :
-                                            'bg-slate-100 text-slate-500'
+                                            run.status === 'passed' ? 'bg-success/10 text-success' :
+                                            run.status === 'failed' ? 'bg-danger/10 text-danger' :
+                                            'bg-muted text-muted-foreground'
                                         }`}>
                                             {run.status === 'passed' ? 'Passou' :
                                              run.status === 'failed' ? 'Falhou' :
@@ -368,7 +364,7 @@ export default function DashboardPage() {
                                     <td className="px-6 py-4 text-xs">{formatDuration(run.duration_ms)}</td>
                                     <td className="px-6 py-4 text-xs">{formatWhen(run.started_at)}</td>
                                     <td className="px-6 py-4 text-right">
-                                        <Link href={`/dashboard/tests/editor?testId=${run.test_case_id}`} className="text-brand hover:text-brandLight text-xs font-semibold hover:underline">
+                                        <Link href={`/dashboard/tests/editor?testId=${run.test_case_id}`} className="text-brand hover:text-brandLight text-xs font-semibold hover:underline whitespace-nowrap">
                                             Abrir →
                                         </Link>
                                     </td>
@@ -381,8 +377,8 @@ export default function DashboardPage() {
 
             {/* Heads-up if a chart is empty because the migration hasn't run */}
             {!loading && runs.length === 0 && totalTests > 0 && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-800 text-xs">
-                    Há testes cadastrados mas nenhuma execução foi registrada ainda. Se você rodou testes mas eles não aparecem aqui, aplique a migration <code className="font-mono bg-amber-100 px-1.5 py-0.5 rounded">supabase/migrations/002_test_runs_bugs.sql</code> no SQL Editor do Supabase.
+                <div className="bg-warning/10 border border-warning/30 rounded-xl p-4 text-warning text-xs">
+                    Há testes cadastrados mas nenhuma execução foi registrada ainda. Se você rodou testes mas eles não aparecem aqui, aplique a migration <code className="font-mono bg-warning/15 px-1.5 py-0.5 rounded">supabase/migrations/002_test_runs_bugs.sql</code> no SQL Editor do Supabase.
                 </div>
             )}
 
@@ -398,16 +394,16 @@ function KPICard({ title, value, trend, trendUp, icon: Icon }: {
     icon: LucideIcon;
 }) {
     return (
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-black/5 flex flex-col justify-between group hover:border-brand/20 hover:shadow-md transition-all h-[140px]">
+        <div className="bg-card rounded-2xl p-6 shadow-sm border border-border flex flex-col justify-between group hover:border-brand/30 hover:shadow-md transition-all h-[140px]">
             <div className="flex items-start justify-between">
-                <span className="text-slate-500 text-xs font-bold uppercase tracking-wider">{title}</span>
-                <div className="p-2 bg-slate-50 rounded-lg text-slate-400 group-hover:text-brand group-hover:bg-brand/10 transition-colors">
+                <span className="text-muted-foreground text-xs font-bold uppercase tracking-wider">{title}</span>
+                <div className="p-2 bg-surface-muted rounded-lg text-muted-foreground group-hover:text-brand group-hover:bg-brand/10 transition-colors">
                     <Icon className="w-4 h-4" />
                 </div>
             </div>
             <div className="mt-2">
-                <h3 className="text-2xl font-black text-slate-900 tracking-tight">{value}</h3>
-                <p className={`text-xs mt-1 font-bold ${trendUp ? 'text-green-500' : 'text-slate-400'}`}>
+                <h3 className="text-2xl font-black text-foreground tracking-tight">{value}</h3>
+                <p className={`text-xs mt-1 font-bold ${trendUp ? 'text-success' : 'text-muted-foreground'}`}>
                     {trend}
                 </p>
             </div>

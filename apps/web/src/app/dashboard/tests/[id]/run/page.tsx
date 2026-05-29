@@ -55,17 +55,17 @@ export default function TestPlayerPage({ params }: { params: { id: string } }) {
         <div className="flex flex-col h-[calc(100vh-64px)] overflow-hidden">
 
             {/* Header */}
-            <div className="flex-none bg-bgSecondary border-b border-white/5 p-4 flex items-center justify-between z-10">
+            <div className="flex-none bg-bgSecondary border-b border-border p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between z-10">
                 <div className="flex items-center gap-4">
-                    <Link href={`/tests/${params.id}/edit`} className="p-2 -ml-2 text-textSecondary hover:text-white rounded-lg transition-colors">
+                    <Link href={`/tests/${params.id}/edit`} className="p-2 -ml-2 text-textSecondary hover:text-foreground rounded-lg transition-colors">
                         <ChevronLeft className="w-5 h-5" />
                     </Link>
                     <div>
-                        <h1 className="text-xl font-semibold text-white">Live Run: {testCase.name}</h1>
+                        <h1 className="text-xl font-semibold text-foreground">Live Run: {testCase.name}</h1>
                         <div className="flex items-center gap-2 mt-1">
                             <span className={`text-xs font-semibold uppercase tracking-wider ${runStatus === 'running' ? 'text-brand' :
-                                runStatus === 'passed' ? 'text-green-400' :
-                                    runStatus === 'failed' ? 'text-red-400' :
+                                runStatus === 'passed' ? 'text-success' :
+                                    runStatus === 'failed' ? 'text-danger' :
                                         'text-textSecondary'
                                 }`}>
                                 ● {runStatus}
@@ -75,7 +75,7 @@ export default function TestPlayerPage({ params }: { params: { id: string } }) {
                 </div>
 
                 {/* Playback Controls */}
-                <div className="flex bg-black/50 rounded-lg p-1 border border-white/10">
+                <div className="flex bg-foreground/10 rounded-lg p-1 border border-border">
                     {(runStatus === 'pending' || runStatus === 'cancelled' || runStatus === 'passed' || runStatus === 'failed') ? (
                         <button
                             onClick={handleStart}
@@ -87,7 +87,7 @@ export default function TestPlayerPage({ params }: { params: { id: string } }) {
                     ) : (
                         <button
                             onClick={handleStop}
-                            className="flex items-center gap-2 bg-red-500/10 text-red-500 hover:bg-red-500/20 font-medium text-sm px-6 py-2 rounded-md transition-colors"
+                            className="flex items-center gap-2 bg-danger/10 text-danger hover:bg-danger/20 font-medium text-sm px-6 py-2 rounded-md transition-colors"
                         >
                             <Square className="w-4 h-4 fill-current" />
                             Stop
@@ -97,18 +97,18 @@ export default function TestPlayerPage({ params }: { params: { id: string } }) {
             </div>
 
             {/* Main Execution View */}
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
 
                 {/* Device Stream (Center stage) */}
-                <div className="flex-[3] bg-bgPrimary relative border-r border-white/5 flex flex-col">
+                <div className="flex-[3] bg-bgPrimary relative border-b lg:border-b-0 lg:border-r border-border flex flex-col">
                     <DevicePreview screenshotUrl={screenshotUrl} status={runStatus} />
                 </div>
 
                 {/* Info Panel (Right Sidebar) */}
-                <div className="flex-[2] flex flex-col min-w-[320px] max-w-[500px] bg-bgSecondary">
+                <div className="flex-[2] flex flex-col w-full lg:min-w-[320px] lg:max-w-[500px] bg-bgSecondary">
 
                     {/* Top Half: Step List locked to current execution */}
-                    <div className="flex-1 overflow-y-auto p-4 border-b border-white/5 custom-scrollbar bg-bgPrimary">
+                    <div className="flex-1 overflow-y-auto p-4 border-b border-border custom-scrollbar bg-bgPrimary">
                         <h3 className="text-sm font-semibold text-textSecondary mb-4">Progresso ({testCase.steps.length} Steps)</h3>
                         <div className="space-y-2 opacity-90 pointer-events-none">
                             {testCase.steps.map((step, index) => {
@@ -134,18 +134,18 @@ export default function TestPlayerPage({ params }: { params: { id: string } }) {
                     {/* Bottom Half: Logs & Bug Report */}
                     <div className="flex-[0.8] flex flex-col p-4 bg-bgSecondary">
                         {bugReport && (
-                            <div className="mb-4 bg-red-500/10 border border-red-500/20 rounded-lg p-4 flex flex-col gap-2">
+                            <div className="mb-4 bg-danger/10 border border-danger/20 rounded-lg p-4 flex flex-col gap-2">
                                 <div className="flex items-start justify-between">
-                                    <div className="flex items-center gap-2 text-red-400 font-semibold text-sm">
+                                    <div className="flex items-center gap-2 text-danger font-semibold text-sm">
                                         <span>🐛 Report Gerado pela IA</span>
                                     </div>
-                                    <span className="uppercase text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">
+                                    <span className="uppercase text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-full bg-danger/20 text-danger">
                                         {bugReport.severity}
                                     </span>
                                 </div>
-                                <h4 className="text-white text-sm font-medium leading-tight">{bugReport.title}</h4>
+                                <h4 className="text-foreground text-sm font-medium leading-tight">{bugReport.title}</h4>
                                 <div className="mt-2 flex items-center gap-3">
-                                    <a href={bugReport.pdf_url} target="_blank" rel="noreferrer" className="text-xs bg-bgPrimary hover:bg-white/5 border border-white/10 text-white px-3 py-1.5 rounded transition-colors w-max">
+                                    <a href={bugReport.pdf_url} target="_blank" rel="noreferrer" className="text-xs bg-bgPrimary hover:bg-accent border border-border text-foreground px-3 py-1.5 rounded transition-colors w-max">
                                         Baixar PDF
                                     </a>
                                 </div>

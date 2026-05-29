@@ -71,47 +71,47 @@ export function StepPreview({ state, onBack }: Props) {
 
     return (
         <div className="flex flex-col gap-5">
-            <p className="text-sm text-slate-300">
+            <p className="text-sm text-muted-foreground">
                 Preview de como as primeiras linhas serão importadas. Confira antes de salvar.
             </p>
 
-            <div className="bg-white/[0.02] border border-white/10 rounded-xl overflow-auto max-h-[400px]">
+            <div className="bg-foreground/[0.02] border border-border rounded-xl overflow-auto max-h-[400px]">
                 <table className="w-full text-xs text-left">
-                    <thead className="sticky top-0 bg-[#0A0C14] z-10">
-                        <tr className="border-b border-white/10">
-                            <th className="px-3 py-2 w-12 text-slate-400 font-bold">#</th>
-                            <th className="px-3 py-2 text-slate-400 font-bold">ID externo</th>
-                            <th className="px-3 py-2 text-slate-400 font-bold">Jornada</th>
-                            <th className="px-3 py-2 text-slate-400 font-bold">Sub-fluxo</th>
-                            <th className="px-3 py-2 text-slate-400 font-bold">Título</th>
-                            <th className="px-3 py-2 text-slate-400 font-bold">Prioridade</th>
-                            <th className="px-3 py-2 text-slate-400 font-bold">Automação</th>
-                            <th className="px-3 py-2 text-slate-400 font-bold">Validação</th>
+                    <thead className="sticky top-0 bg-card z-10">
+                        <tr className="border-b border-border">
+                            <th className="px-3 py-2 w-12 text-muted-foreground font-bold">#</th>
+                            <th className="px-3 py-2 text-muted-foreground font-bold">ID externo</th>
+                            <th className="px-3 py-2 text-muted-foreground font-bold">Jornada</th>
+                            <th className="px-3 py-2 text-muted-foreground font-bold">Sub-fluxo</th>
+                            <th className="px-3 py-2 text-muted-foreground font-bold">Título</th>
+                            <th className="px-3 py-2 text-muted-foreground font-bold">Prioridade</th>
+                            <th className="px-3 py-2 text-muted-foreground font-bold">Automação</th>
+                            <th className="px-3 py-2 text-muted-foreground font-bold">Validação</th>
                         </tr>
                     </thead>
                     <tbody>
                         {mappedRows.map((row, i) => {
                             const sheetRow = state.dataStartRow + i;
                             return (
-                                <tr key={i} className={row.valid ? 'border-b border-white/5' : 'border-b border-white/5 bg-red-500/5'}>
-                                    <td className="px-3 py-2 text-slate-500 font-mono">{sheetRow}</td>
-                                    <td className="px-3 py-2 font-mono text-xs text-slate-300">{row.values.external_id || '—'}</td>
-                                    <td className="px-3 py-2 text-slate-200">{row.values.journey || '—'}</td>
-                                    <td className="px-3 py-2 text-slate-200">{row.values.subflow || '—'}</td>
-                                    <td className="px-3 py-2 text-slate-200 max-w-[200px] truncate">{row.values.title || '—'}</td>
-                                    <td className="px-3 py-2 text-slate-300">{row.values.priority || '—'}</td>
-                                    <td className="px-3 py-2 text-slate-300">{row.values.automation_status || '—'}</td>
+                                <tr key={i} className={row.valid ? 'border-b border-border' : 'border-b border-border bg-danger/5'}>
+                                    <td className="px-3 py-2 text-muted-foreground font-mono">{sheetRow}</td>
+                                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{row.values.external_id || '—'}</td>
+                                    <td className="px-3 py-2 text-foreground">{row.values.journey || '—'}</td>
+                                    <td className="px-3 py-2 text-foreground">{row.values.subflow || '—'}</td>
+                                    <td className="px-3 py-2 text-foreground max-w-[200px] truncate">{row.values.title || '—'}</td>
+                                    <td className="px-3 py-2 text-muted-foreground">{row.values.priority || '—'}</td>
+                                    <td className="px-3 py-2 text-muted-foreground">{row.values.automation_status || '—'}</td>
                                     <td className="px-3 py-2">
                                         {row.valid
-                                            ? <span className="text-green-400 inline-flex items-center gap-1 text-xs"><CheckCircle2 className="w-3 h-3" />OK</span>
-                                            : <span className="text-red-400 text-xs">{row.reason}</span>}
+                                            ? <span className="text-success inline-flex items-center gap-1 text-xs"><CheckCircle2 className="w-3 h-3" />OK</span>
+                                            : <span className="text-danger text-xs">{row.reason}</span>}
                                     </td>
                                 </tr>
                             );
                         })}
                         {mappedRows.length === 0 && (
                             <tr>
-                                <td colSpan={8} className="px-3 py-6 text-center text-slate-500 text-xs">
+                                <td colSpan={8} className="px-3 py-6 text-center text-muted-foreground text-xs">
                                     Nenhuma linha encontrada nas primeiras 10 da planilha. Verifique se &quot;data_start_row&quot; está correto.
                                 </td>
                             </tr>
@@ -121,16 +121,16 @@ export function StepPreview({ state, onBack }: Props) {
             </div>
 
             {error && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-400">{error}</div>
+                <div className="bg-danger/10 border border-danger/30 rounded-lg px-3 py-2 text-xs text-danger">{error}</div>
             )}
 
-            <div className="flex justify-between pt-4 border-t border-white/10">
-                <button onClick={onBack} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Voltar</button>
+            <div className="flex justify-between pt-4 border-t border-border">
+                <button onClick={onBack} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Voltar</button>
                 <div className="flex gap-3">
                     <button
                         onClick={saveOnly}
                         disabled={saving || running}
-                        className="border border-white/10 text-slate-200 px-4 py-2 rounded-lg text-sm font-bold hover:bg-white/5 disabled:opacity-50 flex items-center gap-2"
+                        className="border border-border text-foreground px-4 py-2 rounded-lg text-sm font-bold hover:bg-accent disabled:opacity-50 flex items-center gap-2"
                     >
                         {saving && !running && <Loader2 className="w-4 h-4 animate-spin" />}
                         <Save className="w-4 h-4" />
@@ -139,7 +139,7 @@ export function StepPreview({ state, onBack }: Props) {
                     <button
                         onClick={saveAndSync}
                         disabled={saving || running}
-                        className="bg-brand text-black px-5 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50 flex items-center gap-2"
+                        className="bg-brand text-white px-5 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50 flex items-center gap-2"
                     >
                         {(saving || running) && <Loader2 className="w-4 h-4 animate-spin" />}
                         {running ? 'Sincronizando…' : 'Salvar e sincronizar agora'}

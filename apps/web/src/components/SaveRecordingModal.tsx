@@ -80,12 +80,12 @@ export function SaveRecordingModal({
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[#0C0F1A] border border-white/10 rounded-2xl shadow-2xl w-full max-w-md">
-                <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-                    <h2 className="text-lg font-bold text-white">Salvar Teste Gravado</h2>
+            <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+                    <h2 className="text-lg font-bold text-foreground">Salvar Teste Gravado</h2>
                     <button
                         onClick={onCancel}
-                        className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                        className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
                     >
                         <X className="w-5 h-5" />
                     </button>
@@ -93,7 +93,7 @@ export function SaveRecordingModal({
 
                 <div className="px-6 py-5 flex flex-col gap-4">
                     <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
                             Nome do teste
                         </label>
                         <input
@@ -101,17 +101,17 @@ export function SaveRecordingModal({
                             value={testName}
                             onChange={(e) => setTestName(e.target.value)}
                             placeholder="Ex: Login com credenciais validas"
-                            className="bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand/50"
+                            className="bg-background border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-brand/50"
                             autoFocus
                         />
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
                             Projeto
                         </label>
                         {loadingProjects ? (
-                            <div className="flex items-center gap-2 px-3 py-2.5 text-sm text-slate-500">
+                            <div className="flex items-center gap-2 px-3 py-2.5 text-sm text-muted-foreground">
                                 <Loader2 className="w-4 h-4 animate-spin" />
                                 Carregando projetos...
                             </div>
@@ -119,7 +119,7 @@ export function SaveRecordingModal({
                             <select
                                 value={projectId}
                                 onChange={(e) => setProjectId(e.target.value)}
-                                className="bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-brand/50"
+                                className="bg-background border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-brand/50"
                             >
                                 {projects.map((p) => (
                                     <option key={p.id} value={p.id}>
@@ -130,11 +130,11 @@ export function SaveRecordingModal({
                         )}
                     </div>
 
-                    <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-3">
-                        <div className="text-xs text-slate-400">
-                            <span className="font-bold text-white">{stepCount}</span> passos gravados
-                            <span className="mx-2 text-white/20">|</span>
-                            <span className="font-bold text-white">{formatDuration(durationSeconds)}</span> de duracao
+                    <div className="bg-foreground/5 border border-border rounded-lg px-4 py-3">
+                        <div className="text-xs text-muted-foreground">
+                            <span className="font-bold text-foreground">{stepCount}</span> passos gravados
+                            <span className="mx-2 text-foreground/20">|</span>
+                            <span className="font-bold text-foreground">{formatDuration(durationSeconds)}</span> de duracao
                             {engine === 'maestro' && (
                                 <span className="ml-2 px-1.5 py-0.5 bg-purple-500/20 text-purple-400 text-[9px] font-bold rounded">maestro</span>
                             )}
@@ -144,7 +144,7 @@ export function SaveRecordingModal({
                     {engine === 'maestro' && editableYaml && (
                         <div className="flex flex-col gap-1.5">
                             <div className="flex items-center justify-between">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
                                     YAML Maestro
                                 </label>
                                 <button
@@ -158,16 +158,16 @@ export function SaveRecordingModal({
                                 <textarea
                                     value={editableYaml}
                                     onChange={(e) => setEditableYaml(e.target.value)}
-                                    className="bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-xs text-green-300 font-mono focus:outline-none focus:border-brand/50 min-h-[200px] resize-y"
+                                    className="bg-background border border-border rounded-lg px-3 py-2.5 text-xs text-green-300 font-mono focus:outline-none focus:border-brand/50 min-h-[200px] resize-y"
                                     spellCheck={false}
                                 />
                             ) : (
-                                <pre className="bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-xs text-green-300 font-mono max-h-[200px] overflow-y-auto">
+                                <pre className="bg-background border border-border rounded-lg px-3 py-2.5 text-xs text-green-300 font-mono max-h-[200px] overflow-y-auto">
                                     {editableYaml}
                                 </pre>
                             )}
                             {yamlValidationError && (
-                                <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded px-2 py-1">
+                                <p className="text-xs text-danger bg-danger/10 border border-danger/20 rounded px-2 py-1">
                                     {yamlValidationError}
                                 </p>
                             )}
@@ -175,10 +175,10 @@ export function SaveRecordingModal({
                     )}
                 </div>
 
-                <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/10">
+                <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
                     <button
                         onClick={onCancel}
-                        className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+                        className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
                     >
                         Cancelar
                     </button>

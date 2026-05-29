@@ -48,13 +48,13 @@ export function SheetWizard({ projectId }: Props) {
                     return (
                         <div key={s.n} className="flex items-center gap-2 flex-1">
                             <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                                done ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                                : active ? 'bg-brand text-black border border-brand'
-                                : 'bg-white/5 text-slate-500 border border-white/10'
+                                done ? 'bg-success/20 text-success border border-success/30'
+                                : active ? 'bg-brand text-white border border-brand'
+                                : 'bg-foreground/5 text-muted-foreground border border-border'
                             }`}>{s.n}</div>
-                            <span className={`text-xs ${active ? 'text-white font-bold' : done ? 'text-slate-400' : 'text-slate-500'}`}>{s.label}</span>
+                            <span className={`text-xs ${active ? 'text-foreground font-bold' : done ? 'text-muted-foreground' : 'text-muted-foreground'}`}>{s.label}</span>
                             {i < STEPS.length - 1 && (
-                                <div className={`flex-1 h-px ${done ? 'bg-green-500/30' : 'bg-white/10'}`} />
+                                <div className={`flex-1 h-px ${done ? 'bg-success/30' : 'bg-foreground/10'}`} />
                             )}
                         </div>
                     );
@@ -62,7 +62,7 @@ export function SheetWizard({ projectId }: Props) {
             </div>
 
             {/* Body */}
-            <div className="bg-[#0A0C14] border border-white/10 rounded-2xl p-6">
+            <div className="bg-card border border-border rounded-2xl p-6">
                 {step === 1 && (
                     <StepSelectSheet
                         state={state}
