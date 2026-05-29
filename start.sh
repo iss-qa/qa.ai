@@ -129,6 +129,79 @@ check_env "$DAEMON_DIR/.env" "SUPABASE_URL"
 check_env "$ROOT_DIR/apps/web/.env.local" "NEXT_PUBLIC_SUPABASE_URL"
 check_env "$ROOT_DIR/apps/web/.env.local" "NEXT_PUBLIC_SUPABASE_ANON_KEY"
 
+# ── 4b. Backend Fastify (apps/api) — Etapa 9 (integrations + qa-journey sync) ──
+echo ""
+echo -e "${INFO} Verificando apps/api/.env (Fastify)..."
+
+API_ENV="$ROOT_DIR/apps/api/.env"
+
+# Garante o arquivo
+if [ ! -f "$API_ENV" ]; then
+    echo -e "  ${FAIL} $API_ENV nao encontrado. A API Fastify nao vai subir."
+    echo -e "  ${INFO} Crie o arquivo com: PORT=3001, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY."
+    exit 1
+fi
+
+check_env "$API_ENV" "PORT"
+check_env "$API_ENV" "SUPABASE_URL"
+check_env "$API_ENV" "SUPABASE_SERVICE_ROLE_KEY"
+
+# DEFAULT_ORG_SLUG — opcional (default "foxbit"). Se faltar, adiciona.
+if ! grep -q "^DEFAULT_ORG_SLUG=" "$API_ENV" 2>/dev/null; then
+    echo -e "  ${WARN} DEFAULT_ORG_SLUG ausente — adicionando default 'foxbit'"
+    printf '\n# Org default usada por integrations (Etapa 9)\nDEFAULT_ORG_SLUG=foxbit\n' >> "$API_ENV"
+fi
+check_env "$API_ENV" "DEFAULT_ORG_SLUG"
+
+# INTEGRATIONS_ENCRYPTION_KEY — obrigatoria. Se faltar, gera nova.
+# Se voce trocar esta chave depois, todas as creds gravadas viram lixo.
+if ! grep -q "^INTEGRATIONS_ENCRYPTION_KEY=" "$API_ENV" 2>/dev/null; then
+    NEW_KEY=$(openssl rand -base64 32 2>/dev/null)
+    if [ -z "$NEW_KEY" ]; then
+        echo -e "  ${FAIL} openssl nao disponivel. Defina INTEGRATIONS_ENCRYPTION_KEY manualmente em $API_ENV."
+        exit 1
+    fi
+    echo -e "  ${WARN} INTEGRATIONS_ENCRYPTION_KEY ausente — gerando nova chave AES-256."
+    echo -e "  ${YELLOW}  >>> ANOTE A CHAVE NO SEU GERENCIADOR DE SENHAS <<<${NC}"
+    echo -e "  ${YELLOW}  >>> Se perde-la, todas as creds cifradas viram lixo. <<<${NC}"
+    printf '\n# AES-256-GCM para cifrar credenciais em org_integrations.\n# Anote esta chave em local seguro - se perder, creds cifradas viram lixo.\n# Para rotacionar: openssl rand -base64 32\nINTEGRATIONS_ENCRYPTION_KEY=%s\n' "$NEW_KEY" >> "$API_ENV"
+    echo -e "  ${OK} INTEGRATIONS_ENCRYPTION_KEY gerado e gravado em $API_ENV"
+else
+    # Valida formato (32 bytes em base64 = 44 chars com 1 padding "=")
+    KEY_VAL=$(grep "^INTEGRATIONS_ENCRYPTION_KEY=" "$API_ENV" | cut -d= -f2- | head -c 60)
+    KEY_BYTES=$(echo -n "$KEY_VAL" | base64 -d 2>/dev/null | wc -c | tr -d ' ')
+    if [ "$KEY_BYTES" = "32" ]; then
+        echo -e "  ${OK} INTEGRATIONS_ENCRYPTION_KEY valida (32 bytes apos base64)"
+    else
+        echo -e "  ${WARN} INTEGRATIONS_ENCRYPTION_KEY presente mas com tamanho inesperado ($KEY_BYTES bytes, esperado 32)."
+        echo -e "  ${INFO} Para regenerar: remova a linha em $API_ENV e re-execute start.sh."
+    fi
+fi
+
+# ── 4c. Web ↔ API: NEXT_PUBLIC_API_URL ─────────────────────────────────────────
+echo ""
+echo -e "${INFO} Verificando apps/web/.env.local (link com a API)..."
+
+WEB_ENV="$ROOT_DIR/apps/web/.env.local"
+if [ -f "$WEB_ENV" ]; then
+    if ! grep -q "^NEXT_PUBLIC_API_URL=" "$WEB_ENV" 2>/dev/null; then
+        echo -e "  ${WARN} NEXT_PUBLIC_API_URL ausente — adicionando http://localhost:3001"
+        printf '\n# URL da API Fastify (rotas /integrations e /qa-journey)\nNEXT_PUBLIC_API_URL=http://localhost:3001\n' >> "$WEB_ENV"
+    fi
+    check_env "$WEB_ENV" "NEXT_PUBLIC_API_URL"
+fi
+
+# ── 4d. node_modules das apps (api + web) ──────────────────────────────────────
+echo ""
+echo -e "${INFO} Verificando node_modules das apps..."
+for app in api web; do
+    if [ -d "$ROOT_DIR/apps/$app/node_modules" ]; then
+        echo -e "  ${OK} apps/$app/node_modules presente"
+    else
+        echo -e "  ${WARN} apps/$app/node_modules ausente — pnpm install completo sera disparado depois"
+    fi
+done
+
 # ── 5. Validar conectividade com Supabase ──────────────────────────────────────
 echo ""
 echo -e "${INFO} Testando conexão com Supabase..."
@@ -153,6 +226,48 @@ if [ -n "$SUPA_URL" ] && [ -n "$SUPA_KEY" ]; then
     fi
 else
     echo -e "  ${WARN} Variáveis do Supabase não configuradas — pulando teste"
+fi
+
+# ── 5b. Validar migrations aplicadas (Etapa 9) ────────────────────────────────
+# Verifica se as tabelas das migrations recentes existem.
+# PostgREST retorna 200 (com dados) ou 404 (tabela inexistente).
+echo ""
+echo -e "${INFO} Verificando migrations Supabase aplicadas..."
+
+check_table() {
+    local table="$1"
+    local file="$2"
+    if [ -z "$SUPA_URL" ] || [ -z "$SUPA_KEY" ]; then
+        return 2
+    fi
+    local code
+    code=$(curl -s -o /dev/null -w "%{http_code}" \
+        "${SUPA_URL}/rest/v1/${table}?select=id&limit=1" \
+        -H "apikey: ${SUPA_KEY}" \
+        -H "Authorization: Bearer ${SUPA_KEY}" \
+        --max-time 5 2>/dev/null || echo "000")
+    if [ "$code" = "200" ]; then
+        echo -e "  ${OK} tabela ${table} (migration ${file})"
+        return 0
+    elif [ "$code" = "404" ]; then
+        echo -e "  ${FAIL} tabela ${table} AUSENTE — aplique ${YELLOW}${file}${NC} no SQL Editor do Supabase"
+        return 1
+    else
+        echo -e "  ${WARN} tabela ${table}: HTTP $code (esperado 200) — pode ser RLS, prossiga"
+        return 0
+    fi
+}
+
+MIGRATIONS_OK=true
+check_table "qa_journeys"             "supabase_migration_qa_journey.sql"     || MIGRATIONS_OK=false
+check_table "qa_journey_sheet_configs" "supabase_migration_qa_journey.sql"    || MIGRATIONS_OK=false
+check_table "organizations"           "supabase_migration_organizations.sql"  || MIGRATIONS_OK=false
+check_table "org_integrations"        "supabase_migration_organizations.sql"  || MIGRATIONS_OK=false
+
+if [ "$MIGRATIONS_OK" = "false" ]; then
+    echo ""
+    echo -e "  ${YELLOW}>>> Sem essas migrations, /dashboard/qa-journey e /dashboard/settings/integrations vao acusar erro.${NC}"
+    echo -e "  ${INFO} Abra o SQL Editor do Supabase e rode os arquivos .sql listados acima."
 fi
 
 # ── 6. Verificar e reiniciar ADB ───────────────────────────────────────────────
@@ -310,7 +425,27 @@ else
     tail -15 "$DAEMON_LOG" 2>/dev/null | sed 's/^/      /'
 fi
 
-# ── 9. Iniciar Web + API com Turborepo ─────────────────────────────────────────
+# ── 9. Health-check assincrono da API Fastify (em background) ─────────────────
+# Roda em paralelo ao turbo: aguarda ate 30s pela /health, mostra warning se nao.
+(
+    sleep 4  # turbo + tsx precisam de uns segundos
+    for i in $(seq 1 26); do
+        if curl -s --max-time 1 "http://localhost:3001/health" &>/dev/null; then
+            echo -e "  ${OK} API Fastify respondendo em http://localhost:3001"
+            exit 0
+        fi
+        sleep 1
+    done
+    echo ""
+    echo -e "${RED}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${FAIL} API Fastify NAO respondeu em 30s na porta 3001."
+    echo -e "   Sem ela, /dashboard/settings/integrations e o sync de planilhas FALHAM."
+    echo -e "   Olhe a saida do turbo acima para o erro (provavel: env var faltando,"
+    echo -e "   migration ausente, ou porta 3001 em uso por outro processo)."
+    echo -e "${RED}═══════════════════════════════════════════════════════════${NC}"
+) &
+
+# ── 10. Iniciar Web + API com Turborepo ────────────────────────────────────────
 echo ""
 echo -e "${BOLD}${GREEN}══════════════════════════════════════${NC}"
 echo -e "${OK} Dashboard:  ${BOLD}http://localhost:3000${NC}"

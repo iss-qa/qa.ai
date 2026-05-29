@@ -1,0 +1,70 @@
+// Tipos da feature "Jornada do QA" (Parte 9).
+// Espelham o schema definido em supabase_migration_qa_journey.sql.
+
+export type AutomationStatus = 'automated' | 'partial' | 'manual' | 'none';
+export type CasePriority = 'low' | 'medium' | 'high' | 'critical';
+export type CaseRunStatus = 'pass' | 'fail' | 'skipped' | 'not_run';
+export type SyncSource = 'google_sheets' | 'jira' | 'manual';
+export type SyncStatus = 'running' | 'success' | 'error';
+
+export interface QAJourney {
+    id: string;
+    project_id: string;
+    slug: string;
+    title: string;
+    description: string | null;
+    icon: string | null;
+    color: string | null;
+    sequence: number;
+    is_published: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface QAJourneySubflow {
+    id: string;
+    journey_id: string;
+    title: string;
+    description: string | null;
+    sequence: number;
+    automation_status: AutomationStatus;
+    test_case_id: string | null;
+    jira_query: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface QAJourneyCase {
+    id: string;
+    subflow_id: string;
+    external_id: string | null;
+    title: string;
+    steps_summary: string | null;
+    expected_result: string | null;
+    priority: CasePriority;
+    last_run_status: CaseRunStatus | null;
+    last_run_at: string | null;
+    archived_at: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+// Variante "draft" usada em forms: campos opcionais para criacao.
+export type QAJourneyDraft = Partial<QAJourney> & {
+    project_id: string;
+    slug: string;
+    title: string;
+};
+
+export type QAJourneySubflowDraft = Partial<QAJourneySubflow> & {
+    journey_id: string;
+    title: string;
+};
+
+export type QAJourneyCaseDraft = Partial<QAJourneyCase> & {
+    subflow_id: string;
+    title: string;
+};
+
+// Alvo da migracao (codigo Postgres) quando a tabela ainda nao existe.
+export const QA_JOURNEY_MIGRATION_MISSING_CODE = '42P01';

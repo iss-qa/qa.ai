@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Folder, FlaskConical, Smartphone, Bug, BookOpen, ScrollText, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, Folder, FlaskConical, Smartphone, Bug, BookOpen, ScrollText, Map, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { DAEMON_URL } from '@/lib/constants';
 
 export function Sidebar() {
@@ -43,8 +43,10 @@ export function Sidebar() {
         { href: '/dashboard/projects', label: 'Projetos', icon: Folder },
         { href: '/dashboard/tests', label: 'Testes', icon: FlaskConical },
         { href: '/dashboard/bugs', label: 'Bug Tracker', icon: Bug },
+        { href: '/dashboard/qa-journey', label: 'Jornada do QA', icon: Map },
         { href: '/dashboard/devices', label: 'Dispositivos', icon: Smartphone },
         { href: '/dashboard/logs', label: 'Logs', icon: ScrollText, badge: errorCount > 0 ? errorCount : undefined },
+        { href: '/dashboard/settings', label: 'Configurações', icon: Settings },
         { href: '/docs', label: 'Docs', icon: BookOpen },
     ];
 
