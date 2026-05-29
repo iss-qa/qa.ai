@@ -40,9 +40,14 @@ daemon_output.log
 
 # Environment and sensitive files
 .env
-.env*.local
+.env.local
+.env.*.local
+.env.production
+.env.staging
+.env.development
 .env.sample
 !.env.example
+!.env.production.example
 *.pem
 *.key
 
