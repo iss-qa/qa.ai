@@ -69,3 +69,40 @@ apps/*/tests/__artifacts__/
 
 # Claude local settings — contains auto-allowed commands that may include secrets
 .claude/settings.json
+
+# =====================================================
+# Dados locais de runtime (NUNCA subir)
+# =====================================================
+
+# Test cases salvos localmente (fallback quando Supabase offline)
+data/
+
+# Runs locais de Maestro (output de execucao)
+flows/runs/
+
+# YAMLs gravados / em rascunho locais — tudo que termina em padroes comuns de teste local.
+# Se algum YAML for canonico do projeto, comite explicitamente com git add -f.
+flows/**/Novo_*.yaml
+flows/**/Gravando*.yaml
+flows/**/Gravado*.yaml
+flows/**/*Recorder*.yaml
+flows/**/*Gracvado*.yaml
+
+# Maestro Studio frontend extraido do .asar em runtime (~50MB, regenerado)
+apps/web/public/maestro-studio/
+
+# Maestro CLI clonado para referencia (~100MB) — fica local, nao em git
+Maestro/
+
+# Artefatos de runtime do daemon
+apps/daemon/value.mp4
+apps/daemon/daemon.log
+apps/daemon/daemon_output.log
+apps/daemon/logs/
+
+# Logs gerais
+logs/
+
+# Build artifacts adicionais
+**/.tsbuildinfo
+

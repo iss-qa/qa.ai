@@ -102,7 +102,7 @@ export default function IntegrationsSettingsPage() {
                 <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-sm text-red-400">
                     Falha ao carregar integrações: {loadError}
                     <div className="text-[11px] text-slate-400 mt-1">
-                        Verifique se o backend Fastify está rodando ({process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}) e se a migration <code className="font-mono">supabase_migration_organizations.sql</code> foi aplicada.
+                        Verifique se o backend Fastify está rodando ({process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}) e se a migration <code className="font-mono">supabase/migrations/007_organizations.sql</code> foi aplicada.
                     </div>
                 </div>
             )}

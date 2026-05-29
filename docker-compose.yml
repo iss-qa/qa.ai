@@ -38,7 +38,7 @@ services:
       start_period: 15s
       retries: 3
     networks:
-      - dokploy-network
+      - easypanel-network
     labels:
       - traefik.enable=true
       - traefik.http.routers.qamind-api.rule=Host(`${API_HOST}`)
@@ -65,7 +65,7 @@ services:
       api:
         condition: service_healthy
     networks:
-      - dokploy-network
+      - easypanel-network
     labels:
       - traefik.enable=true
       - traefik.http.routers.qamind-web.rule=Host(`${WEB_HOST}`)
@@ -75,5 +75,5 @@ services:
 
 networks:
   # Network gerenciada pelo Dokploy - Traefik vive nela
-  dokploy-network:
+  easypanel-network:
     external: true

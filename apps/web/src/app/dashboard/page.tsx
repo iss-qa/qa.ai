@@ -389,7 +389,7 @@ export default function DashboardPage() {
             {/* Heads-up if a chart is empty because the migration hasn't run */}
             {!loading && runs.length === 0 && totalTests > 0 && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-800 text-xs">
-                    Há testes cadastrados mas nenhuma execução foi registrada ainda. Se você rodou testes mas eles não aparecem aqui, aplique a migration <code className="font-mono bg-amber-100 px-1.5 py-0.5 rounded">supabase_migration_test_runs_bugs.sql</code> no SQL Editor do Supabase.
+                    Há testes cadastrados mas nenhuma execução foi registrada ainda. Se você rodou testes mas eles não aparecem aqui, aplique a migration <code className="font-mono bg-amber-100 px-1.5 py-0.5 rounded">supabase/migrations/002_test_runs_bugs.sql</code> no SQL Editor do Supabase.
                 </div>
             )}
 

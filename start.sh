@@ -259,10 +259,10 @@ check_table() {
 }
 
 MIGRATIONS_OK=true
-check_table "qa_journeys"             "supabase_migration_qa_journey.sql"     || MIGRATIONS_OK=false
-check_table "qa_journey_sheet_configs" "supabase_migration_qa_journey.sql"    || MIGRATIONS_OK=false
-check_table "organizations"           "supabase_migration_organizations.sql"  || MIGRATIONS_OK=false
-check_table "org_integrations"        "supabase_migration_organizations.sql"  || MIGRATIONS_OK=false
+check_table "qa_journeys"             "supabase/migrations/006_qa_journey.sql"     || MIGRATIONS_OK=false
+check_table "qa_journey_sheet_configs" "supabase/migrations/006_qa_journey.sql"    || MIGRATIONS_OK=false
+check_table "organizations"           "supabase/migrations/007_organizations.sql"  || MIGRATIONS_OK=false
+check_table "org_integrations"        "supabase/migrations/007_organizations.sql"  || MIGRATIONS_OK=false
 
 if [ "$MIGRATIONS_OK" = "false" ]; then
     echo ""

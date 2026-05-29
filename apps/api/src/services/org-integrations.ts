@@ -60,7 +60,7 @@ export async function resolveDefaultOrgId(): Promise<string> {
         .eq('slug', slug)
         .maybeSingle();
     if (error) throw new Error(`Falha ao resolver org "${slug}": ${error.message}`);
-    if (!data) throw new Error(`Organizacao "${slug}" nao encontrada (rode supabase_migration_organizations.sql)`);
+    if (!data) throw new Error(`Organizacao "${slug}" nao encontrada (rode supabase/migrations/007_organizations.sql)`);
     cachedDefaultOrgId = data.id as string;
     return cachedDefaultOrgId;
 }

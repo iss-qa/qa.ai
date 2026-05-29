@@ -359,7 +359,7 @@ export default function BugTrackerPage() {
                 {!loading && filteredBugs.length === 0 && (
                     <div className="p-8 text-center text-textSecondary text-sm">
                         {migrationMissing
-                            ? <span className="inline-flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-amber-500" /> A tabela <code className="font-mono bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">bug_reports</code> ainda não existe. Aplique a migration <code className="font-mono bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">supabase_migration_test_runs_bugs.sql</code>.</span>
+                            ? <span className="inline-flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-amber-500" /> A tabela <code className="font-mono bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">bug_reports</code> ainda não existe. Aplique a migration <code className="font-mono bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">supabase/migrations/002_test_runs_bugs.sql</code>.</span>
                             : bugs.length === 0
                                 ? 'Nenhum bug registrado ainda. Clique em "Novo Bug" para reportar um.'
                                 : 'Nenhum bug encontrado com os filtros atuais.'}

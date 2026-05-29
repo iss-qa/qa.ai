@@ -1,5 +1,5 @@
 // Tipos da feature "Jornada do QA" (Parte 9).
-// Espelham o schema definido em supabase_migration_qa_journey.sql.
+// Espelham o schema definido em supabase/migrations/006_qa_journey.sql.
 
 export type AutomationStatus = 'automated' | 'partial' | 'manual' | 'none';
 export type CasePriority = 'low' | 'medium' | 'high' | 'critical';

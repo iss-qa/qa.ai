@@ -248,7 +248,7 @@ O script é **idempotente** — deleta o estado anterior do mock antes de re-cri
 
 ### Deploy em produção (Hostinger VPS via Dokploy)
 
-Veja o guia passo-a-passo em [DEPLOY.md](DEPLOY.md). Resumo:
+Veja o guia passo-a-passo em [docs/DEPLOY.md](docs/DEPLOY.md). Resumo:
 
 1. DNS: aponta `qamind.issqa.com.br` e `api.qamind.issqa.com.br` para a VPS
 2. No Dokploy: cria serviço **Compose** apontando para `docker-compose.yml` na raiz
@@ -260,15 +260,19 @@ O `apps/daemon` (Python, controle de Android) **não vai para a VPS** — contin
 
 ### Migrations Supabase
 
-Aplicar no **SQL Editor** em ordem:
-1. `supabase_setup.sql`
-2. `supabase_migration_test_runs_bugs.sql`
-3. `supabase_migration_qa_journey.sql` *(8 tabelas da Jornada do QA)*
-4. `supabase_migration_organizations.sql` *(orgs + integrations cifradas)*
+Todos os arquivos `.sql` ficam em [supabase/migrations/](supabase/migrations/) com prefixo numérico de ordem. Aplicar no **SQL Editor** em ordem crescente:
 
-Para reverter (drop tabelas):
-- `supabase_migration_qa_journey.down.sql`
-- `supabase_migration_organizations.down.sql`
+1. `001_setup.sql`
+2. `002_test_runs_bugs.sql`
+3. `003_project_workspace.sql`
+4. `004_test_app_id.sql`
+5. `005_test_raw_yaml.sql`
+6. `006_qa_journey.sql` *(8 tabelas da Jornada do QA)*
+7. `007_organizations.sql` *(orgs + integrations cifradas)*
+
+Para reverter (drop tabelas das duas últimas):
+- `006_qa_journey.down.sql`
+- `007_organizations.down.sql`
 
 ---
 

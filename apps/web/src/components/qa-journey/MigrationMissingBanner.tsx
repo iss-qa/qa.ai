@@ -13,10 +13,10 @@ export function MigrationMissingBanner() {
             </div>
             <p className="text-sm text-slate-300">
                 A tabela <code className="font-mono bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded">qa_journeys</code> (e demais tabelas da Jornada) ainda não existe no Supabase.
-                Aplique a migration <code className="font-mono bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded">supabase_migration_qa_journey.sql</code> no SQL Editor do projeto e recarregue esta página.
+                Aplique a migration <code className="font-mono bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded">supabase/migrations/006_qa_journey.sql</code> no SQL Editor do projeto e recarregue esta página.
             </p>
             <p className="text-xs text-slate-500">
-                Arquivo: <code className="font-mono">supabase_migration_qa_journey.sql</code> na raiz do repositório.
+                Arquivo em <code className="font-mono">supabase/migrations/</code> no repositório.
             </p>
         </div>
     );
