@@ -1,0 +1,70 @@
+# =====================================================
+# Tudo que NAO precisa entrar no contexto de build Docker.
+# Reduz o tempo de build e o tamanho da imagem final.
+# =====================================================
+
+# Dependencias - reinstaladas dentro do container
+**/node_modules
+**/.pnpm-store
+
+# Build outputs
+**/.next
+**/dist
+**/build
+**/.turbo
+
+# Python (daemon nao vai pra prod, mas evita lixo no contexto)
+**/venv
+**/.venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+
+# Logs
+**/logs
+**/*.log
+**/daemon.log
+**/daemon_output.log
+
+# Env locais - usar Dokploy Environment tab
+.env
+.env.local
+**/.env
+**/.env.local
+**/.env.*.local
+
+# IDE / OS
+.vscode
+.idea
+.DS_Store
+**/.DS_Store
+*.swp
+
+# Git
+.git
+.gitignore
+
+# Maestro Studio binario (~50MB) - extraido em runtime no daemon
+Maestro
+apps/web/public/maestro-studio
+
+# Test fixtures / dados gerados localmente
+data
+flows/runs
+flows/*/Novo_*.yaml
+
+# Documentacao (nao precisa no container)
+*.md
+prompts
+README.MD
+
+# Scripts auxiliares
+start.sh
+emergency_reset.sh
+docker-compose.yml
+.dockerignore
+Dockerfile
+**/Dockerfile
+
+# Migrations e setup SQL (rodam direto no Supabase, nao na imagem)
+*.sql

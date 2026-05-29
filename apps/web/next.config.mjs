@@ -1,5 +1,15 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Build standalone para Docker - reduz imagem final em ~10x.
+  // outputFileTracingRoot aponta para a raiz do monorepo para incluir
+  // node_modules compartilhado via pnpm workspaces.
+  output: 'standalone',
+  outputFileTracingRoot: path.join(__dirname, '../../'),
   webpack: (config) => {
     // Use polling with a longer interval to reduce open file descriptors
     // Prevents EMFILE errors on macOS with low maxfiles limit

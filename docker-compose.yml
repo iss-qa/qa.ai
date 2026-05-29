@@ -1,0 +1,79 @@
+# =====================================================
+# QAMind — Deploy stack para Dokploy (Hostinger VPS)
+#
+# Sobe dois containers:
+#   - api  → Fastify (internal :3001)
+#   - web  → Next.js (internal :3000)
+#
+# Roteamento externo via Traefik (gerenciado pelo Dokploy):
+#   - https://qamind.issqa.com.br      → web
+#   - https://api.qamind.issqa.com.br  → api
+#
+# Variaveis sao injetadas pelo Dokploy (aba Environment).
+# Veja .env.production.example para a lista completa.
+# =====================================================
+
+services:
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "3001"
+    environment:
+      PORT: 3001
+      NODE_ENV: production
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      DEFAULT_ORG_SLUG: ${DEFAULT_ORG_SLUG:-foxbit}
+      INTEGRATIONS_ENCRYPTION_KEY: ${INTEGRATIONS_ENCRYPTION_KEY}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    networks:
+      - dokploy-network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.qamind-api.rule=Host(`${API_HOST}`)
+      - traefik.http.routers.qamind-api.entrypoints=websecure
+      - traefik.http.routers.qamind-api.tls.certresolver=letsencrypt
+      - traefik.http.services.qamind-api.loadbalancer.server.port=3001
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Next.js inlina NEXT_PUBLIC_* no bundle em build-time
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_DAEMON_URL: ${NEXT_PUBLIC_DAEMON_URL:-http://localhost:8001}
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: production
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - dokploy-network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.qamind-web.rule=Host(`${WEB_HOST}`)
+      - traefik.http.routers.qamind-web.entrypoints=websecure
+      - traefik.http.routers.qamind-web.tls.certresolver=letsencrypt
+      - traefik.http.services.qamind-web.loadbalancer.server.port=3000
+
+networks:
+  # Network gerenciada pelo Dokploy - Traefik vive nela
+  dokploy-network:
+    external: true
