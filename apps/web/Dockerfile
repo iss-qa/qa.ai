@@ -26,11 +26,15 @@ RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 
 WORKDIR /app
 
-# Vars publicas precisam estar disponiveis no build (Next inlina no bundle)
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-ARG NEXT_PUBLIC_API_URL
-ARG NEXT_PUBLIC_DAEMON_URL
+# Vars publicas precisam estar disponiveis no build (Next inlina no bundle).
+# Default embutido garante que o build NUNCA gere bundle com `undefined` mesmo
+# se o orquestrador (EasyPanel/Dokploy) nao repassar o Environment como build-arg.
+# Sao valores publicos (anon key publishable + URLs publicas), por isso podem
+# ficar no repo. O segredo real (service_role) vive apenas no apps/api.
+ARG NEXT_PUBLIC_SUPABASE_URL=https://tfxxgbujcvtjgqccfcae.supabase.co
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_y9GZSB7YgOY5-87MWMw5lw_J-YgdifD
+ARG NEXT_PUBLIC_API_URL=https://api.qamind.issqa.com.br
+ARG NEXT_PUBLIC_DAEMON_URL=http://localhost:8001
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
