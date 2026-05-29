@@ -9,7 +9,12 @@ const nextConfig = {
   // outputFileTracingRoot aponta para a raiz do monorepo para incluir
   // node_modules compartilhado via pnpm workspaces.
   output: 'standalone',
-  outputFileTracingRoot: path.join(__dirname, '../../'),
+  // Next 14: outputFileTracingRoot lives under `experimental` (top-level only
+  // from Next 15+). Points at the monorepo root so the standalone bundle
+  // includes workspace deps hoisted to the shared pnpm node_modules.
+  experimental: {
+    outputFileTracingRoot: path.join(__dirname, '../../'),
+  },
   webpack: (config) => {
     // Use polling with a longer interval to reduce open file descriptors
     // Prevents EMFILE errors on macOS with low maxfiles limit
