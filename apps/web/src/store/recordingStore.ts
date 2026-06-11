@@ -70,6 +70,11 @@ interface RecordingState {
     addStepFromDaemon: (daemonStep: DaemonStep) => RecordedStep | null;
     /** Update an existing step by index (used for confirm-input). */
     updateStepAtIndex: (stepIndex: number, daemonStep: DaemonStep) => void;
+    /** Resolve a pending inputText step by its stable id with the typed text.
+     *  Id-based (not index-based) so it survives the leading launchApp step and
+     *  any drag-reordering, which would otherwise misalign daemon vs. frontend
+     *  indices and leave the value stuck at "__PENDING_INPUT__". */
+    resolvePendingInput: (stepId: string, text: string) => void;
     addInteraction: (interaction: RecordedInteraction) => RecordedStep;
     addKeyevent: (keycode: number) => void;
     addTextInput: (text: string) => void;
@@ -217,6 +222,28 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
                     ? `Digitar › "${daemonStep.value}"`
                     : existing.description,
             };
+            saveDraft(state.testId, steps);
+            return { recordedSteps: steps };
+        });
+    },
+
+    resolvePendingInput: (stepId, text) => {
+        set(state => {
+            const steps = state.recordedSteps.map(s => {
+                if (s.id !== stepId) return s;
+                const isPassword = s.isPassword
+                    || s.elementId?.toLowerCase().includes('password')
+                    || s.elementId?.toLowerCase().includes('senha');
+                return {
+                    ...s,
+                    value: text,
+                    isPassword,
+                    maestro_command: `- inputText: "${text}"`,
+                    description: isPassword
+                        ? `Digitar › "${'*'.repeat(text.length)}"`
+                        : `Digitar › "${text}"`,
+                };
+            });
             saveDraft(state.testId, steps);
             return { recordedSteps: steps };
         });

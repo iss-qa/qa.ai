@@ -524,8 +524,10 @@ class InteractionRecorder:
         are always captured on the app's actual first screen — not on
         whatever was open when they clicked Gravar.
 
-        `clear_state=True` first force-stops the package so the app starts
-        from a clean state (matching `launchApp: clearState: true` in YAML).
+        `clear_state=True` first `pm clear`s the package so the app starts
+        from a clean state (matching `launchApp: clearState: true` in YAML),
+        then forces a scrcpy keyframe so the mirror recovers from the surface
+        teardown.
         """
         from android.ui_inspector import UIInspector
         from android.element_scanner import load_element_map
@@ -538,37 +540,60 @@ class InteractionRecorder:
         self._recording_id = f"rec_{udid}_{int(time.time())}"
 
         # ── Launch the target app (best-effort) ──
-        # We INTENTIONALLY don't use `am force-stop` here, even when clearState
-        # is requested. The reason: force-stop tears down the foreground app's
-        # SurfaceFlinger surface, and the scrcpy H.264 encoder doesn't emit a
-        # fresh keyframe for the new surface — the browser decoder freezes on
-        # the last decoded frame (control channel still works, video doesn't).
+        # Goal: the recording must START on the SAME first screen the replay
+        # produces. Otherwise the user records taps against stale state (e.g. a
+        # logged-in / "returning user" login screen) while replay opens the
+        # app fresh — and the recorded steps no longer match.
         #
-        # Trade-off accepted:
-        #   • During RECORDING, the app comes up wherever it naturally opens.
-        #     The user is responsible for being at the desired starting screen
-        #     before clicking Gravar.
-        #   • During REPLAY, the `launchApp: clearState: true` step at the top
-        #     of the YAML is what actually guarantees a clean start — Maestro
-        #     handles that on its own driver (no scrcpy in the loop).
+        # When clearState is requested we therefore do a TRUE reset using the
+        # exact same path replay uses (`pm clear` + `am start`, Xiaomi
+        # work-profile aware) via runner._adb_launch_app. `pm clear` tears down
+        # the foreground SurfaceFlinger surface, which freezes the scrcpy H.264
+        # mirror on its last frame — so right after the new surface is up we
+        # ask the scrcpy server for a fresh keyframe (RESET_VIDEO) to unfreeze
+        # the browser decoder.
         #
-        # `monkey -p <pkg> -c LAUNCHER 1` brings the app's launcher activity
-        # to the foreground without killing the process, so the surface
-        # survives and the mirror stays smooth.
+        # Without clearState we keep the cheap, surface-preserving behaviour:
+        # `monkey -p <pkg> -c LAUNCHER 1` brings the launcher activity to the
+        # foreground without killing the process, so the mirror stays smooth.
         if app_id:
-            try:
-                p = await asyncio.create_subprocess_exec(
-                    "adb", "-s", udid, "shell", "monkey", "-p", app_id,
-                    "-c", "android.intent.category.LAUNCHER", "1",
-                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-                )
-                await asyncio.wait_for(p.wait(), timeout=8)
-                logger.info(f"[RECORDING] launched {app_id} (clearState={clear_state} honored only at replay time)")
-                # Brief settle so getevent doesn't pick up the launch's own
-                # micro-taps (e.g. the launcher's app-open ripple).
-                await asyncio.sleep(0.4)
-            except Exception as e:
-                logger.warning(f"[RECORDING] launch {app_id} failed: {e} — proceeding anyway")
+            launched = False
+            if clear_state:
+                try:
+                    from services.maestro.runner import _adb_launch_app
+                    ok, err = await _adb_launch_app(udid, app_id, clear_state=True)
+                    if ok:
+                        launched = True
+                        logger.info(f"[RECORDING] launched {app_id} with clearState (pm clear + am start)")
+                        # Surface was rebuilt by pm clear — force a fresh scrcpy
+                        # keyframe so the mirror recovers immediately.
+                        try:
+                            from ws.stream_manager import screen_stream_manager
+                            client = screen_stream_manager.scrcpy_clients.get(udid)
+                            if client:
+                                await client.reset_video()
+                        except Exception as e:
+                            logger.warning(f"[RECORDING] reset_video after clearState failed: {e}")
+                    else:
+                        logger.warning(f"[RECORDING] clearState launch failed: {err} — falling back to monkey")
+                except Exception as e:
+                    logger.warning(f"[RECORDING] clearState launch error: {e} — falling back to monkey")
+
+            if not launched:
+                try:
+                    p = await asyncio.create_subprocess_exec(
+                        "adb", "-s", udid, "shell", "monkey", "-p", app_id,
+                        "-c", "android.intent.category.LAUNCHER", "1",
+                        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    await asyncio.wait_for(p.wait(), timeout=8)
+                    logger.info(f"[RECORDING] launched {app_id} (foreground only; clearState={clear_state})")
+                except Exception as e:
+                    logger.warning(f"[RECORDING] launch {app_id} failed: {e} — proceeding anyway")
+
+            # Brief settle so getevent doesn't pick up the launch's own
+            # micro-taps (e.g. the launcher's app-open ripple).
+            await asyncio.sleep(0.4)
 
         # Connect u2 device for live dump during recording
         try:

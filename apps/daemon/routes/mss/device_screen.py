@@ -61,25 +61,52 @@ async def _frame_capturer(udid: str) -> None:
 
     Screencap itself takes ~150-250ms on most devices, providing natural pacing.
     No additional sleep is added so frames arrive as fast as ADB allows.
-    Captures are paused while Maestro is executing commands (_adb_command_active)
-    to avoid ADB contention that causes both operations to time out.
+
+    Captures are fully paused while the embedded Maestro Studio server is issuing
+    commands (adb_command_active) to avoid ADB contention that causes both
+    operations to time out. During a CLI `maestro test` run (maestro_test_active)
+    the mirror KEEPS capturing — that path drives the device over Maestro's gRPC
+    driver, not adb screencap — so the QA engineer sees the run in real time; we
+    only throttle slightly to stay gentle on ADB while Maestro works.
+
+    FRAME DEDUP (critical for low latency): the bundle frontend consumes the SSE
+    stream with a raw EventSource, which has NO frame-dropping — it fires
+    onmessage for every event in order and buffers the unprocessed ones in the
+    browser without bound. If we bumped `seq` on every capture (~3-5 fps) even
+    when the screen is unchanged, the browser would receive frames faster than it
+    can decode+paint a base64 <img>, and the displayed frame would fall further
+    and further behind real time (the 5-30s lag the QA engineer reported).
+
+    So we only advance `seq` when the captured image actually CHANGED (hash
+    compare). On a static screen the stream goes quiet, the browser's buffer
+    drains to empty, and the next real change is delivered near-instantly. During
+    a test this keeps latency bounded to ~one step (screens are static between
+    steps) instead of accumulating across the whole run.
     """
+    import hashlib
+
     seq = 0
+    last_hash = None  # md5 digest of the last frame we stored (dedup)
     while True:
-        # Yield to Maestro during command execution
+        # Yield fully to the embedded studio during its command bursts
         while state.adb_command_active.is_set():
             await asyncio.sleep(0.1)
 
         try:
             jpeg, native_w, native_h = await capture_screenshot_with_native_size(udid)
             if jpeg and native_w:
-                seq += 1
-                _live_frames[udid] = {
-                    "jpeg": jpeg,
-                    "w": native_w,
-                    "h": native_h,
-                    "seq": seq,
-                }
+                # Skip unchanged frames so we never stream a static screen.
+                # md5 of a ~100KB JPEG is ~0.1ms — negligible next to screencap.
+                h = hashlib.md5(jpeg).digest()
+                if h != last_hash:
+                    last_hash = h
+                    seq += 1
+                    _live_frames[udid] = {
+                        "jpeg": jpeg,
+                        "w": native_w,
+                        "h": native_h,
+                        "seq": seq,
+                    }
         except asyncio.CancelledError:
             return
         except Exception as e:
@@ -89,7 +116,9 @@ async def _frame_capturer(udid: str) -> None:
         # Yield to the event loop between captures. The screencap itself already
         # takes 150-250ms, so this is a minimal no-op sleep that prevents the
         # coroutine from starving other tasks if screencap ever becomes instant.
-        await asyncio.sleep(0)
+        # During a CLI test, throttle to ~3 FPS so the live mirror stays smooth
+        # without piling extra ADB pressure onto Maestro's running flow.
+        await asyncio.sleep(0.15 if state.maestro_test_active.is_set() else 0)
 
 
 # ── Old SSE endpoint (kept for compatibility) ──────────────────────────────
@@ -209,9 +238,14 @@ async def mss_device_screen_new(instanceId: str = ""):
         elements_ref = {"cache": [], "native_w": 0, "native_h": 0}
 
         async def dump_loop():
-            """Pull UI hierarchy in the background without stalling the frame loop."""
+            """Pull UI hierarchy in the background without stalling the frame loop.
+
+            Pauses during BOTH the embedded studio bursts (adb_command_active)
+            and CLI test runs (maestro_test_active): `adb shell uiautomator dump`
+            contends with Maestro driving the device, so we suspend it while a
+            flow runs. The live mirror keeps streaming regardless."""
             while True:
-                while state.adb_command_active.is_set():
+                while state.adb_command_active.is_set() or state.maestro_test_active.is_set():
                     await asyncio.sleep(0.2)
 
                 if state.mss_maestro_elements:
@@ -232,16 +266,43 @@ async def mss_device_screen_new(instanceId: str = ""):
 
         try:
             last_seq = -1
+            last_send_t = 0.0
+            _loop = asyncio.get_event_loop()
+
+            # COALESCE-TO-LATEST + RATE CAP. The bundle consumes this stream with
+            # a raw EventSource, which CANNOT drop frames — it fires onmessage for
+            # every event in order. Server-side delivery is real-time (measured:
+            # ~2fps, a screen change reaches a fresh client in <0.1s, no
+            # accumulation even during a maestro test). But the browser decodes a
+            # base64 <img> + re-renders the screenshot/element overlay per frame,
+            # and during a test it ALSO re-renders the flowStatus step list while
+            # the host runs the maestro JVM + the daemon's PIL pipeline. When that
+            # per-frame render is slower than the arrival rate, frames pile up in
+            # the browser's buffer and the preview falls progressively behind
+            # (the reported "preview on step 1, device on step 20").
+            #
+            # We can't make the precompiled bundle drop frames, so we throttle the
+            # SOURCE: emit at most ~1.25 fps and always send the FRESHEST captured
+            # frame (intermediate captures are dropped because we read _live_frames
+            # at send time, not a queue). A slow renderer can keep up at this rate,
+            # so the backlog never builds and latency stays <1s instead of growing
+            # to 30s. Tunable knob — lower for smoother motion, raise if a slower
+            # host still accumulates lag.
+            MIN_SEND_INTERVAL = 0.8
 
             while True:
-                # Pause delivery while Maestro is running (avoids sending stale
-                # pre-command frames that confuse the user)
+                # Pause delivery only during the embedded studio bursts (the
+                # capturer is stopped then, so frames would be stale). During a
+                # CLI test the capturer keeps producing fresh frames, so we keep
+                # delivering them — this is what makes the run visible live.
                 while state.adb_command_active.is_set():
                     await asyncio.sleep(0.1)
 
                 frame = _live_frames.get(active_udid)
-                if frame and frame["seq"] != last_seq:
+                now = _loop.time()
+                if frame and frame["seq"] != last_seq and (now - last_send_t) >= MIN_SEND_INTERVAL:
                     last_seq = frame["seq"]
+                    last_send_t = now
 
                     native_w = frame["w"]
                     native_h = frame["h"]

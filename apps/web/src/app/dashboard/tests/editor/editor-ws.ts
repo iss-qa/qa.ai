@@ -1,5 +1,4 @@
 import { useVisionStore } from '@/store/visionStore';
-import { useRecordingStore } from '@/store/recordingStore';
 import type { TestStep } from './editor-types';
 
 /**
@@ -52,11 +51,14 @@ export function handleRunWsEvent(
             setSteps(prev => prev.map((s, i) => i === data.data.step_num - 1 ? { ...s, status: 'fallback' } : s));
             useVisionStore.getState().setExecutionProgress({ current: data.data.step_num, total: stepsLength, description: 'Fallback XML...' });
         } else if (data.type === 'step_recorded') {
-            // Handle recording events from daemon (auto assertVisible on screen change)
-            const stepData = data.data;
-            if (stepData?.action === 'assertVisible' && stepData?.auto_generated && stepData?.elementId) {
-                useRecordingStore.getState().addAssertVisible(stepData.elementId, true);
-            }
+            // Intentionally a no-op. The daemon broadcasts every recorded step
+            // on BOTH channels: this legacy run-WS (`STEP_RECORDED`) and the
+            // dedicated recording SSE stream (/recordings/events). The SSE path
+            // (handleSseStep → addStepFromDaemon) is the single source of truth
+            // for recording steps. Re-adding auto `assertVisible` here used to
+            // duplicate every screen-change assert (one "auto" copy from here +
+            // one "auto scan" copy from SSE) AND desynced the frontend step
+            // list from the daemon's index, breaking confirm-input resolution.
         } else if (data.type === 'ambiguity_detected') {
             useVisionStore.getState().setAmbiguityEvent({
                 stepNum: data.data.step_num,

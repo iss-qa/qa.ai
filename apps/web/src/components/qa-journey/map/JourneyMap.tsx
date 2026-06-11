@@ -24,8 +24,10 @@ import { toPng } from 'html-to-image';
 import { applyDagreLayout } from '@/lib/qa-journey/layout';
 import { JourneyNode, type JourneyNodeData } from './JourneyNode';
 import { SubflowNode, type SubflowNodeData } from './SubflowNode';
+import { CaseNode, type CaseNodeData } from './CaseNode';
 import { ParticleBackground } from './ParticleBackground';
 import { SubflowDrawer } from './SubflowDrawer';
+import { CaseDetailDrawer } from './CaseDetailDrawer';
 import type { QAJourney, QAJourneyCase, QAJourneySubflow } from '@/types/qa-journey';
 
 interface JourneyMapProps {
@@ -38,11 +40,13 @@ interface JourneyMapProps {
 const NODE_TYPES: NodeTypes = {
     journey: JourneyNode,
     subflow: SubflowNode,
+    case: CaseNode,
 };
 
 // Tamanhos default por tipo de node
 const JOURNEY_DEFAULT = { width: 240, height: 110 };
 const SUBFLOW_DEFAULT = { width: 220, height: 80 };
+const CASE_DEFAULT = { width: 200, height: 64 };
 
 // Layout customizado pelo usuario (drag + resize), persistido em localStorage por projeto.
 type CustomLayout = Record<string, { x?: number; y?: number; width?: number; height?: number }>;
@@ -54,7 +58,10 @@ function layoutStorageKey(projectId: string): string {
 export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubflow }: JourneyMapProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
+    // Sub-fluxos com o ramo de casos de teste expandido no grafo (3º nível).
+    const [expandedSubflows, setExpandedSubflows] = useState<Set<string>>(new Set());
     const [activeSubflowId, setActiveSubflowId] = useState<string | null>(null);
+    const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
 
     // Layout customizado (carregado do localStorage no mount/troca de projeto)
@@ -98,8 +105,22 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
     }, []);
 
     const selectSubflow = useCallback((subflowId: string) => {
+        // Abre o drawer e expande (puxa) o ramo de casos de teste no grafo.
         setActiveSubflowId(subflowId);
+        setExpandedSubflows(prev => {
+            const next = new Set(prev);
+            next.add(subflowId);
+            return next;
+        });
     }, []);
+
+    const selectCase = useCallback((caseId: string) => {
+        // Garante que o drawer-pai (sub-fluxo) do caso esteja ativo, para que
+        // "voltar" no drawer empilhado retorne ao sub-fluxo correto.
+        const parent = Object.values(casesBySubflow).flat().find(c => c.id === caseId);
+        if (parent) setActiveSubflowId(parent.subflow_id);
+        setActiveCaseId(caseId);
+    }, [casesBySubflow]);
 
     // Reconstroi grafo (nodes/edges) - aplica dagre + sobrescreve com customLayout
     const { layoutedNodes, layoutedEdges } = useMemo(() => {
@@ -153,6 +174,33 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                         animated: true,
                         style: { stroke: journey.color || '#7c3aed', strokeWidth: 1.5, opacity: 0.6 },
                     });
+
+                    // 3º nível: ramo de casos de teste (quando o sub-fluxo está expandido)
+                    if (expandedSubflows.has(subflow.id)) {
+                        cases.forEach(c => {
+                            const caseData: CaseNodeData = {
+                                case_: c,
+                                isActive: activeCaseId === c.id,
+                                onSelect: selectCase,
+                            };
+                            const cCustom = customLayout[c.id];
+                            nodes.push({
+                                id: c.id,
+                                type: 'case',
+                                position: { x: 0, y: 0 },
+                                data: caseData,
+                                width: cCustom?.width ?? CASE_DEFAULT.width,
+                                height: cCustom?.height ?? CASE_DEFAULT.height,
+                            });
+                            edges.push({
+                                id: `${subflow.id}->${c.id}`,
+                                source: subflow.id,
+                                target: c.id,
+                                animated: false,
+                                style: { stroke: journey.color || '#7c3aed', strokeWidth: 1, opacity: 0.35 },
+                            });
+                        });
+                    }
                 });
             }
         });
@@ -170,7 +218,7 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
         });
 
         return { layoutedNodes: final, layoutedEdges: edges };
-    }, [journeys, subflowsByJourney, casesBySubflow, expanded, activeSubflowId, customLayout, toggleJourney, selectSubflow]);
+    }, [journeys, subflowsByJourney, casesBySubflow, expanded, expandedSubflows, activeSubflowId, activeCaseId, customLayout, toggleJourney, selectSubflow, selectCase]);
 
     // Controlled nodes/edges para o ReactFlow
     const [rfNodes, setRfNodes] = useState<Node[]>(layoutedNodes);
@@ -261,6 +309,14 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
         ? journeys.find(j => j.id === activeSubflow.journey_id)
         : null;
 
+    // Caso ativo (drawer empilhado) + o sub-fluxo a que pertence.
+    const activeCase = activeCaseId
+        ? Object.values(casesBySubflow).flat().find(c => c.id === activeCaseId)
+        : null;
+    const activeCaseSubflow = activeCase
+        ? Object.values(subflowsByJourney).flat().find(s => s.id === activeCase.subflow_id)
+        : null;
+
     const hasCustomLayout = Object.keys(customLayout).length > 0;
 
     return (
@@ -339,7 +395,7 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                 <MiniMap
                     pannable
                     zoomable
-                    nodeColor={n => (n.type === 'journey' ? '#7c3aed' : '#3b82f6')}
+                    nodeColor={n => (n.type === 'journey' ? '#7c3aed' : n.type === 'case' ? '#475569' : '#3b82f6')}
                     maskColor="rgba(5, 6, 10, 0.7)"
                     className="!bg-popover/80 !border !border-border !rounded-lg"
                 />
@@ -352,7 +408,20 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                         journey={activeJourney}
                         subflow={activeSubflow}
                         cases={casesBySubflow[activeSubflow.id] || []}
-                        onClose={() => setActiveSubflowId(null)}
+                        onSelectCase={selectCase}
+                        onClose={() => { setActiveSubflowId(null); setActiveCaseId(null); }}
+                    />
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {activeCase && activeCaseSubflow && (
+                    <CaseDetailDrawer
+                        key={activeCase.id}
+                        subflow={activeCaseSubflow}
+                        case_={activeCase}
+                        onBack={() => setActiveCaseId(null)}
+                        onClose={() => { setActiveCaseId(null); setActiveSubflowId(null); }}
                     />
                 )}
             </AnimatePresence>

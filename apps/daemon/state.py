@@ -12,8 +12,19 @@ mss_embedded_lock = asyncio.Lock()
 mss_maestro_elements: list = []
 mss_maestro_consumer_task: Optional[asyncio.Task] = None
 
-# --- ADB gate: pause screencap SSE while Maestro issues commands ---
+# --- ADB gate: pause ALL screencap + dump while the embedded Maestro Studio
+#     server issues its rapid hierarchy-dump + input bursts (single-device ADB
+#     can't sustain both cleanly). Used only by _embedded_run_yaml. ---
 adb_command_active = asyncio.Event()
+# starts cleared (not active)
+
+# --- Maestro CLI test in progress (`maestro test <file>`). Unlike the embedded
+#     path, the CLI drives the device through Maestro's gRPC driver (port 7001),
+#     NOT `adb shell uiautomator`. So we can keep the live screen mirror running
+#     (real-time preview during execution) and pause ONLY the uiautomator
+#     hierarchy dump, which would contend with the device. The capturer throttles
+#     itself while this is set to stay gentle on ADB during the run. ---
+maestro_test_active = asyncio.Event()
 # starts cleared (not active)
 
 # --- Global test execution lock: only one maestro test subprocess at a time ---

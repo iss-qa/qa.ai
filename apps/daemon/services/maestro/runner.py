@@ -377,11 +377,20 @@ async def _run_maestro_test_file(
         #     start up in time` — `am instrument` was issued but the driver
         #     never ACKed the gRPC bind. The APK might be force-stopped /
         #     killed by MIUI / left in a bad state by a prior aborted run.
+        #   - gRPC `UNAVAILABLE` / `Connection refused: localhost:7001` — the
+        #     driver gRPC port (7001) had nothing listening when Orchestra
+        #     called `deviceInfo` at flow init. Same root cause: the driver
+        #     instrumentation / port-forward never came up (commonly after a
+        #     transient ADB drop on flaky Xiaomi/garnet USB, which also shows
+        #     as `adb: device '<udid>' not found` during APK prep). The hard
+        #     reset's `adb reconnect` re-handshakes the device before retry.
         ok, err = result
         retryable = (not ok) and err and (
             ("TcpForwarder" in err and "TimeoutException" in err)
             or ("AndroidDriverTimeoutException" in err)
             or ("Maestro Android driver did not start up" in err)
+            or ("Connection refused" in err and "7001" in err)
+            or ("UNAVAILABLE" in err and "7001" in err)
         )
         if retryable:
             logger.warning(f"[runtest] driver startup timeout — hard reset + reinstall + retry once")
@@ -534,9 +543,23 @@ async def _do_run_maestro_test(
     Reads stdout line by line and puts parsed step dicts into step_queue so
     the flowStatus SSE can relay them to the browser in real time.
     """
-    state.adb_command_active.set()
+    # Mark a CLI test as active (NOT adb_command_active): this keeps the live
+    # screen mirror streaming in real time during execution while pausing only
+    # the uiautomator hierarchy dump (see device_screen.py / state.py).
+    state.maestro_test_active.set()
     stderr_chunks: list = []
     stdout_tail: list = []  # last few stdout lines for the error trailer
+    # Driver-startup failures (gRPC connection refused on :7001, TcpForwarder
+    # timeout, AndroidDriverTimeoutException) are printed near the TOP of
+    # stdout, then a long banner follows — so they scroll out of stdout_tail
+    # before the run ends. Capture them separately so the retry decision and
+    # the user-facing error can still see the real cause, not just the banner.
+    driver_fault: list = []
+    _DRIVER_FAULT_SIGNS = (
+        "7001", "TcpForwarder", "AndroidDriverTimeoutException",
+        "Maestro Android driver did not start up", "UNAVAILABLE",
+        "Connection refused",
+    )
     proc = None
     logger.info(f"[runtest] starting: {' '.join(cmd)} (cwd={os.path.dirname(file_path)})")
     try:
@@ -560,6 +583,8 @@ async def _do_run_maestro_test(
                     stdout_tail.append(text)
                     if len(stdout_tail) > 30:
                         stdout_tail.pop(0)
+                    if len(driver_fault) < 8 and any(s in text for s in _DRIVER_FAULT_SIGNS):
+                        driver_fault.append(text)
                 if step_queue is not None and text:
                     parsed = _parse_maestro_line(text)
                     if parsed:
@@ -589,6 +614,10 @@ async def _do_run_maestro_test(
         msg = stderr_msg
         if not msg and stdout_tail:
             msg = "\n".join(stdout_tail[-10:])
+        # Surface captured driver-startup faults first — they're the actionable
+        # cause and would otherwise be buried/lost behind the debug banner.
+        if driver_fault:
+            msg = "\n".join(driver_fault) + (("\n" + msg) if msg else "")
         return False, msg or f"Test failed (exit {proc.returncode})"
 
     except asyncio.TimeoutError:
@@ -599,7 +628,7 @@ async def _do_run_maestro_test(
     except Exception as e:
         return False, str(e)
     finally:
-        state.adb_command_active.clear()
+        state.maestro_test_active.clear()
         # Selectively release Maestro's ADB forwards. We CANNOT use
         # `adb forward --remove-all` here: it would also drop the scrcpy
         # localabstract:scrcpy_<scid> tunnel, killing the live mirror after

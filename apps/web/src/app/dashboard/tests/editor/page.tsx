@@ -144,7 +144,7 @@ export default function TestEditorPage() {
         startRecording: startRecordingStore,
         stopRecording: stopRecordingStore,
         addStepFromDaemon,
-        updateStepAtIndex,
+        resolvePendingInput,
         addLaunchAppStep,
         reorderSteps,
         removeStep: removeRecordedStep,
@@ -205,6 +205,7 @@ export default function TestEditorPage() {
     const [pendingInputModal, setPendingInputModal] = useState<{
         visible: boolean;
         stepIndex: number;
+        stepId?: string;
     }>({ visible: false, stepIndex: -1 });
     const [pendingInputText, setPendingInputText] = useState('');
 
@@ -229,17 +230,20 @@ export default function TestEditorPage() {
 
     // SSE step handler
     const handleSseStep = useCallback((data: DaemonStep) => {
-        if (data.updated && typeof data.step_index === 'number') {
-            // confirm-input update for existing step
-            updateStepAtIndex(data.step_index, data);
+        if (data.updated) {
+            // The daemon echoes a confirmed inputText back as an `updated` event
+            // keyed by ITS array index. We can't trust that index on the
+            // frontend (the list has a leading launchApp step the daemon doesn't
+            // track, plus possible reordering), so resolution is applied locally
+            // by step id in handleConfirmInput instead. Ignore the echo.
             return;
         }
         const step = addStepFromDaemon(data);
         if (step && data.is_pending) {
-            setPendingInputModal({ visible: true, stepIndex: data.step_index ?? 0 });
+            setPendingInputModal({ visible: true, stepIndex: data.step_index ?? 0, stepId: step.id });
             setPendingInputText('');
         }
-    }, [addStepFromDaemon, updateStepAtIndex]);
+    }, [addStepFromDaemon]);
 
     // DevicePreview interaction — scrcpy sends touch to device, we also notify daemon
     // so it can do u2 dump at those coords and broadcast the step via SSE.
@@ -408,11 +412,15 @@ export default function TestEditorPage() {
     };
 
     const handleConfirmInput = async () => {
-        const { stepIndex } = pendingInputModal;
+        const { stepIndex, stepId } = pendingInputModal;
         const text = pendingInputText.trim();
         setPendingInputModal({ visible: false, stepIndex: -1 });
         setPendingInputText('');
         if (!text || !connectedDevice) return;
+        // Resolve the step locally by its stable id (robust against index drift
+        // between the daemon's step array and the frontend's). The POST below
+        // still sends the daemon's index so it can type the text on the device.
+        if (stepId) resolvePendingInput(stepId, text);
         try {
             await fetch(`${DAEMON_URL}/recordings/confirm-input`, {
                 method: 'POST',
@@ -1247,11 +1255,17 @@ export default function TestEditorPage() {
                 )}
 
                 <div className="w-[550px] border-r border-border bg-card flex flex-col shrink-0 h-full">
-                    <div className="flex-shrink-0 px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
-                        <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                            Passos do Teste ({steps.length})
-                        </span>
-                    </div>
+                    {/* While recording, RecordingStepsList already shows a live
+                        "Gravando — N passos" header, so this static bar (which
+                        reflects `steps`, not `recordedSteps`, and reads "(0)"
+                        mid-recording) would be redundant — hide it then. */}
+                    {!isRecordingActive && (
+                        <div className="flex-shrink-0 px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+                            <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                                Passos do Teste ({steps.length})
+                            </span>
+                        </div>
+                    )}
 
                     <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0 flex flex-col gap-3 custom-scrollbar">
                         {/* Recording steps list — Maestro format, drag-reorderable */}
