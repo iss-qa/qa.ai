@@ -133,6 +133,21 @@
   }
 }
 
+/* Modo impressão (Relatórios → Exportar PDF): esconde o shell do app e
+   deixa só o conteúdo da página fluir em papel branco. */
+@media print {
+  aside,
+  header {
+    display: none !important;
+  }
+  main {
+    overflow: visible !important;
+  }
+  body {
+    background: white !important;
+  }
+}
+
 /* Themed scrollbar so it doesn't flash white in dark mode */
 @layer utilities {
   .custom-scrollbar {

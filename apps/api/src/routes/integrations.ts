@@ -9,10 +9,14 @@ import {
     resolveDefaultOrgId,
     saveGoogleSheetsIntegration,
     saveJiraIntegration,
+    saveSlackIntegration,
     testIntegration,
     type GoogleSheetsCredentials,
     type JiraCredentials,
+    type SlackCredentials,
 } from '../services/org-integrations';
+
+const VALID_PROVIDERS = new Set(['google_sheets', 'jira', 'slack']);
 import { isEncryptionConfigured, encryptionConfigError } from '../services/encryption';
 
 const integrationsRoutes: FastifyPluginAsync = async (fastify) => {
@@ -79,16 +83,35 @@ const integrationsRoutes: FastifyPluginAsync = async (fastify) => {
         }
     });
 
+    // POST /integrations/slack - salva ou atualiza
+    // Body: { credentials: { webhook_url, default_channel? } }
+    fastify.post('/integrations/slack', async (request, reply) => {
+        if (!requireEncryption(reply)) return;
+        try {
+            const body = request.body as { credentials?: SlackCredentials };
+            const creds = body?.credentials;
+            if (!creds || typeof creds !== 'object') {
+                return reply.status(400).send({ error: 'invalid_body', detail: 'credentials obrigatorio' });
+            }
+            const orgId = await resolveDefaultOrgId();
+            const saved = await saveSlackIntegration(orgId, creds);
+            return { integration: saved };
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            return reply.status(400).send({ error: 'save_failed', detail: msg });
+        }
+    });
+
     // POST /integrations/:provider/test - testa a conexao
     fastify.post<{ Params: { provider: string } }>('/integrations/:provider/test', async (request, reply) => {
         if (!requireEncryption(reply)) return;
         const provider = request.params.provider;
-        if (provider !== 'google_sheets' && provider !== 'jira') {
+        if (!VALID_PROVIDERS.has(provider)) {
             return reply.status(400).send({ error: 'invalid_provider' });
         }
         try {
             const orgId = await resolveDefaultOrgId();
-            const result = await testIntegration(orgId, provider);
+            const result = await testIntegration(orgId, provider as 'google_sheets' | 'jira' | 'slack');
             return result;
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
@@ -99,12 +122,12 @@ const integrationsRoutes: FastifyPluginAsync = async (fastify) => {
     // DELETE /integrations/:provider
     fastify.delete<{ Params: { provider: string } }>('/integrations/:provider', async (request, reply) => {
         const provider = request.params.provider;
-        if (provider !== 'google_sheets' && provider !== 'jira') {
+        if (!VALID_PROVIDERS.has(provider)) {
             return reply.status(400).send({ error: 'invalid_provider' });
         }
         try {
             const orgId = await resolveDefaultOrgId();
-            await deleteIntegration(orgId, provider);
+            await deleteIntegration(orgId, provider as 'google_sheets' | 'jira' | 'slack');
             return { ok: true };
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);

@@ -1,7 +1,7 @@
 // Tipos espelhando o schema de org_integrations.
 // Credenciais NUNCA voltam para o cliente - so metadata.
 
-export type IntegrationProvider = 'google_sheets' | 'jira';
+export type IntegrationProvider = 'google_sheets' | 'jira' | 'slack';
 
 export interface IntegrationRecord {
     id: string;
@@ -28,6 +28,12 @@ export interface JiraMetadata {
     email?: string;
 }
 
+// Metadados especificos do Slack (mostrados na UI — nunca o webhook completo)
+export interface SlackMetadata {
+    webhook_masked?: string;
+    default_channel?: string | null;
+}
+
 // Inputs (so o que o cliente envia, sem dados sensiveis vindos do servidor)
 export interface GoogleSheetsCredentialsInput {
     client_email: string;
@@ -40,6 +46,11 @@ export interface JiraCredentialsInput {
     host: string;
     email: string;
     api_token: string;
+}
+
+export interface SlackCredentialsInput {
+    webhook_url: string;
+    default_channel?: string;
 }
 
 export interface IntegrationTestResult {

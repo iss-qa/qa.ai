@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ComponentType } from 'react';
 import {
     LayoutDashboard, Folder, FlaskConical, Smartphone, Bug, BookOpen, ScrollText,
-    Map, Settings, PanelLeftClose, PanelLeftOpen, Loader2, X,
+    FileBarChart, Map, Settings, PanelLeftClose, PanelLeftOpen, Loader2, X,
 } from 'lucide-react';
 import { DAEMON_URL } from '@/lib/constants';
 import { useShell } from './shell-context';
@@ -55,6 +55,7 @@ export function Sidebar() {
         { href: '/dashboard/tests', label: 'Testes', icon: FlaskConical },
         { href: '/dashboard/bugs', label: 'Bug Tracker', icon: Bug },
         { href: '/dashboard/qa-journey', label: 'Jornadas', icon: Map },
+        { href: '/dashboard/reports', label: 'Relatórios', icon: FileBarChart },
         { href: '/dashboard/devices', label: 'Dispositivos', icon: Smartphone },
         { href: '/dashboard/logs', label: 'Logs', icon: ScrollText, badge: errorCount > 0 ? errorCount : undefined },
         { href: '/dashboard/settings', label: 'Configurações', icon: Settings },

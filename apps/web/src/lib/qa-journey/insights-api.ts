@@ -81,6 +81,12 @@ export async function loadProjectInsights(projectId: string): Promise<InsightsBu
         open_bugs_count: 0,
         open_tasks_count: 0,
         last_sync_at: null,
+        cases_pass: 0,
+        cases_fail: 0,
+        cases_skipped: 0,
+        cases_not_run: 0,
+        cases_unregistered: 0,
+        cases_with_evidence: 0,
     };
 
     // 1. Jornadas
@@ -154,6 +160,13 @@ export async function loadProjectInsights(projectId: string): Promise<InsightsBu
         ? Math.round((automated / subflowList.length) * 100)
         : 0;
 
+    // Execução manual: distribuição do last_run_status dos casos ativos
+    const runCount = (status: string) => caseList.filter(c => c.last_run_status === status).length;
+    const casesPass = runCount('pass');
+    const casesFail = runCount('fail');
+    const casesSkipped = runCount('skipped');
+    const casesNotRun = runCount('not_run');
+
     const aggregate: InsightsAggregate = {
         total_journeys: journeyList.length,
         total_subflows: subflowList.length,
@@ -166,6 +179,12 @@ export async function loadProjectInsights(projectId: string): Promise<InsightsBu
         open_bugs_count: openBugs,
         open_tasks_count: openTasks,
         last_sync_at: lastSyncAt,
+        cases_pass: casesPass,
+        cases_fail: casesFail,
+        cases_skipped: casesSkipped,
+        cases_not_run: casesNotRun,
+        cases_unregistered: caseList.length - casesPass - casesFail - casesSkipped - casesNotRun,
+        cases_with_evidence: caseList.filter(c => c.evidence_url).length,
     };
 
     // 7. Treemap por jornada

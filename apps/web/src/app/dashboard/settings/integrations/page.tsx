@@ -6,6 +6,7 @@ import {
     ExternalLink,
     FileSpreadsheet,
     Loader2,
+    MessageSquare,
     Plug,
     RefreshCcw,
     Trash2,
@@ -15,6 +16,7 @@ import {
 
 import { GoogleSheetsIntegrationModal } from '@/components/settings/GoogleSheetsIntegrationModal';
 import { JiraIntegrationModal } from '@/components/settings/JiraIntegrationModal';
+import { SlackIntegrationModal } from '@/components/settings/SlackIntegrationModal';
 import { DeleteConfirmModal } from '@/components/qa-journey/DeleteConfirmModal';
 import {
     deleteIntegration,
@@ -27,7 +29,14 @@ import type {
     IntegrationRecord,
     IntegrationTestResult,
     JiraMetadata,
+    SlackMetadata,
 } from '@/types/integrations';
+
+const PROVIDER_LABELS: Record<IntegrationProvider, string> = {
+    google_sheets: 'Google Sheets',
+    jira: 'Jira',
+    slack: 'Slack',
+};
 
 export default function IntegrationsSettingsPage() {
     const [integrations, setIntegrations] = useState<IntegrationRecord[]>([]);
@@ -36,6 +45,7 @@ export default function IntegrationsSettingsPage() {
 
     const [editingGoogle, setEditingGoogle] = useState(false);
     const [editingJira, setEditingJira] = useState(false);
+    const [editingSlack, setEditingSlack] = useState(false);
 
     const [deleting, setDeleting] = useState<IntegrationProvider | null>(null);
     const [testing, setTesting] = useState<IntegrationProvider | null>(null);
@@ -57,6 +67,7 @@ export default function IntegrationsSettingsPage() {
 
     const google = integrations.find(i => i.provider === 'google_sheets') || null;
     const jira = integrations.find(i => i.provider === 'jira') || null;
+    const slack = integrations.find(i => i.provider === 'slack') || null;
 
     const handleTest = async (provider: IntegrationProvider) => {
         setTesting(provider);
@@ -142,6 +153,20 @@ export default function IntegrationsSettingsPage() {
                         isTesting={testing === 'jira'}
                         docsHref="https://id.atlassian.com/manage-profile/security/api-tokens"
                     />
+
+                    <IntegrationCard
+                        icon={<MessageSquare className="w-5 h-5 text-emerald-500" />}
+                        title="Slack"
+                        description="Envia notificações do QAMind (syncs, falhas, relatórios) para um canal via Incoming Webhook."
+                        record={slack}
+                        metadataView={slack ? renderSlackMetadata(slack.metadata as SlackMetadata) : null}
+                        testResult={testResult['slack']}
+                        onConfigure={() => setEditingSlack(true)}
+                        onTest={() => handleTest('slack')}
+                        onDelete={() => setDeleting('slack')}
+                        isTesting={testing === 'slack'}
+                        docsHref="https://api.slack.com/messaging/webhooks"
+                    />
                 </div>
             )}
 
@@ -166,10 +191,21 @@ export default function IntegrationsSettingsPage() {
                 />
             )}
 
+            {editingSlack && (
+                <SlackIntegrationModal
+                    initial={slack ? { default_channel: (slack.metadata as SlackMetadata).default_channel } : undefined}
+                    onClose={() => setEditingSlack(false)}
+                    onSaved={(rec) => {
+                        setIntegrations(prev => upsertIn(prev, rec));
+                        setEditingSlack(false);
+                    }}
+                />
+            )}
+
             {deleting && (
                 <DeleteConfirmModal
                     title="Remover integração?"
-                    message={`As credenciais de ${deleting === 'google_sheets' ? 'Google Sheets' : 'Jira'} serão apagadas. Syncs e dashboards que dependem dessa integração vão parar até você reconfigurar.`}
+                    message={`As credenciais de ${PROVIDER_LABELS[deleting]} serão apagadas. Syncs e dashboards que dependem dessa integração vão parar até você reconfigurar.`}
                     onCancel={() => setDeleting(null)}
                     onConfirm={handleDelete}
                     confirmLabel="Remover"
@@ -205,6 +241,19 @@ function renderJiraMetadata(m: JiraMetadata) {
         <div className="flex flex-col gap-1 text-xs">
             {m.host && (<div><span className="text-muted-foreground">Host:</span> <span className="font-mono text-foreground">{m.host}</span></div>)}
             {m.email && (<div><span className="text-muted-foreground">E-mail:</span> <span className="text-foreground">{m.email}</span></div>)}
+        </div>
+    );
+}
+
+function renderSlackMetadata(m: SlackMetadata) {
+    return (
+        <div className="flex flex-col gap-1 text-xs">
+            {m.webhook_masked && (
+                <div><span className="text-muted-foreground">Webhook:</span> <span className="font-mono text-foreground">{m.webhook_masked}</span></div>
+            )}
+            {m.default_channel && (
+                <div><span className="text-muted-foreground">Canal:</span> <span className="font-mono text-foreground">#{m.default_channel}</span></div>
+            )}
         </div>
     );
 }

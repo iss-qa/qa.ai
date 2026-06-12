@@ -35,14 +35,17 @@ export const HtmlDocNode = memo(function HtmlDocNode({
             }`}
             style={{ boxShadow: `0 0 24px ${color}22` }}
         >
+            {/* Sempre ativo: basta levar o ponteiro à borda/canto para esticar,
+                sem precisar selecionar o nó antes. Handles e linhas com hitbox
+                generosa (~14px) para o cursor "pegar" de primeira. */}
             <NodeResizer
-                isVisible={selected}
-                minWidth={320}
-                minHeight={220}
-                maxWidth={1400}
-                maxHeight={1000}
-                lineClassName="!border-brand/50"
-                handleClassName="!bg-brand !border-brand !w-2 !h-2"
+                isVisible={true}
+                minWidth={360}
+                minHeight={260}
+                maxWidth={2000}
+                maxHeight={1400}
+                lineClassName="!border-[5px] !border-transparent hover:!border-brand/30"
+                handleClassName={`!w-3.5 !h-3.5 !rounded ${selected ? '!bg-brand !border-brand' : '!bg-brand/50 !border-transparent'}`}
                 onResizeStart={() => setResizing(true)}
                 onResizeEnd={() => setResizing(false)}
             />

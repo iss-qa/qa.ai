@@ -9,9 +9,10 @@ import { KPICards } from '@/components/qa-journey/insights/KPICards';
 import { JourneyTreemap } from '@/components/qa-journey/insights/JourneyTreemap';
 import { CoverageTimeline } from '@/components/qa-journey/insights/CoverageTimeline';
 import { GapsTable } from '@/components/qa-journey/insights/GapsTable';
+import { ManualRunsCard } from '@/components/qa-journey/insights/ManualRunsCard';
 import { MigrationMissingBanner } from '@/components/qa-journey/MigrationMissingBanner';
 
-import { loadProjectOptions, type ProjectOption } from '@/lib/qa-journey/api';
+import { errorMessage, loadProjectOptions, type ProjectOption } from '@/lib/qa-journey/api';
 import {
     loadProjectInsights,
     loadSnapshots,
@@ -54,7 +55,7 @@ export default function QAJourneyInsightsPage() {
             setBundle(b);
             setSnapshots(s);
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(errorMessage(e));
         } finally {
             setLoading(false);
         }
@@ -72,7 +73,7 @@ export default function QAJourneyInsightsPage() {
             const s = await loadSnapshots(projectId, 90);
             setSnapshots(s);
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(errorMessage(e));
         } finally {
             setSnapshotting(false);
         }
@@ -142,7 +143,10 @@ export default function QAJourneyInsightsPage() {
                         />
                     </div>
 
-                    <GapsTable gaps={bundle.gaps} projectId={projectId} />
+                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,340px)_1fr] gap-4 items-start">
+                        <ManualRunsCard aggregate={bundle.aggregate} />
+                        <GapsTable gaps={bundle.gaps} projectId={projectId} />
+                    </div>
                 </>
             )}
         </div>

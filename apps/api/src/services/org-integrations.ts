@@ -6,7 +6,7 @@ import { supabase } from '../plugins/supabase';
 import { decryptJson, encryptJson } from './encryption';
 import { listSheetTabs, type GoogleServiceAccountCreds } from './google-sheets';
 
-export type IntegrationProvider = 'google_sheets' | 'jira';
+export type IntegrationProvider = 'google_sheets' | 'jira' | 'slack';
 
 export interface GoogleSheetsCredentials {
     client_email: string;
@@ -19,6 +19,11 @@ export interface JiraCredentials {
     host: string;       // ex: "foxbit.atlassian.net"
     email: string;      // email da conta Atlassian
     api_token: string;  // token gerado em id.atlassian.com
+}
+
+export interface SlackCredentials {
+    webhook_url: string;        // Incoming Webhook (https://hooks.slack.com/services/...)
+    default_channel?: string;   // informativo — o canal real é fixado no webhook
 }
 
 // Metadados visiveis na UI (nunca incluem segredos)
@@ -123,6 +128,24 @@ export async function saveJiraIntegration(
     return upsertIntegration(orgId, 'jira', cipher, metadata);
 }
 
+export async function saveSlackIntegration(
+    orgId: string,
+    creds: SlackCredentials,
+): Promise<OrgIntegrationRecord> {
+    const url = (creds.webhook_url || '').trim();
+    if (!/^https:\/\/hooks\.slack\.com\/(services|workflows)\//.test(url)) {
+        throw new Error('Slack: informe uma Incoming Webhook URL válida (https://hooks.slack.com/services/...)');
+    }
+    const channel = (creds.default_channel || '').trim().replace(/^#/, '');
+    const cipher = encryptJson({ webhook_url: url, default_channel: channel || null });
+    // Metadata sem segredo: só o sufixo do webhook para identificação visual
+    const metadata = {
+        webhook_masked: `hooks.slack.com/…${url.slice(-6)}`,
+        default_channel: channel || null,
+    };
+    return upsertIntegration(orgId, 'slack', cipher, metadata);
+}
+
 async function upsertIntegration(
     orgId: string,
     provider: IntegrationProvider,
@@ -174,6 +197,8 @@ export async function testIntegration(
     try {
         if (provider === 'google_sheets') {
             result = await testGoogleSheets(orgId);
+        } else if (provider === 'slack') {
+            result = await testSlack(orgId);
         } else {
             result = await testJira(orgId);
         }
@@ -207,6 +232,28 @@ async function testGoogleSheets(orgId: string): Promise<TestResult> {
     await auth.getAccessToken();
     void listSheetTabs; // referenciado para o tree-shaker nao remover
     return { ok: true, detail: `Autenticado como ${creds.client_email}` };
+}
+
+async function testSlack(orgId: string): Promise<TestResult> {
+    const creds = await getDecryptedCredentials<SlackCredentials>(orgId, 'slack');
+    if (!creds) return { ok: false, detail: 'Integracao Slack nao configurada' };
+    // Incoming Webhook nao tem endpoint de "ping" - o teste envia uma
+    // mensagem real no canal configurado no webhook.
+    const res = await fetch(creds.webhook_url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            text: ':white_check_mark: QAMind conectado — teste de integração Slack.',
+        }),
+    });
+    if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        return { ok: false, detail: `Slack respondeu HTTP ${res.status}: ${txt.slice(0, 200)}` };
+    }
+    return {
+        ok: true,
+        detail: `Mensagem de teste enviada${creds.default_channel ? ` para #${creds.default_channel}` : ''}.`,
+    };
 }
 
 async function testJira(orgId: string): Promise<TestResult> {

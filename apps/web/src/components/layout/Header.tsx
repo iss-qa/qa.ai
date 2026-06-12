@@ -12,6 +12,7 @@ function titleForPath(pathname: string): string {
     if (pathname.startsWith('/dashboard/logs')) return 'Logs';
     if (pathname.startsWith('/dashboard/bugs')) return 'Bugs';
     if (pathname.startsWith('/dashboard/qa-journey')) return 'Jornadas';
+    if (pathname.startsWith('/dashboard/reports')) return 'Relatórios';
     if (pathname.startsWith('/dashboard/settings')) return 'Configurações';
     if (pathname.startsWith('/dashboard/runs')) return 'Execuções';
     if (pathname.startsWith('/docs')) return 'Docs';

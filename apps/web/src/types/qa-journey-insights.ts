@@ -29,6 +29,13 @@ export interface InsightsAggregate {
     open_bugs_count: number;
     open_tasks_count: number;
     last_sync_at: string | null;
+    // Execução manual dos casos (last_run_status registrado no mapa/admin)
+    cases_pass: number;
+    cases_fail: number;
+    cases_skipped: number;
+    cases_not_run: number;
+    cases_unregistered: number;      // sem resultado registrado
+    cases_with_evidence: number;     // com evidência anexada
 }
 
 // Linha do treemap (1 por jornada)

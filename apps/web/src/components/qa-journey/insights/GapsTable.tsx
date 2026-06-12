@@ -32,7 +32,10 @@ export function GapsTable({ gaps, projectId }: Props) {
             ) : (
                 <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
                     <table className="w-full text-left text-sm text-muted-foreground whitespace-nowrap">
-                        <thead className="text-[10px] uppercase bg-surface-muted/50 text-muted-foreground font-bold tracking-widest border-b border-border sticky top-0">
+                        {/* Fundo SÓLIDO + z-index: sem isso as linhas aparecem
+                            por baixo dos labels durante o scroll. A divisória
+                            vira shadow inset (border some com sticky). */}
+                        <thead className="text-[10px] uppercase bg-card text-muted-foreground font-bold tracking-widest sticky top-0 z-10 shadow-[inset_0_-1px_0_rgb(var(--border))]">
                             <tr>
                                 <th className="px-5 py-3">Jornada</th>
                                 <th className="px-5 py-3">Sub-fluxo</th>

@@ -58,7 +58,9 @@ const NODE_TYPES: NodeTypes = {
 const JOURNEY_DEFAULT = { width: 240, height: 110 };
 const SUBFLOW_DEFAULT = { width: 220, height: 80 };
 const CASE_DEFAULT = { width: 200, height: 64 };
-const HTML_DOC_DEFAULT = { width: 480, height: 360 };
+// Carrega já no tamanho de leitura (≈ modal médio) — o usuário estica pelas
+// bordas ou clica em expandir para a visão quase tela cheia.
+const HTML_DOC_DEFAULT = { width: 880, height: 620 };
 
 // Layout customizado pelo usuario (drag + resize), persistido em localStorage por projeto.
 type CustomLayout = Record<string, { x?: number; y?: number; width?: number; height?: number }>;
@@ -171,13 +173,18 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
         });
     }, []);
 
-    const selectCase = useCallback((caseId: string) => {
-        // Garante que o drawer-pai (sub-fluxo) do caso esteja ativo, para que
-        // "voltar" no drawer empilhado retorne ao sub-fluxo correto.
-        const parent = Object.values(casesBySubflow).flat().find(c => c.id === caseId);
-        if (parent) setActiveSubflowId(parent.subflow_id);
+    // O "voltar" do modal de caso depende da origem do clique:
+    // - nó do mapa → voltar fecha tudo e devolve o mapa;
+    // - lista do modal de sub-fluxo → voltar reabre o sub-fluxo.
+    const openCaseFromMap = useCallback((caseId: string) => {
+        setActiveSubflowId(null);
         setActiveCaseId(caseId);
-    }, [casesBySubflow]);
+    }, []);
+
+    const openCaseFromSubflow = useCallback((caseId: string) => {
+        // Mantém o sub-fluxo ativo atrás — é para onde o "voltar" retorna.
+        setActiveCaseId(caseId);
+    }, []);
 
     // Reconstroi grafo (nodes/edges) - aplica dagre + sobrescreve com customLayout
     const { layoutedNodes, layoutedEdges } = useMemo(() => {
@@ -265,7 +272,7 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                             const caseData: CaseNodeData = {
                                 case_: c,
                                 isActive: activeCaseId === c.id,
-                                onSelect: selectCase,
+                                onSelect: openCaseFromMap,
                             };
                             const cCustom = customLayout[c.id];
                             nodes.push({
@@ -305,7 +312,7 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
         });
 
         return { layoutedNodes: final, layoutedEdges: edges };
-    }, [journeys, subflowsByJourney, casesBySubflow, expanded, expandedSubflows, activeSubflowId, activeCaseId, customLayout, toggleJourney, selectSubflow, selectCase]);
+    }, [journeys, subflowsByJourney, casesBySubflow, expanded, expandedSubflows, activeSubflowId, activeCaseId, customLayout, toggleJourney, selectSubflow, openCaseFromMap]);
 
     // Controlled nodes/edges para o ReactFlow
     const [rfNodes, setRfNodes] = useState<Node[]>(layoutedNodes);
@@ -333,6 +340,11 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
         });
     }, []);
 
+    // O change FINAL de resize (resizing:false) chega sem `dimensions` (mesma
+    // pegadinha do drag) — rastreia o último tamanho visto durante o resize
+    // para persistir corretamente no fim.
+    const resizingDims = useRef<Map<string, { width: number; height: number }>>(new Map());
+
     // Captura changes - persiste posicao/dimensoes em customLayout
     const onNodesChange = useCallback<OnNodesChange>(changes => {
         setRfNodes(ns => applyNodeChanges(changes, ns));
@@ -343,10 +355,17 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                     // Drag terminou - persiste posicao
                     updated = updated || { ...prev };
                     updated[c.id] = { ...(updated[c.id] || {}), x: c.position.x, y: c.position.y };
-                } else if (c.type === 'dimensions' && c.dimensions && c.resizing === false) {
-                    // Resize terminou - persiste tamanho
-                    updated = updated || { ...prev };
-                    updated[c.id] = { ...(updated[c.id] || {}), width: c.dimensions.width, height: c.dimensions.height };
+                } else if (c.type === 'dimensions') {
+                    if (c.resizing && c.dimensions) {
+                        resizingDims.current.set(c.id, c.dimensions);
+                    } else if (c.resizing === false) {
+                        const dims = c.dimensions ?? resizingDims.current.get(c.id);
+                        resizingDims.current.delete(c.id);
+                        if (dims) {
+                            updated = updated || { ...prev };
+                            updated[c.id] = { ...(updated[c.id] || {}), width: dims.width, height: dims.height };
+                        }
+                    }
                 }
             }
             return updated ?? prev;
@@ -620,7 +639,7 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                         journey={activeJourney}
                         subflow={activeSubflow}
                         cases={casesBySubflow[activeSubflow.id] || []}
-                        onSelectCase={selectCase}
+                        onSelectCase={openCaseFromSubflow}
                         onClose={() => { setActiveSubflowId(null); setActiveCaseId(null); }}
                     />
                 )}

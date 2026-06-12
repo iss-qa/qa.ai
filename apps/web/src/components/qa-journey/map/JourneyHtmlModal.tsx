@@ -16,7 +16,9 @@ interface JourneyHtmlModalProps {
 }
 
 export function JourneyHtmlModal({ journey, onClose }: JourneyHtmlModalProps) {
-    const [expanded, setExpanded] = useState(false);
+    // O nó do mapa já mostra o doc em tamanho médio — o "expandir" pula
+    // direto para a visão máxima (o botão interno permite reduzir).
+    const [expanded, setExpanded] = useState(true);
 
     useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => {
