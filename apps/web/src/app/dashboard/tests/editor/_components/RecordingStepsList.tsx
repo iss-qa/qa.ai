@@ -103,7 +103,7 @@ export function RecordingStepsList({
                                     </div>
                                     {isFallback && (
                                         <div className="text-[10px] text-amber-300/80 mt-1 pl-1 leading-snug">
-                                            Coordenada sem id resolvido. Funciona neste device, mas pode falhar em outros tamanhos de tela.
+                                            Sem id resolvido — gravado como % da tela (portável entre resoluções, mas prefira refazer o tap num elemento com id).
                                         </div>
                                     )}
                                     {isInput && rs.value && (

@@ -2,6 +2,7 @@ import asyncio
 import socket
 import struct
 import os
+import time
 import httpx
 import logging
 import secrets
@@ -37,6 +38,15 @@ class ScrcpyClient:
         self._video_socket = None
         self._control_socket = None
         self._process = None
+        # Timestamp (monotonic) do último frame recebido — usado pelo
+        # watchdog do stream_manager para detectar encoder congelado
+        # (pm clear / troca de surface congela o H.264 no último frame).
+        self.last_frame_at: float = time.monotonic()
+        # Última atividade que DEVERIA produzir frames novos (toque, tecla,
+        # texto, interação física na gravação). O watchdog só reseta o vídeo
+        # quando houve atividade depois do último frame — em tela ociosa
+        # nada dispara (reset em idle causava "piscada" preta periódica).
+        self.last_activity_at: float = 0.0
         self.scid_hex = f"{secrets.randbelow(0x7FFFFFFF):08x}"
         # Use a unique port per device based on a hash of udid to avoid conflicts
         self.local_port = self.LOCAL_PORT_BASE + (hash(udid) % 1000)
@@ -201,17 +211,24 @@ class ScrcpyClient:
 
             # Ler dados do frame
             data = await self._video_reader.readexactly(size)
+            self.last_frame_at = time.monotonic()
             return data
         except (asyncio.IncompleteReadError, ConnectionResetError) as e:
             logger.error(f"Error reading video frame: {e}")
             log_manager.device(f"Scrcpy: erro ao ler frame de vídeo: {e}", udid=self.udid, level="ERROR")
             return None
     
+    def notify_activity(self):
+        """Marca que algo aconteceu que deve mudar a tela (gravação física,
+        replay, launch). Habilita o watchdog a destravar o encoder."""
+        self.last_activity_at = time.monotonic()
+
     async def send_touch(self, action: str, x: int, y: int, pressure: float = 1.0):
         """
         Enviar evento de toque para o device.
         action: "down" | "up" | "move"
         """
+        self.notify_activity()
         action_code = {"down": 0, "up": 1, "move": 2}[action]
         pressure_int = int(pressure * 0xffff)
 
@@ -236,6 +253,7 @@ class ScrcpyClient:
         Inject text into the device using adb shell input text.
         More reliable than scrcpy's INJECT_TEXT for character-by-character input.
         """
+        self.notify_activity()
         # Escape special shell characters
         escaped = text.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'").replace(' ', '%s').replace('&', '\\&').replace('|', '\\|').replace(';', '\\;').replace('(', '\\(').replace(')', '\\)')
         proc = await asyncio.create_subprocess_exec(
@@ -281,6 +299,7 @@ class ScrcpyClient:
         """
         Enviar keyevent (back, home, recents, etc).
         """
+        self.notify_activity()
         actions = [0] if action == "down" else [1] if action == "up" else [0, 1]
         
         for act in actions:
@@ -304,7 +323,7 @@ class ScrcpyClient:
                 self._process.terminate()
             except Exception as e:
                 logger.error(f"Error terminating scrcpy process: {e}")
-        
+
         # Remover adb forward
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -314,11 +333,15 @@ class ScrcpyClient:
                 stderr=asyncio.subprocess.PIPE
             )
             await proc.wait()
-            
-            # Kill the spawned app_process on the device
+
+            # Kill cirúrgico do NOSSO server (identificado pelo scid).
+            # NUNCA usar `pkill app_process` puro: isso mata qualquer
+            # app_process do device — inclusive um scrcpy novo subindo num
+            # restart (causava os "connection refused" em série) e o server
+            # do uiautomator2 usado pelo gravador.
             kill_proc = await asyncio.create_subprocess_exec(
                 'adb', '-s', self.udid,
-                'shell', 'pkill', 'app_process',
+                'shell', 'pkill', '-f', f'scid={self.scid_hex}',
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )

@@ -84,6 +84,48 @@ async def _resolve_launch(udid: str, app_id: str) -> tuple:
     return None, None
 
 
+async def _grant_all_runtime_permissions(udid: str, app_id: str, uid: int) -> int:
+    """Concede via `pm grant` todas as permissões que o app declara.
+
+    `pm clear` zera as permissões runtime — sem isso, todo launch com
+    clearState reabre os diálogos do sistema (localização, notificações...)
+    que poluem a gravação e quebram o replay. Espelha o comportamento do
+    Maestro (launchApp concede tudo por padrão). Permissões não-runtime
+    falham silenciosamente no `pm grant` — esperado e inofensivo.
+    Retorna o nº de grants bem-sucedidos.
+    """
+    try:
+        p = await asyncio.create_subprocess_exec(
+            "adb", "-s", udid, "shell", "dumpsys", "package", app_id,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out_b, _ = await asyncio.wait_for(p.communicate(), timeout=10)
+        out = out_b.decode(errors="replace")
+    except Exception as e:
+        logger.warning(f"[PERMS] dumpsys package {app_id} falhou: {e}")
+        return 0
+
+    perms = sorted(set(_re.findall(r"(android\.permission\.[A-Z_0-9]+)", out)))
+    if not perms:
+        return 0
+
+    async def _grant(perm: str) -> bool:
+        try:
+            gp = await asyncio.create_subprocess_exec(
+                "adb", "-s", udid, "shell", "pm", "grant", "--user", str(uid), app_id, perm,
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(gp.wait(), timeout=5)
+            return gp.returncode == 0
+        except Exception:
+            return False
+
+    results = await asyncio.gather(*(_grant(perm) for perm in perms))
+    granted = sum(1 for r in results if r)
+    logger.info(f"[PERMS] {app_id}: {granted}/{len(perms)} permissões concedidas via pm grant")
+    return granted
+
+
 async def _adb_launch_app(udid: str, app_id: str, clear_state: bool = False) -> tuple:
     """Launch an Android app via ADB, bypassing Maestro's broken launchApp.
 
@@ -102,6 +144,13 @@ async def _adb_launch_app(udid: str, app_id: str, clear_state: bool = False) -> 
             await asyncio.wait_for(p.wait(), timeout=10)
         except Exception:
             pass
+
+        # Re-concede as permissões ANTES do am start: o app abre com tudo
+        # liberado e nenhum diálogo de permissão interrompe splash/gravação.
+        try:
+            await _grant_all_runtime_permissions(udid, app_id, uid)
+        except Exception as e:
+            logger.warning(f"[PERMS] grant pós-clear falhou: {e}")
 
     p = await asyncio.create_subprocess_exec(
         "adb", "-s", udid, "shell", "am", "start", "--user", str(uid), "-n", component,
@@ -269,6 +318,28 @@ async def _wake_and_unlock_device(udid: str) -> None:
         await _adb_shell(udid, "wm", "dismiss-keyguard", timeout=2)
     except Exception as e:
         logger.debug(f"wake/unlock best-effort failed: {e}")
+
+
+async def _adb_hide_keyboard(udid: str) -> None:
+    """Reforço do hideKeyboard: em vários IMEs (MIUI/GBoard) o Maestro marca
+    o comando como COMPLETED sem o teclado fechar de fato. Checa mInputShown
+    e só então manda BACK — com o IME fechado não envia nada (não navega)."""
+    try:
+        p = await asyncio.create_subprocess_exec(
+            "adb", "-s", udid, "shell", "dumpsys", "input_method",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await asyncio.wait_for(p.communicate(), timeout=5)
+        if b"mInputShown=true" not in out:
+            return
+        k = await asyncio.create_subprocess_exec(
+            "adb", "-s", udid, "shell", "input", "keyevent", "4",
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(k.wait(), timeout=5)
+        logger.info(f"[hideKeyboard] reforço adb aplicado em {udid} (IME estava aberto)")
+    except Exception as e:
+        logger.debug(f"[hideKeyboard] reforço falhou: {e}")
 
 
 def _parse_maestro_line(line: str) -> Optional[dict]:
@@ -497,10 +568,33 @@ async def _reset_maestro_driver_state(udid: str, hard: bool = False) -> None:
         logger.warning(f"[reset] selective forward cleanup failed, leaving them: {e}")
 
     # 3. Force-stop the driver APK packages so `am instrument` can start fresh.
+    #    CRÍTICO: inclui o uiautomator2 (gravador/scanner) — o Android só
+    #    permite UMA instrumentação segurando o UiAutomation por vez. Com o
+    #    u2 vivo (fica rodando após gravar/escanear), o `am instrument` do
+    #    Maestro nunca ACKa → AndroidDriverTimeoutException → tcp:7001
+    #    connection refused. O u2 religa sozinho (lazy) na próxima
+    #    gravação/scan, então é seguro derrubá-lo aqui.
     await asyncio.gather(
         _adb("shell", "am", "force-stop", "dev.mobile.maestro.test", timeout=3),
         _adb("shell", "am", "force-stop", "dev.mobile.maestro", timeout=3),
+        _adb("shell", "am", "force-stop", "com.github.uiautomator", timeout=3),
+        _adb("shell", "am", "force-stop", "com.github.uiautomator.test", timeout=3),
     )
+    # Processos residuais da instrumentação u2 (mesma higiene do engine
+    # legado em engines/maestro_runner._ensure_device_ready).
+    await asyncio.gather(
+        _adb("shell", "pkill", "-f", "uiautomator", timeout=3),
+        _adb("shell", "pkill", "-f", "atx-agent", timeout=3),
+    )
+    # Solta a conexão u2 em cache — senão o próximo dump do recorder/scanner
+    # tenta reusar um servidor morto em vez de relançar.
+    try:
+        from android.device_manager import device_manager_instance
+        if udid in device_manager_instance.connections:
+            del device_manager_instance.connections[udid]
+            logger.info(f"[reset] u2 connection dropped for {udid}")
+    except Exception:
+        pass
 
     if hard:
         # 4. Nuke the adb side of this device. `reconnect` triggers re-handshake
@@ -589,6 +683,15 @@ async def _do_run_maestro_test(
                     parsed = _parse_maestro_line(text)
                     if parsed:
                         await step_queue.put(parsed)
+                        # hideKeyboard COMPLETED → reforça via adb (o Maestro
+                        # não falha quando o IME ignora o comando).
+                        if (
+                            parsed.get("type") == "step"
+                            and parsed.get("status") == "COMPLETED"
+                            and "keyboard" in parsed.get("description", "").lower()
+                            and "hide" in parsed.get("description", "").lower()
+                        ):
+                            asyncio.create_task(_adb_hide_keyboard(udid))
 
         async def _drain_stderr():
             while True:

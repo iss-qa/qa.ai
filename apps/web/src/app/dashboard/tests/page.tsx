@@ -10,6 +10,7 @@ type TestRow = {
     name: string;
     project_id: string | null;
     last_run_at: string | null;
+    created_at: string | null;
     status: string | null;
     projects?: { name: string | null; platform: string | null } | null;
 };
@@ -46,14 +47,18 @@ export default function TestsPage() {
     const [tests, setTests] = useState<TestRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [projectFilter, setProjectFilter] = useState('');
 
     useEffect(() => {
         let cancelled = false;
         (async () => {
+            // Mais recentes sempre no topo: por última execução; testes nunca
+            // executados vão para o fim, ordenados pela criação mais recente.
             const { data, error } = await supabase
                 .from('test_cases')
-                .select('id, name, project_id, last_run_at, status, projects:project_id ( name, platform )')
-                .order('last_run_at', { ascending: false, nullsFirst: false });
+                .select('id, name, project_id, last_run_at, created_at, status, projects:project_id ( name, platform )')
+                .order('last_run_at', { ascending: false, nullsFirst: false })
+                .order('created_at', { ascending: false });
             if (cancelled) return;
             if (error) {
                 console.error('Failed to load test_cases:', error);
@@ -66,14 +71,28 @@ export default function TestsPage() {
         return () => { cancelled = true; };
     }, []);
 
+    // Projetos presentes na lista (para o combobox de filtro)
+    const projectOptions = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const t of tests) {
+            if (t.project_id && t.projects?.name) map.set(t.project_id, t.projects.name);
+        }
+        return Array.from(map.entries())
+            .map(([id, name]) => ({ id, name }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [tests]);
+
     const filtered = useMemo(() => {
         const q = search.trim().toLowerCase();
-        if (!q) return tests;
-        return tests.filter(t =>
-            (t.name || '').toLowerCase().includes(q) ||
-            (t.projects?.name || '').toLowerCase().includes(q)
-        );
-    }, [tests, search]);
+        return tests.filter(t => {
+            if (projectFilter && t.project_id !== projectFilter) return false;
+            if (!q) return true;
+            return (
+                (t.name || '').toLowerCase().includes(q) ||
+                (t.projects?.name || '').toLowerCase().includes(q)
+            );
+        });
+    }, [tests, search, projectFilter]);
 
     return (
         <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto flex flex-col gap-8">
@@ -88,21 +107,33 @@ export default function TestsPage() {
             </div>
 
             <div className="bg-card rounded-2xl shadow-sm border border-border flex flex-col overflow-hidden">
-                <div className="p-4 border-b border-border flex items-center justify-between bg-surface-muted/50">
-                    <div className="relative">
+                <div className="p-4 border-b border-border flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-surface-muted/50">
+                    <div className="relative flex-1 sm:max-w-xl">
                         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                         <input
                             type="text"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Buscar testes..."
-                            className="pl-10 pr-4 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 w-64 text-foreground"
+                            placeholder="Buscar testes por nome ou projeto..."
+                            className="pl-10 pr-4 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 w-full text-foreground"
                         />
                     </div>
-                    <div className="flex items-center gap-2">
-                        <button className="p-2 hover:bg-accent rounded-lg transition-colors text-muted-foreground">
-                            <Filter className="w-4 h-4" />
-                        </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <Filter className="w-4 h-4 text-muted-foreground hidden sm:block" />
+                        <label htmlFor="tests-project-filter" className="text-xs font-bold text-muted-foreground uppercase tracking-wider hidden sm:block">
+                            Projeto
+                        </label>
+                        <select
+                            id="tests-project-filter"
+                            value={projectFilter}
+                            onChange={e => setProjectFilter(e.target.value)}
+                            className="bg-card border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/20 min-w-[150px]"
+                        >
+                            <option value="">Todos os projetos</option>
+                            {projectOptions.map(p => (
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                        </select>
                     </div>
                 </div>
 
@@ -130,7 +161,7 @@ export default function TestsPage() {
                             {!loading && filtered.length === 0 && (
                                 <tr>
                                     <td colSpan={6} className="px-6 py-10 text-center text-muted-foreground text-sm">
-                                        {search ? 'Nenhum teste encontrado para esta busca.' : 'Nenhum teste cadastrado ainda.'}
+                                        {search || projectFilter ? 'Nenhum teste encontrado para este filtro.' : 'Nenhum teste cadastrado ainda.'}
                                     </td>
                                 </tr>
                             )}

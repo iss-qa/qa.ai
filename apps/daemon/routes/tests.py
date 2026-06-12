@@ -241,3 +241,47 @@ async def save_maestro_yaml(req: MaestroYamlRequest):
 
     file_path = save_yaml_flow(req.project_id, req.test_name, req.yaml_content)
     return {"status": "saved", "path": file_path}
+
+
+class RevealTestRequest(BaseModel):
+    project_id: str
+    test_name: str
+
+
+@router.post("/api/tests/reveal")
+async def reveal_test_file(req: RevealTestRequest):
+    """Abre o YAML do teste no navegador de arquivos do SO (Finder/Explorer).
+
+    O daemon roda na máquina do usuário, então pode revelar o arquivo
+    localmente — coisa que o browser não consegue. O caminho é derivado com a
+    MESMA sanitização do save_yaml_flow, nunca de um path vindo do cliente.
+    """
+    import re as _re
+    import subprocess
+    import sys
+
+    from engines.maestro_runner import FLOWS_DIR
+
+    safe_name = _re.sub(r"[^\w\-]", "_", req.test_name).strip("_") or "flow"
+    file_path = (FLOWS_DIR / req.project_id / f"{safe_name}.yaml").resolve()
+
+    # Confinamento: o path final precisa estar dentro de FLOWS_DIR.
+    if not str(file_path).startswith(str(Path(FLOWS_DIR).resolve())):
+        raise HTTPException(status_code=400, detail="Caminho inválido")
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Arquivo do teste não encontrado — salve o teste primeiro (botão Salvar).",
+        )
+
+    try:
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(file_path)])
+        elif sys.platform.startswith("win"):
+            subprocess.Popen(["explorer", f"/select,{file_path}"])
+        else:
+            subprocess.Popen(["xdg-open", str(file_path.parent)])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Falha ao abrir o Finder: {e}")
+
+    return {"status": "revealed", "path": str(file_path)}

@@ -45,12 +45,16 @@ async def mss_apps_recent():
 
 
 @router.get("/mss/api/apps/installed")
-async def mss_apps_installed():
-    """Return packages installed on the connected device for the App ID combobox."""
-    udid = _mss_get_udid()
-    if not udid:
+async def mss_apps_installed(udid: str = None):
+    """Return packages installed on the connected device for the App ID combobox.
+
+    Aceita ?udid= explícito (usado pelo editor de gravação, que conhece o
+    device conectado); sem ele cai na sessão do Maestro Studio embutido.
+    """
+    target = udid or _mss_get_udid()
+    if not target:
         return {"packages": []}
-    packages = await _adb_list_packages(udid)
+    packages = await _adb_list_packages(target)
     return {"packages": packages}
 
 

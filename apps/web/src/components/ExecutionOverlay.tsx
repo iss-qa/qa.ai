@@ -8,12 +8,16 @@ interface ExecutionOverlayProps {
     onComplete: () => void;
 }
 
+// Durações CURTAS de propósito: o overlay é escondido pelo pai assim que o
+// primeiro evento real de execução chega via SSE — então as fases são apenas
+// o "piso" visual. Num start quente (~6-9s) elas acompanham o ritmo real;
+// num start frio o modo holding abaixo segura a narrativa sem mentir prazo.
 const PHASES = [
-    { icon: Search, text: 'Analisando passos do teste...', color: 'text-blue-400', duration: 3000 },
-    { icon: Smartphone, text: 'Conectando ao dispositivo...', color: 'text-cyan-400', duration: 3000 },
-    { icon: Cpu, text: 'Buscando aplicativo no device...', color: 'text-purple-400', duration: 4000 },
-    { icon: Shield, text: 'Parando servicos conflitantes...', color: 'text-orange-400', duration: 3000 },
-    { icon: Zap, text: 'Preparando engine Maestro...', color: 'text-amber-400', duration: 4000 },
+    { icon: Search, text: 'Analisando passos do teste...', color: 'text-blue-400', duration: 1200 },
+    { icon: Smartphone, text: 'Conectando ao dispositivo...', color: 'text-cyan-400', duration: 1300 },
+    { icon: Cpu, text: 'Buscando aplicativo no device...', color: 'text-purple-400', duration: 1700 },
+    { icon: Shield, text: 'Parando servicos conflitantes...', color: 'text-orange-400', duration: 1500 },
+    { icon: Zap, text: 'Preparando engine Maestro...', color: 'text-amber-400', duration: 2300 },
 ];
 
 // After the timed phases above end, the overlay enters a holding loop that
@@ -30,8 +34,8 @@ const HOLDING_MESSAGES = [
     'Pronto para executar — começando em instantes...',
 ];
 
-const TOTAL_DURATION = PHASES.reduce((sum, p) => sum + p.duration, 0); // ~17s
-const HOLDING_TICK = 3500;
+const TOTAL_DURATION = PHASES.reduce((sum, p) => sum + p.duration, 0); // ~8s
+const HOLDING_TICK = 2500;
 
 export function ExecutionOverlay({ isVisible, onComplete }: ExecutionOverlayProps) {
     const [phase, setPhase] = useState(0);
@@ -103,7 +107,7 @@ export function ExecutionOverlay({ isVisible, onComplete }: ExecutionOverlayProp
                     setHoldingIdx(0);
                 }
                 // Asymptote toward 92% — slower the closer it gets.
-                setProgress(p => Math.min(p + (92 - p) * 0.008, 92));
+                setProgress(p => Math.min(p + (92 - p) * 0.015, 92));
             }
         }, 60);
 

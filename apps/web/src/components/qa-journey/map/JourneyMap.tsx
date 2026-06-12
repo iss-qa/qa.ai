@@ -204,6 +204,9 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                 onOpenHtml: setHtmlJourneyId,
             };
 
+            // IMPORTANTE: width/height no node são só dica de layout (dagre).
+            // O tamanho RENDERIZADO vem de node.style — sem reaplicá-lo aqui,
+            // todo rebuild do grafo descartaria o resize feito pelo usuário.
             const jCustom = customLayout[journey.id];
             nodes.push({
                 id: journey.id,
@@ -212,6 +215,9 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                 data: journeyData,
                 width: jCustom?.width ?? JOURNEY_DEFAULT.width,
                 height: jCustom?.height ?? JOURNEY_DEFAULT.height,
+                ...(jCustom?.width || jCustom?.height
+                    ? { style: { width: jCustom.width, height: jCustom.height } }
+                    : {}),
             });
 
             if (expanded.has(journey.id)) {
@@ -231,6 +237,12 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                         dragHandle: '.html-doc-drag',
                         width: hCustom?.width ?? HTML_DOC_DEFAULT.width,
                         height: hCustom?.height ?? HTML_DOC_DEFAULT.height,
+                        // style SEMPRE presente: sem ele o iframe colapsa para o
+                        // tamanho intrínseco (~300×150) em vez do default grande.
+                        style: {
+                            width: hCustom?.width ?? HTML_DOC_DEFAULT.width,
+                            height: hCustom?.height ?? HTML_DOC_DEFAULT.height,
+                        },
                     });
                     edges.push({
                         id: `${journey.id}->${htmlId}`,
@@ -257,6 +269,9 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                         data: subflowData,
                         width: sCustom?.width ?? SUBFLOW_DEFAULT.width,
                         height: sCustom?.height ?? SUBFLOW_DEFAULT.height,
+                        ...(sCustom?.width || sCustom?.height
+                            ? { style: { width: sCustom.width, height: sCustom.height } }
+                            : {}),
                     });
                     edges.push({
                         id: `${journey.id}->${subflow.id}`,
@@ -282,6 +297,9 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                                 data: caseData,
                                 width: cCustom?.width ?? CASE_DEFAULT.width,
                                 height: cCustom?.height ?? CASE_DEFAULT.height,
+                                ...(cCustom?.width || cCustom?.height
+                                    ? { style: { width: cCustom.width, height: cCustom.height } }
+                                    : {}),
                             });
                             edges.push({
                                 id: `${subflow.id}->${c.id}`,
@@ -345,31 +363,44 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
     // para persistir corretamente no fim.
     const resizingDims = useRef<Map<string, { width: number; height: number }>>(new Map());
 
-    // Captura changes - persiste posicao/dimensoes em customLayout
+    // Captura changes - persiste posicao/dimensoes em customLayout.
+    // ATENÇÃO: o processamento fica FORA do updater do setState — em dev o
+    // StrictMode invoca updaters duas vezes, e side effects lá dentro
+    // (mutação do ref resizingDims) faziam a persistência do resize falhar.
     const onNodesChange = useCallback<OnNodesChange>(changes => {
         setRfNodes(ns => applyNodeChanges(changes, ns));
-        setCustomLayout(prev => {
-            let updated: CustomLayout | null = null;
-            for (const c of changes) {
-                if (c.type === 'position' && c.position && c.dragging === false) {
-                    // Drag terminou - persiste posicao
-                    updated = updated || { ...prev };
-                    updated[c.id] = { ...(updated[c.id] || {}), x: c.position.x, y: c.position.y };
-                } else if (c.type === 'dimensions') {
-                    if (c.resizing && c.dimensions) {
-                        resizingDims.current.set(c.id, c.dimensions);
-                    } else if (c.resizing === false) {
-                        const dims = c.dimensions ?? resizingDims.current.get(c.id);
-                        resizingDims.current.delete(c.id);
-                        if (dims) {
-                            updated = updated || { ...prev };
-                            updated[c.id] = { ...(updated[c.id] || {}), width: dims.width, height: dims.height };
-                        }
+
+        const updates: CustomLayout = {};
+        let hasUpdates = false;
+        for (const c of changes) {
+            if (c.type === 'position' && c.position && c.dragging === false) {
+                // Drag terminou - persiste posicao
+                updates[c.id] = { ...(updates[c.id] || {}), x: c.position.x, y: c.position.y };
+                hasUpdates = true;
+            } else if (c.type === 'dimensions') {
+                if (c.resizing && c.dimensions) {
+                    // Durante o resize o change traz as dimensões; o change
+                    // FINAL (resizing:false) vem sem — guarda o último visto.
+                    resizingDims.current.set(c.id, c.dimensions);
+                } else if (c.resizing === false) {
+                    const dims = c.dimensions ?? resizingDims.current.get(c.id);
+                    resizingDims.current.delete(c.id);
+                    if (dims) {
+                        updates[c.id] = { ...(updates[c.id] || {}), width: dims.width, height: dims.height };
+                        hasUpdates = true;
                     }
                 }
             }
-            return updated ?? prev;
-        });
+        }
+        if (hasUpdates) {
+            setCustomLayout(prev => {
+                const next = { ...prev };
+                for (const [id, patch] of Object.entries(updates)) {
+                    next[id] = { ...(next[id] || {}), ...patch };
+                }
+                return next;
+            });
+        }
     }, []);
     const onEdgesChange = useCallback<OnEdgesChange>(changes => {
         setRfEdges(es => applyEdgeChanges(changes, es));

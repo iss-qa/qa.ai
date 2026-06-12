@@ -37,71 +37,95 @@ export function useScrcpyStream(udid: string | null) {
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d')!;
 
-        let configBuffer: Uint8Array | null = null;
-        let codecString = '';
-        let waitingForKeyframe = false;
         let cancelled = false;
+        let retryDelayMs = 800;
 
-        function createDecoder(): VideoDecoder {
-            return new VideoDecoder({
-                output: (frame) => {
-                    if (canvas) {
-                        ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-                    }
-                    frame.close();
-                },
-                error: (e) => {
-                    console.warn('[Scrcpy] Decoder error, will reset on next keyframe:', e);
-                    waitingForKeyframe = true;
-                },
-            });
-        }
+        // Estado de decodificação é POR CONEXÃO — recriado em cada connect()
+        // (o scrcpy reiniciado manda SPS/PPS novos).
+        const connect = () => {
+            if (cancelled) return;
 
-        let decoder = createDecoder();
-        decoderRef.current = decoder;
+            let configBuffer: Uint8Array | null = null;
+            let codecString = '';
+            let waitingForKeyframe = false;
 
-        function resetAndReconfigure() {
-            try {
-                if (decoder.state !== 'closed') {
-                    decoder.close();
-                }
-            } catch { /* ignore */ }
+            function createDecoder(): VideoDecoder {
+                return new VideoDecoder({
+                    output: (frame) => {
+                        if (canvas) {
+                            ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+                        }
+                        frame.close();
+                    },
+                    error: (e) => {
+                        console.warn('[Scrcpy] Decoder error, will reset on next keyframe:', e);
+                        waitingForKeyframe = true;
+                    },
+                });
+            }
 
-            decoder = createDecoder();
+            let decoder = createDecoder();
             decoderRef.current = decoder;
-            waitingForKeyframe = false;
 
-            if (codecString) {
+            function resetAndReconfigure() {
                 try {
-                    decoder.configure({ codec: codecString, optimizeForLatency: true });
-                } catch (e) {
-                    console.error('[Scrcpy] Re-configure failed:', e);
+                    if (decoder.state !== 'closed') {
+                        decoder.close();
+                    }
+                } catch { /* ignore */ }
+
+                decoder = createDecoder();
+                decoderRef.current = decoder;
+                waitingForKeyframe = false;
+
+                if (codecString) {
+                    try {
+                        decoder.configure({ codec: codecString, optimizeForLatency: true });
+                    } catch (e) {
+                        console.error('[Scrcpy] Re-configure failed:', e);
+                    }
                 }
             }
-        }
 
-        // Connect WebSocket
-        const baseUrl = process.env.NEXT_PUBLIC_DAEMON_URL?.replace('http', 'ws') || 'ws://localhost:8001';
-        const ws = new WebSocket(`${baseUrl}/stream/${udid}`);
-        ws.binaryType = 'arraybuffer';
-        wsRef.current = ws;
+            const baseUrl = process.env.NEXT_PUBLIC_DAEMON_URL?.replace('http', 'ws') || 'ws://localhost:8001';
+            const ws = new WebSocket(`${baseUrl}/stream/${udid}`);
+            ws.binaryType = 'arraybuffer';
+            wsRef.current = ws;
 
-        ws.onopen = () => {
-            console.log('[Scrcpy] WebSocket connected');
-            setStreamStatus('connecting'); // still connecting until first frame
-        };
+            const scheduleReconnect = () => {
+                if (cancelled || retryRef.current) return;
+                setStreamStatus('connecting');
+                retryRef.current = setTimeout(() => {
+                    retryRef.current = null;
+                    connect();
+                }, retryDelayMs);
+                // Backoff suave até 5s — daemon pode estar reiniciando o scrcpy.
+                retryDelayMs = Math.min(retryDelayMs * 1.6, 5000);
+            };
 
-        ws.onerror = (e) => {
-            console.error('[Scrcpy] WebSocket error:', e);
-            if (!cancelled) setStreamStatus('error');
-        };
+            ws.onopen = () => {
+                console.log('[Scrcpy] WebSocket connected');
+                retryDelayMs = 800; // conexão ok → zera o backoff
+                setStreamStatus('connecting'); // still connecting until first frame
+            };
 
-        ws.onclose = (e) => {
-            console.warn('[Scrcpy] WebSocket closed:', e.code, e.reason);
-            if (!cancelled) setStreamStatus('error');
-        };
+            ws.onerror = (e) => {
+                console.error('[Scrcpy] WebSocket error:', e);
+                if (!cancelled) setStreamStatus('error');
+            };
 
-        ws.onmessage = (event) => {
+            // Reconexão automática: o daemon pode fechar o stream quando o
+            // scrcpy morre no device (ex.: pm clear ao iniciar gravação).
+            // Sem isso o canvas ficava CONGELADO no último frame para sempre.
+            ws.onclose = (e) => {
+                console.warn('[Scrcpy] WebSocket closed:', e.code, e.reason, '— reconectando…');
+                try {
+                    if (decoder.state !== 'closed') decoder.close();
+                } catch { /* ignore */ }
+                if (!cancelled) scheduleReconnect();
+            };
+
+            ws.onmessage = (event) => {
             if (typeof event.data === 'string') {
                 try {
                     const msg = JSON.parse(event.data);
@@ -184,7 +208,10 @@ export function useScrcpyStream(udid: string | null) {
                 console.warn('[Scrcpy] Decode error:', e);
                 waitingForKeyframe = true;
             }
+            };
         };
+
+        connect();
 
         return () => {
             cancelled = true;
@@ -192,11 +219,13 @@ export function useScrcpyStream(udid: string | null) {
                 clearTimeout(retryRef.current);
                 retryRef.current = null;
             }
-            if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+            const ws = wsRef.current;
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
                 ws.close();
             }
             try {
-                if (decoder.state !== 'closed') {
+                const decoder = decoderRef.current;
+                if (decoder && decoder.state !== 'closed') {
                     decoder.close();
                 }
             } catch { /* ignore */ }

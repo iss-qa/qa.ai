@@ -15,6 +15,7 @@ import { AmbiguityDialog } from '@/components/AmbiguityDialog';
 import { SaveRecordingModal } from '@/components/SaveRecordingModal';
 import { ExecutionOverlay } from '@/components/ExecutionOverlay';
 import { supabase } from '@/lib/supabase';
+import { testYamlFileName, writeYamlToWorkspace } from '@/lib/workspace';
 import type { TestStep, ConfidenceReport, RecorderConfigState, ExecutionErrorState } from './editor-types';
 import { MOCK_MAESTRO_STEPS, MOCK_MAESTRO_YAML, MOCK_U2_STEPS, recordedStepsToMaestroYaml, normalizeMaestroCommand } from './editor-utils';
 import { persistRunResult, saveTestCase } from './editor-persistence';
@@ -34,6 +35,7 @@ import { AddStepButtons, ConfidenceReportCard } from './_components/StepsPanelEx
 import { AiFeedbackPanel } from './_components/AiFeedbackPanel';
 import { StepsList } from './_components/StepsList';
 import { EditorHeader } from './_components/EditorHeader';
+import { ExportResultModal } from './_components/ExportResultModal';
 
 export default function TestEditorPage() {
     const searchParams = useSearchParams();
@@ -67,9 +69,18 @@ export default function TestEditorPage() {
     const [maestroStudioLaunching, setMaestroStudioLaunching] = useState(false);
     const [showExecutionOverlay, setShowExecutionOverlay] = useState(false);
     const [testName, setTestName] = useState('');
+    const [showExportModal, setShowExportModal] = useState(false);
     const [projectName, setProjectName] = useState('');
     const [showSaveDialog, setShowSaveDialog] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    // Confirmação não-bloqueante do save direto (teste já nomeado → sem modal).
+    const [saveToast, setSaveToast] = useState<string | null>(null);
+    const saveToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const flashSaveToast = (msg: string) => {
+        setSaveToast(msg);
+        if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
+        saveToastTimer.current = setTimeout(() => setSaveToast(null), 2500);
+    };
     const devicePreviewRef = useRef<DevicePreviewHandle>(null);
     const executionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // Persistent error banner for Executar Teste failures. Without this the
@@ -145,6 +156,7 @@ export default function TestEditorPage() {
         stopRecording: stopRecordingStore,
         addStepFromDaemon,
         resolvePendingInput,
+        retractLastHideKeyboard,
         addLaunchAppStep,
         reorderSteps,
         removeStep: removeRecordedStep,
@@ -230,6 +242,12 @@ export default function TestEditorPage() {
 
     // SSE step handler
     const handleSseStep = useCallback((data: DaemonStep) => {
+        if (data.removed) {
+            // Daemon retraiu o hideKeyboard provisório — a sequência de
+            // inputs continua (o usuário tocou em outro campo de texto).
+            retractLastHideKeyboard();
+            return;
+        }
         if (data.updated) {
             // The daemon echoes a confirmed inputText back as an `updated` event
             // keyed by ITS array index. We can't trust that index on the
@@ -243,7 +261,7 @@ export default function TestEditorPage() {
             setPendingInputModal({ visible: true, stepIndex: data.step_index ?? 0, stepId: step.id });
             setPendingInputText('');
         }
-    }, [addStepFromDaemon]);
+    }, [addStepFromDaemon, retractLastHideKeyboard]);
 
     // DevicePreview interaction — scrcpy sends touch to device, we also notify daemon
     // so it can do u2 dump at those coords and broadcast the step via SSE.
@@ -436,16 +454,19 @@ export default function TestEditorPage() {
         }
     };
 
-    const handleSaveRecording = async (testName: string, projectId: string, yamlContent?: string) => {
+    const handleSaveRecording = async (testName: string, projectId: string, yamlContent?: string, workspacePath?: string | null) => {
         // Generate Maestro YAML from recorded steps — appId from the config
         // modal (recordingAppId) takes precedence over the editor's loaded
         // appId (testAppId). Hardcoded foxbit removed.
         const appId = recordingAppId || testAppId || '';
         const generatedYaml = yamlContent || recordedStepsToMaestroYaml(appId, recordedSteps);
 
-        // Save YAML to backend
+        // Save YAML to backend. Falha aqui ABORTA o save (lança para o modal
+        // alertar e manter aberto) — antes era só console.error e o usuário
+        // ficava sem saber por que "não respondeu".
+        let saveRes: Response;
         try {
-            const saveRes = await fetch(`${DAEMON_URL}/api/maestro/save-yaml`, {
+            saveRes = await fetch(`${DAEMON_URL}/api/maestro/save-yaml`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -454,13 +475,16 @@ export default function TestEditorPage() {
                     test_name: testName,
                 }),
             });
-            const saveData = await saveRes.json();
-            if (saveRes.ok && saveData.path) {
-                setMaestroYamlPath(saveData.path);
-                setMaestroYaml(generatedYaml);
-            }
-        } catch (e) {
-            console.error('Failed to save Maestro YAML:', e);
+        } catch {
+            throw new Error(`Daemon offline em ${DAEMON_URL} — não foi possível salvar o YAML.`);
+        }
+        const saveData = await saveRes.json().catch(() => ({} as { detail?: string; path?: string }));
+        if (!saveRes.ok) {
+            throw new Error(saveData.detail || `YAML rejeitado pelo daemon (HTTP ${saveRes.status}).`);
+        }
+        if (saveData.path) {
+            setMaestroYamlPath(saveData.path);
+            setMaestroYaml(generatedYaml);
         }
 
         // Convert recorded steps to TestStep format for editor
@@ -515,8 +539,7 @@ export default function TestEditorPage() {
 
             if (!res.ok) {
                 const errData = await res.json().catch(() => ({ detail: res.statusText }));
-                console.error('Failed to save test:', errData);
-                alert('Erro ao salvar teste: ' + (errData.detail || res.statusText));
+                throw new Error(errData.detail || res.statusText);
             }
 
             // Defensive Supabase sync: the daemon save endpoint may ignore
@@ -544,8 +567,28 @@ export default function TestEditorPage() {
                 }
             }
         } catch (e) {
-            console.error('Failed to save test:', e);
-            alert('Erro ao salvar teste. Verifique se o daemon esta rodando.');
+            // Propaga para o modal (alerta + mantém aberto para retry).
+            throw e instanceof Error ? e : new Error('Erro ao salvar teste. Verifique se o daemon está rodando.');
+        }
+
+        // Grava o YAML no workspace do projeto (mesma pasta que o Maestro
+        // Studio usa) e persiste o workspace escolhido no projeto, para que
+        // o botão "Studio" da lista de testes abra direto sem erro.
+        if (workspacePath && generatedYaml) {
+            const writeRes = await writeYamlToWorkspace(workspacePath, testYamlFileName(testName), generatedYaml);
+            if (!writeRes.success) {
+                console.error('Failed to write YAML to workspace:', writeRes);
+                alert(`O teste foi salvo, mas não foi possível gravar o YAML no workspace (${workspacePath}): ${writeRes.error || 'erro desconhecido'}`);
+            }
+            if (projectId && projectId !== 'default') {
+                try {
+                    await supabase.from('projects')
+                        .update({ workspace_path: workspacePath })
+                        .eq('id', projectId);
+                } catch (e) {
+                    console.warn('workspace_path persist failed:', e);
+                }
+            }
         }
 
         setSteps(newSteps);
@@ -574,6 +617,7 @@ export default function TestEditorPage() {
             });
             setTestName(trimmed);
             setShowSaveDialog(false);
+            flashSaveToast(`Teste "${trimmed}" salvo ✓`);
         } catch (e: unknown) {
             console.error('Save failed:', e);
             const message = e instanceof Error ? e.message : String(e);
@@ -1224,6 +1268,28 @@ export default function TestEditorPage() {
         }
     };
 
+    // Revela o YAML salvo no Finder/Explorer (via daemon — o browser não
+    // tem acesso ao filesystem). Exige projeto + teste já salvos em disco.
+    const handleRevealInFinder = async () => {
+        if (!currentProjectId) {
+            alert('Associe o teste a um projeto antes (salve o teste).');
+            return;
+        }
+        try {
+            const res = await fetch(`${DAEMON_URL}/api/tests/reveal`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project_id: currentProjectId, test_name: testName || 'Novo Teste' }),
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({} as { detail?: string }));
+                alert(body.detail || `Falha ao abrir o navegador de arquivos (HTTP ${res.status}).`);
+            }
+        } catch {
+            alert(`Daemon offline em ${DAEMON_URL} — suba o daemon para abrir o Finder.`);
+        }
+    };
+
     return (
         <div className="flex h-screen w-full bg-card overflow-hidden text-foreground flex-col">
             <EditorHeader
@@ -1235,9 +1301,16 @@ export default function TestEditorPage() {
                 hasConnectedDevice={!!connectedDevice}
                 onSave={() => {
                     if (steps.length === 0) { alert('Adicione passos antes de salvar.'); return; }
-                    setShowSaveDialog(true);
+                    // Teste já nomeado (salvo antes) → salva direto, sem modal.
+                    if (testName.trim()) {
+                        void handleSaveTest(testName);
+                    } else {
+                        setShowSaveDialog(true);
+                    }
                 }}
                 onExecute={handleExecuteTest}
+                onRevealInFinder={handleRevealInFinder}
+                onOpenExport={() => setShowExportModal(true)}
             />
 
             <div className="flex flex-1 overflow-hidden relative">
@@ -1342,6 +1415,11 @@ export default function TestEditorPage() {
                         )}
                     </div>
 
+                    {/* Durante a gravação a viewport fica limpa: sem prompt de
+                        IA, sem seletores de modelo/engine e sem screenshots de
+                        referência (VisualGuide). Parar/continuar fica no painel
+                        do dispositivo à direita. */}
+                    {!isRecordingActive && (
                     <PromptInputPanel
                         selectedEngine={selectedEngine}
                         setSelectedEngine={setSelectedEngine}
@@ -1365,6 +1443,7 @@ export default function TestEditorPage() {
                         onOpenMaestroStudio={() => setShowMaestroStudioDialog(true)}
                         onOpenPromptExamples={() => setShowPromptExamples(true)}
                     />
+                    )}
                 </div>
 
                 <DevicePreviewPanel
@@ -1399,6 +1478,7 @@ export default function TestEditorPage() {
                     recorderConfig={recorderConfig}
                     setRecorderConfig={setRecorderConfig}
                     appIdSuggestions={appIdSuggestions}
+                    deviceUdid={connectedDevice?.udid}
                     onConfirm={confirmStartRecording}
                 />
             )}
@@ -1499,6 +1579,23 @@ export default function TestEditorPage() {
                     onCancel={() => setShowSaveDialog(false)}
                     onSave={handleSaveTest}
                 />
+            )}
+
+            {/* Exportar resultado do teste (TestRail / Jira / PDF) */}
+            {showExportModal && (
+                <ExportResultModal
+                    testName={testName || 'Novo Teste'}
+                    projectName={projectName}
+                    steps={steps}
+                    onClose={() => setShowExportModal(false)}
+                />
+            )}
+
+            {/* Toast do save direto (sem modal) */}
+            {saveToast && (
+                <div className="fixed bottom-4 right-4 z-50 bg-popover border border-success/40 text-success text-sm font-medium rounded-xl shadow-2xl px-4 py-2.5">
+                    {saveToast}
+                </div>
             )}
         </div>
     );

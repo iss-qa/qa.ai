@@ -4,6 +4,7 @@ export interface Project {
     description: string;
     platform: string;
     status: string;
+    workspace_path?: string | null;
 }
 
 export interface ScanElement {

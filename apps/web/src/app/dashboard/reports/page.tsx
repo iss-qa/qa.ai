@@ -33,6 +33,9 @@ export default function ReportsPage() {
     const [report, setReport] = useState<ProjectReport | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // Preenchido só no cliente (pós-carga): datas no SSR divergem do browser
+    // e causam erro de hidratação ("Text content does not match").
+    const [generatedAt, setGeneratedAt] = useState('');
 
     // Boot: último projeto visitado dispara o relatório de imediato.
     useEffect(() => {
@@ -71,7 +74,10 @@ export default function ReportsPage() {
         (async () => {
             try {
                 const r = await loadProjectReport(projectId, days);
-                if (!cancelled) setReport(r);
+                if (!cancelled) {
+                    setReport(r);
+                    setGeneratedAt(new Date().toLocaleString('pt-BR'));
+                }
             } catch (e) {
                 if (!cancelled) setError(errorMessage(e));
             } finally {
@@ -140,7 +146,7 @@ export default function ReportsPage() {
                     Relatório de QA — {projectName} · {periodLabel}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                    Gerado em {new Date().toLocaleString('pt-BR')} · QAMind
+                    Gerado em {generatedAt} · QAMind
                 </p>
             </div>
 
@@ -177,7 +183,7 @@ export default function ReportsPage() {
 
                     <p className="text-[11px] text-muted-foreground text-center pb-4">
                         Relatório de <span className="font-bold text-foreground">{projectName}</span> · {periodLabel} ·
-                        gerado em {new Date().toLocaleString('pt-BR')} pelo QAMind.
+                        gerado em {generatedAt} pelo QAMind.
                     </p>
                 </>
             )}

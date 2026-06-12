@@ -1,8 +1,9 @@
 'use client';
 
-import { Plus, LayoutGrid, Trash2, Edit2, X, Loader2, FolderOpen, FlaskConical } from 'lucide-react';
+import { Plus, LayoutGrid, Trash2, Edit2, X, Loader2, FolderOpen, FolderSearch, FlaskConical } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { pickWorkspaceDirectory } from '@/lib/workspace';
 import Link from 'next/link';
 
 interface Project {
@@ -12,6 +13,7 @@ interface Project {
     platform: string;
     is_archived: boolean;
     created_at: string;
+    workspace_path?: string | null;
     test_count?: number;
 }
 
@@ -21,8 +23,21 @@ export default function ProjectsPage() {
     const [modalOpen, setModalOpen] = useState(false);
     const [editingProject, setEditingProject] = useState<Project | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-    const [formData, setFormData] = useState({ name: '', description: '', platform: 'android', is_archived: false });
+    const [formData, setFormData] = useState({ name: '', description: '', platform: 'android', is_archived: false, workspace_path: '' });
     const [saving, setSaving] = useState(false);
+    const [pickingWorkspace, setPickingWorkspace] = useState(false);
+
+    // Workspace = pasta local onde os YAMLs Maestro do projeto são gravados.
+    // O diálogo nativo permite criar uma nova pasta (= novo workspace).
+    const handlePickWorkspace = async () => {
+        setPickingWorkspace(true);
+        try {
+            const path = await pickWorkspaceDirectory();
+            if (path) setFormData(f => ({ ...f, workspace_path: path }));
+        } finally {
+            setPickingWorkspace(false);
+        }
+    };
 
     const fetchProjects = async () => {
         setLoading(true);
@@ -65,7 +80,7 @@ export default function ProjectsPage() {
 
     const handleOpenCreate = () => {
         setEditingProject(null);
-        setFormData({ name: '', description: '', platform: 'android', is_archived: false });
+        setFormData({ name: '', description: '', platform: 'android', is_archived: false, workspace_path: '' });
         setModalOpen(true);
     };
 
@@ -75,13 +90,20 @@ export default function ProjectsPage() {
             name: project.name,
             description: project.description,
             platform: project.platform || 'android',
-            is_archived: project.is_archived ?? false
+            is_archived: project.is_archived ?? false,
+            workspace_path: project.workspace_path || ''
         });
         setModalOpen(true);
     };
 
     const handleSave = async () => {
         if (!formData.name.trim()) return;
+        if (!formData.workspace_path.trim()) {
+            const proceed = confirm(
+                'Nenhum workspace selecionado. O workspace é a pasta onde os YAMLs dos testes (gravador e Maestro Studio) serão salvos.\n\nCriar o projeto mesmo assim? Você poderá definir o workspace depois, ao editar o projeto.'
+            );
+            if (!proceed) return;
+        }
         setSaving(true);
         try {
             if (editingProject) {
@@ -91,7 +113,8 @@ export default function ProjectsPage() {
                         name: formData.name,
                         description: formData.description,
                         platform: formData.platform,
-                        is_archived: formData.is_archived
+                        is_archived: formData.is_archived,
+                        workspace_path: formData.workspace_path.trim() || null
                     })
                     .eq('id', editingProject.id);
                 if (error) throw error;
@@ -102,7 +125,8 @@ export default function ProjectsPage() {
                         name: formData.name,
                         description: formData.description,
                         platform: formData.platform,
-                        is_archived: formData.is_archived
+                        is_archived: formData.is_archived,
+                        workspace_path: formData.workspace_path.trim() || null
                     });
                 if (error) throw error;
             }
@@ -283,6 +307,30 @@ export default function ProjectsPage() {
                                     rows={3}
                                     className="bg-foreground/5 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-brand/50 resize-none"
                                 />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Workspace (pasta dos testes YAML)</label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={formData.workspace_path}
+                                        onChange={(e) => setFormData({ ...formData, workspace_path: e.target.value })}
+                                        placeholder="Ex: /Users/voce/projetos/meu-workspace"
+                                        className="flex-1 min-w-0 bg-foreground/5 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-brand/50 font-mono"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handlePickWorkspace}
+                                        disabled={pickingWorkspace}
+                                        title="Selecionar pasta existente ou criar uma nova"
+                                        className="px-3 py-2.5 bg-foreground/5 border border-border rounded-lg text-muted-foreground hover:text-brand hover:border-brand/50 transition-colors disabled:opacity-50"
+                                    >
+                                        {pickingWorkspace ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderSearch className="w-4 h-4" />}
+                                    </button>
+                                </div>
+                                <p className="text-[11px] text-muted-foreground">
+                                    Pasta local onde os YAMLs dos testes (gravador e Maestro Studio) serão salvos. No seletor você pode criar uma nova pasta para um novo workspace.
+                                </p>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="flex flex-col gap-1.5">

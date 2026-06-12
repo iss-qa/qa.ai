@@ -1,19 +1,67 @@
 'use client';
 
-import { ChevronDown } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ChevronDown, Loader2, Search } from 'lucide-react';
+import { DAEMON_URL } from '@/lib/constants';
 import type { RecorderConfigState } from '../editor-types';
 
 export function RecorderConfigModal({
     recorderConfig,
     setRecorderConfig,
     appIdSuggestions,
+    deviceUdid,
     onConfirm,
 }: {
     recorderConfig: RecorderConfigState;
     setRecorderConfig: React.Dispatch<React.SetStateAction<RecorderConfigState>>;
     appIdSuggestions: string[];
+    deviceUdid?: string | null;
     onConfirm: () => void;
 }) {
+    // Apps instalados no device (pm list packages -3) — alimenta a busca e o
+    // dropdown do App ID. Sugestões do projeto vêm primeiro na lista.
+    const [devicePackages, setDevicePackages] = useState<string[]>([]);
+    const [loadingApps, setLoadingApps] = useState(false);
+    const [appSearch, setAppSearch] = useState('');
+
+    useEffect(() => {
+        if (!recorderConfig.open) return;
+        let cancelled = false;
+        setLoadingApps(true);
+        const url = new URL(`${DAEMON_URL}/mss/api/apps/installed`);
+        if (deviceUdid) url.searchParams.set('udid', deviceUdid);
+        fetch(url.toString())
+            .then(r => r.json())
+            .then(data => {
+                if (!cancelled) setDevicePackages((data?.packages as string[]) || []);
+            })
+            .catch(() => { /* daemon offline — segue só com sugestões */ })
+            .finally(() => { if (!cancelled) setLoadingApps(false); });
+        return () => { cancelled = true; };
+    }, [recorderConfig.open, deviceUdid]);
+
+    const allApps = useMemo(
+        () => Array.from(new Set([...appIdSuggestions, ...devicePackages])),
+        [appIdSuggestions, devicePackages],
+    );
+
+    // Busca por nome: "foxbit" casa com br.com.foxbit.foxbitandroid.
+    const searchMatches = useMemo(() => {
+        const q = appSearch.trim().toLowerCase();
+        if (!q) return [];
+        return allApps.filter(p => p.toLowerCase().includes(q)).slice(0, 12);
+    }, [appSearch, allApps]);
+
+    // Um único match → App ID preenchido automaticamente.
+    useEffect(() => {
+        if (appSearch.trim() && searchMatches.length === 1) {
+            setRecorderConfig(prev =>
+                prev.appId === searchMatches[0] ? prev : { ...prev, appId: searchMatches[0] },
+            );
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchMatches, appSearch]);
+
     return (
         <div
             className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
@@ -87,7 +135,47 @@ export function RecorderConfigModal({
                         </div>
                     </div>
 
-                    {/* App ID combobox — free text + dropdown of project suggestions */}
+                    {/* Busca por nome do app — preenche o App ID automaticamente */}
+                    <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                            Buscar app no dispositivo
+                            {loadingApps && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+                        </label>
+                        <div className="relative">
+                            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                            <input
+                                type="text"
+                                value={appSearch}
+                                onChange={(e) => setAppSearch(e.target.value)}
+                                placeholder='ex: "foxbit" — acha o App ID sozinho'
+                                className="w-full bg-foreground/5 border border-border rounded-lg pl-9 pr-3 py-2 text-sm text-foreground placeholder-slate-500 focus:outline-none focus:border-brand/50"
+                            />
+                            {appSearch.trim() && searchMatches.length > 1 && (
+                                <div className="absolute left-0 right-0 top-full mt-1 bg-popover border border-border rounded-lg shadow-xl z-20 max-h-44 overflow-auto">
+                                    {searchMatches.map(s => (
+                                        <button
+                                            type="button"
+                                            key={s}
+                                            onClick={() => {
+                                                setRecorderConfig(prev => ({ ...prev, appId: s, showAppIdMenu: false }));
+                                                setAppSearch('');
+                                            }}
+                                            className="block w-full text-left px-3 py-2 text-xs font-mono text-foreground hover:bg-foreground/5"
+                                        >
+                                            {s}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            {appSearch.trim() && !loadingApps && searchMatches.length === 0 && (
+                                <div className="absolute left-0 right-0 top-full mt-1 bg-popover border border-border rounded-lg shadow-xl z-20 px-3 py-2 text-xs text-zinc-500 italic">
+                                    Nenhum app encontrado — confira o device conectado.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* App ID combobox — todos os apps do device + sugestões do projeto */}
                     <div className="flex flex-col gap-1.5">
                         <label className="text-xs font-medium text-muted-foreground">App ID</label>
                         <div className="relative">
@@ -95,7 +183,7 @@ export function RecorderConfigModal({
                                 type="text"
                                 value={recorderConfig.appId}
                                 onChange={(e) => setRecorderConfig(prev => ({ ...prev, appId: e.target.value, showAppIdMenu: true }))}
-                                onFocus={() => setRecorderConfig(prev => ({ ...prev, showAppIdMenu: appIdSuggestions.length > 0 }))}
+                                onFocus={() => setRecorderConfig(prev => ({ ...prev, showAppIdMenu: allApps.length > 0 }))}
                                 onBlur={() => {
                                     // delay so click on a suggestion fires before blur closes the menu
                                     setTimeout(() => setRecorderConfig(prev => ({ ...prev, showAppIdMenu: false })), 150);
@@ -103,7 +191,7 @@ export function RecorderConfigModal({
                                 placeholder="e.g. com.example.app"
                                 className="w-full bg-foreground/5 border border-border rounded-lg pl-3 pr-9 py-2 text-sm text-foreground placeholder-slate-500 focus:outline-none focus:border-brand/50 font-mono"
                             />
-                            {appIdSuggestions.length > 0 && (
+                            {allApps.length > 0 && (
                                 <button
                                     type="button"
                                     onClick={() => setRecorderConfig(prev => ({ ...prev, showAppIdMenu: !prev.showAppIdMenu }))}
@@ -115,8 +203,9 @@ export function RecorderConfigModal({
                             )}
                             {recorderConfig.showAppIdMenu && (
                                 <div className="absolute left-0 right-0 top-full mt-1 bg-popover border border-border rounded-lg shadow-xl z-10 max-h-44 overflow-auto">
-                                    {appIdSuggestions
+                                    {allApps
                                         .filter(s => s.toLowerCase().includes(recorderConfig.appId.toLowerCase()))
+                                        .slice(0, 50)
                                         .map(s => (
                                             <button
                                                 type="button"
@@ -127,9 +216,9 @@ export function RecorderConfigModal({
                                                 {s}
                                             </button>
                                         ))}
-                                    {appIdSuggestions.filter(s => s.toLowerCase().includes(recorderConfig.appId.toLowerCase())).length === 0 && (
+                                    {allApps.filter(s => s.toLowerCase().includes(recorderConfig.appId.toLowerCase())).length === 0 && (
                                         <div className="px-3 py-2 text-xs text-zinc-500 italic">
-                                            Nenhuma sugestão deste projeto. Digite manualmente.
+                                            {loadingApps ? 'Carregando apps do device…' : 'Nenhum app encontrado. Digite manualmente.'}
                                         </div>
                                     )}
                                 </div>

@@ -51,6 +51,7 @@ export interface DaemonStep {
     fallback?: boolean;
     step_index?: number;
     updated?: boolean;      // true when confirm-input updates an existing step
+    removed?: boolean;      // true when the daemon retracts a provisional step (hideKeyboard)
     x?: number;
     y?: number;
 }
@@ -88,6 +89,9 @@ interface RecordingState {
     reorderSteps: (fromIndex: number, toIndex: number) => void;
     /** Remove a recorded step by id (in case user wants to drop a noisy tap mid-recording). */
     removeStep: (id: string) => void;
+    /** Retrai o último hideKeyboard provisório — o daemon detectou que a
+     *  sequência de inputs continua (próximo tap é outro campo de texto). */
+    retractLastHideKeyboard: () => void;
     updateStepDescription: (stepId: string, description: string) => void;
     updateStepElement: (stepId: string, elementInfo: RecordedStep['elementInfo'], extra?: {
         maestro_command?: string;
@@ -180,6 +184,9 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
             case 'swipe':
                 description = `Deslizar ${daemonStep.direction || ''}`;
                 break;
+            case 'hideKeyboard':
+                description = 'Ocultar teclado';
+                break;
             default:
                 description = `${action} ${daemonStep.elementId || ''}`;
         }
@@ -207,6 +214,18 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
         set({ recordedSteps: newSteps });
         saveDraft(state.testId, newSteps);
         return step;
+    },
+
+    retractLastHideKeyboard: () => {
+        set(state => {
+            const idx = state.recordedSteps.map(s => s.action).lastIndexOf('hideKeyboard');
+            if (idx < 0) return state;
+            const steps = state.recordedSteps
+                .filter((_, i) => i !== idx)
+                .map((s, i) => ({ ...s, num: i + 1 }));
+            saveDraft(state.testId, steps);
+            return { recordedSteps: steps };
+        });
     },
 
     updateStepAtIndex: (stepIndex, daemonStep) => {

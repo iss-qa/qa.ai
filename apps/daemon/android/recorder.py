@@ -478,6 +478,26 @@ class InteractionRecorder:
         # steps for an N-char password). While this gate is set, _on_tap
         # becomes a no-op.
         self._pending_input: bool = False
+        # Cache contínuo da hierarquia: o dump feito DEPOIS do tap chega tarde
+        # quando o tap navega (a tela já trocou e as coords não acham nada →
+        # fallback para coordenadas mesmo em elemento com id). O snapshot
+        # periódico guarda a tela DE ANTES do tap.
+        self._snapshot_xml: Optional[str] = None
+        self._snapshot_ts: float = 0.0
+        self._snapshot_task: Optional[asyncio.Task] = None
+        self._initial_assert_task: Optional[asyncio.Task] = None
+        # Elementos já validados (assertVisible) na TELA ATUAL. Estratégia:
+        # ao entrar numa tela, 2 asserts agrupados validam a tela inteira —
+        # depois disso, asserts por-tap na mesma tela são redundantes e NÃO
+        # são emitidos. Limpo a cada troca de tela.
+        self._asserted_this_screen: set = set()
+        # Sequência de inputs: após cada TYPE um hideKeyboard PROVISÓRIO é
+        # emitido (aparece de imediato na lista). Se o próximo tap for outro
+        # campo de texto, o passo é RETRAÍDO (sequência continua) e reaparece
+        # após o TYPE seguinte — 5 campos seguidos terminam com 1 único
+        # hideKeyboard, no final da sequência.
+        self._keyboard_open: bool = False
+        self._provisional_hide_idx: Optional[int] = None
 
     # ── SSE pub/sub ───────────────────────────────────────────────────────────
 
@@ -571,6 +591,7 @@ class InteractionRecorder:
                             from ws.stream_manager import screen_stream_manager
                             client = screen_stream_manager.scrcpy_clients.get(udid)
                             if client:
+                                client.notify_activity()  # arma o watchdog para o pós-launch
                                 await client.reset_video()
                         except Exception as e:
                             logger.warning(f"[RECORDING] reset_video after clearState failed: {e}")
@@ -628,6 +649,22 @@ class InteractionRecorder:
         except Exception:
             pass
 
+        # Snapshot contínuo da hierarquia (tela "de antes" para os taps) +
+        # asserts automáticos da primeira tela após o launch.
+        self._snapshot_xml = None
+        self._snapshot_ts = 0.0
+        self._asserted_this_screen = set()
+        self._keyboard_open = False
+        self._provisional_hide_idx = None
+        if self._d:
+            self._snapshot_task = asyncio.create_task(
+                self._snapshot_loop(), name=f"snapshot_{udid}"
+            )
+        if app_id:
+            self._initial_assert_task = asyncio.create_task(
+                self._emit_initial_asserts(app_id), name=f"initial_asserts_{udid}"
+            )
+
         # Start getevent capture
         self._capture = AdbEventCapture(udid)
         self._capture.set_physical_resolution(*self._physical_resolution)
@@ -646,7 +683,23 @@ class InteractionRecorder:
         return self._recording_id
 
     async def stop_recording(self) -> List[dict]:
+        # Sequência de inputs em aberto no fim da gravação: o hideKeyboard
+        # provisório já está gravado como último passo — só falta recolher o
+        # teclado no device (aqui é seguro; checa mInputShown antes do BACK).
+        if self._keyboard_open:
+            self._keyboard_open = False
+            self._provisional_hide_idx = None
+            try:
+                await self._hide_keyboard_if_shown()
+            except Exception as e:
+                logger.warning(f"[RECORDING] hideKeyboard final falhou: {e}")
+
         self.is_recording = False
+        for task_attr in ("_snapshot_task", "_initial_assert_task"):
+            task = getattr(self, task_attr)
+            if task:
+                task.cancel()
+                setattr(self, task_attr, None)
         if self._capture:
             await self._capture.stop()
             self._capture = None
@@ -752,10 +805,169 @@ class InteractionRecorder:
             # Tiny settle so we don't catch the IME's release event as a tap.
             await asyncio.sleep(0.25)
 
+        # Emite JÁ o hideKeyboard provisório (aparece na lista logo após o
+        # TYPE). O teclado do device continua aberto: se o próximo tap for
+        # outro campo, o passo é retraído e a sequência segue; se for
+        # qualquer outra ação (ou o fim da gravação), ele permanece —
+        # exatamente 1 hideKeyboard ao final de cada sequência de inputs.
+        if result and self.is_recording:
+            self._keyboard_open = True
+            await self._emit_provisional_hide_keyboard()
+
         # Always lift the gate, even on errors, so the recorder doesn't
         # get stuck swallowing taps.
         self._pending_input = False
         return result
+
+    async def _emit_provisional_hide_keyboard(self):
+        """Grava `- hideKeyboard` logo após o inputText (sem mexer no IME do
+        device). Provisório: _retract_provisional_hide remove se o próximo
+        tap for outro campo de texto."""
+        step = {
+            "action": "hideKeyboard",
+            "elementId": "",
+            "maestro_command": "- hideKeyboard",
+            "auto_generated": True,
+        }
+        idx = len(self.recorded_steps)
+        self.recorded_steps.append(step)
+        self._provisional_hide_idx = idx
+        await self._broadcast({**step, "step_index": idx})
+
+    async def _retract_provisional_hide(self):
+        """Sequência de inputs continua (próximo tap é outro campo): remove o
+        hideKeyboard provisório — ele reaparecerá após o TYPE seguinte."""
+        idx = self._provisional_hide_idx
+        self._provisional_hide_idx = None
+        if idx is None:
+            return
+        if idx < len(self.recorded_steps) and self.recorded_steps[idx].get("action") == "hideKeyboard":
+            self.recorded_steps.pop(idx)
+            await self._broadcast({"action": "hideKeyboard", "removed": True, "step_index": idx})
+            logger.info("[hideKeyboard] retraído — sequência de inputs continua")
+
+    async def _hide_keyboard_if_shown(self):
+        """Fecha o IME no device se estiver aberto (BACK só é enviado com o
+        teclado visível — senão navegaria para a tela anterior)."""
+        p = await asyncio.create_subprocess_exec(
+            ADB_PATH, "-s", self.udid, "shell", "dumpsys", "input_method",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out_b, _ = await asyncio.wait_for(p.communicate(), timeout=5)
+        if b"mInputShown=true" not in out_b:
+            return
+        k = await asyncio.create_subprocess_exec(
+            ADB_PATH, "-s", self.udid, "shell", "input", "keyevent", "4",
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(k.wait(), timeout=5)
+        # Settle: o IME recolhendo redesenha a tela — deixa o snapshot seguinte
+        # capturar a tela final sem teclado.
+        await asyncio.sleep(0.4)
+
+    # ── Snapshot contínuo + asserts iniciais ─────────────────────────────────
+
+    _SNAPSHOT_INTERVAL_S: float = 0.7
+    _SNAPSHOT_FRESH_S: float = 2.5
+
+    async def _snapshot_loop(self):
+        """Mantém um dump recente da hierarquia em memória.
+
+        No tap, usamos este snapshot (tirado ANTES do dedo soltar) para
+        identificar o elemento — o dump pós-tap perde a corrida quando o tap
+        navega para outra tela e era a causa de taps em botões COM id caírem
+        para coordenadas.
+        """
+        from android.ui_inspector import UIInspector
+        while self.is_recording and self._d:
+            try:
+                if self._dump_sem is None:
+                    self._dump_sem = asyncio.Semaphore(1)
+                async with self._dump_sem:
+                    xml = await asyncio.to_thread(UIInspector.dump_via_u2, self._d)
+                if xml:
+                    self._snapshot_xml = xml
+                    self._snapshot_ts = time.time()
+            except Exception as e:
+                logger.debug(f"[SNAPSHOT] dump falhou: {e}")
+            await asyncio.sleep(self._SNAPSHOT_INTERVAL_S)
+
+    def _fresh_snapshot(self) -> Optional[str]:
+        if self._snapshot_xml and (time.time() - self._snapshot_ts) <= self._SNAPSHOT_FRESH_S:
+            return self._snapshot_xml
+        return None
+
+    @staticmethod
+    def _extract_screen_ids(xml: str, app_id: Optional[str] = None, limit: int = 2) -> List[str]:
+        """Primeiros `limit` resource-ids únicos e não-system do dump.
+
+        Com `app_id`, só considera ids do próprio app (filtra a splash, que
+        normalmente só tem chrome do sistema)."""
+        import xml.etree.ElementTree as ET
+        ids: List[str] = []
+        try:
+            root = ET.fromstring(xml)
+        except Exception:
+            return ids
+        for node in root.iter():
+            rid = node.get("resource-id", "")
+            if not rid or any(rid.startswith(p) for p in SYSTEM_PREFIXES):
+                continue
+            if app_id and not rid.startswith(f"{app_id}:"):
+                continue
+            clean = clean_resource_id(rid)
+            if clean and clean not in ids and "obfuscated" not in clean:
+                ids.append(clean)
+                if len(ids) >= limit:
+                    break
+        return ids
+
+    async def _emit_initial_asserts(self, app_id: str, max_wait: float = 15.0):
+        """Logo após o launch, valida a primeira tela com 2 assertVisible.
+
+        Espera a splash passar (procura ids do PRÓPRIO app no dump) e emite
+        os asserts antes da primeira interação do usuário — assim o YAML
+        confirma que o app abriu na tela esperada antes de qualquer tap.
+        """
+        deadline = time.time() + max_wait
+        ids: List[str] = []
+        while time.time() < deadline and self.is_recording:
+            xml = self._fresh_snapshot()
+            if xml:
+                ids = self._extract_screen_ids(xml, app_id=app_id, limit=2)
+                if ids:
+                    break
+            await asyncio.sleep(0.6)
+
+        if not ids:
+            logger.info("[INITIAL_ASSERT] nenhum id do app encontrado pós-launch — pulando asserts")
+            return
+
+        await self._emit_grouped_asserts(ids)
+        logger.info(f"[INITIAL_ASSERT] tela inicial validada: {ids}")
+
+    async def _emit_grouped_asserts(self, ids: List[str]):
+        """Emite assertVisible AGRUPADOS para os elementos da tela atual e
+        marca-os como validados — os taps seguintes nesta tela não geram
+        asserts redundantes."""
+        for eid in ids:
+            # Não duplica se já existe um assert igual gravado
+            if any(
+                s.get("action") == "assertVisible" and s.get("elementId") == eid
+                for s in self.recorded_steps
+            ):
+                self._asserted_this_screen.add(eid)
+                continue
+            step = {
+                "action": "assertVisible",
+                "elementId": eid,
+                "maestro_command": f'- assertVisible:\n    id: "{eid}"',
+                "auto_generated": True,
+            }
+            idx = len(self.recorded_steps)
+            self.recorded_steps.append(step)
+            self._asserted_this_screen.add(eid)
+            await self._broadcast({**step, "step_index": idx})
 
     # ── Element identification ────────────────────────────────────────────────
 
@@ -891,15 +1103,21 @@ class InteractionRecorder:
         eid = element.get("id", "")
         use_text = element.get("use_text", False)
         screen = element.get("screen_name")
+        # Tela já validada na entrada (asserts agrupados)? Então o assert
+        # por-tap é redundante — só emite em telas ainda sem nenhum assert
+        # (ex.: navegação que não troca de activity e escapou da detecção).
+        emit_assert = not self._asserted_this_screen
 
         if eid and not use_text:
-            steps.append({
-                "action": "assertVisible",
-                "elementId": eid,
-                "maestro_command": f'- assertVisible:\n    id: "{eid}"',
-                "auto_generated": True,
-                **({"screen_name": screen} if screen else {}),
-            })
+            if emit_assert:
+                steps.append({
+                    "action": "assertVisible",
+                    "elementId": eid,
+                    "maestro_command": f'- assertVisible:\n    id: "{eid}"',
+                    "auto_generated": True,
+                    **({"screen_name": screen} if screen else {}),
+                })
+                self._asserted_this_screen.add(eid)
             steps.append({
                 "action": "tapOn",
                 "elementId": eid,
@@ -909,12 +1127,14 @@ class InteractionRecorder:
                 **({"screen_name": screen} if screen else {}),
             })
         elif eid and use_text:
-            steps.append({
-                "action": "assertVisible",
-                "elementId": eid,
-                "maestro_command": f'- assertVisible:\n    text: "{eid}"',
-                "auto_generated": True,
-            })
+            if emit_assert:
+                steps.append({
+                    "action": "assertVisible",
+                    "elementId": eid,
+                    "maestro_command": f'- assertVisible:\n    text: "{eid}"',
+                    "auto_generated": True,
+                })
+                self._asserted_this_screen.add(eid)
             steps.append({
                 "action": "tapOn",
                 "elementId": eid,
@@ -923,10 +1143,17 @@ class InteractionRecorder:
                 "x": x, "y": y,
             })
         else:
+            # Último recurso: coordenada em PORCENTAGEM (Maestro suporta
+            # point: "73%,25%") — funciona em qualquer resolução/aparelho,
+            # ao contrário do pixel absoluto.
+            phys_w, phys_h = self._physical_resolution
+            pct_x = max(0, min(100, round(x * 100 / phys_w))) if phys_w else 50
+            pct_y = max(0, min(100, round(y * 100 / phys_h))) if phys_h else 50
+            point = f"{pct_x}%,{pct_y}%"
             steps.append({
                 "action": "tapOn",
-                "elementId": f"{x},{y}",
-                "maestro_command": f'- tapOn:\n    point: "{x},{y}"',
+                "elementId": point,
+                "maestro_command": f'- tapOn:\n    point: "{point}"',
                 "is_focusable": False,
                 "fallback": True,
                 "x": x, "y": y,
@@ -1018,9 +1245,22 @@ class InteractionRecorder:
             "screen_name": screen or screen_name,
         }
 
+    def _notify_stream_activity(self):
+        """Toque físico na gravação não passa pelo control socket do scrcpy —
+        avisa o client manualmente para o watchdog poder destravar o encoder
+        se a tela mudar e os frames não vierem."""
+        try:
+            from ws.stream_manager import screen_stream_manager
+            client = screen_stream_manager.scrcpy_clients.get(self.udid)
+            if client:
+                client.notify_activity()
+        except Exception:
+            pass
+
     async def _on_tap(self, x: int, y: int):
         if not self.is_recording:
             return
+        self._notify_stream_activity()
         if self._pending_input:
             # Swallow taps while a pending inputText is awaiting confirmation.
             # Each character the user types on the device's keyboard would
@@ -1030,19 +1270,14 @@ class InteractionRecorder:
             return
         logger.info(f"[TAP] ({x}, {y})")
 
-        # CRITICAL: snapshot the view hierarchy AS THE FIRST ACTION, BEFORE any
-        # await that could let the device transition to the next screen. The
-        # most common bug we hit is:
-        #   1. user taps "Entrar" button on welcome (button has resource-id)
-        #   2. screen starts transitioning to login form (~200ms)
-        #   3. _on_tap awaits _current_screen() and the screen-change check
-        #   4. by the time _identify_element runs, the dump returns the LOGIN
-        #      screen's hierarchy — (x,y) doesn't match any clickable there →
-        #      fallback to coordinates, defeating the whole point of the scan.
-        # Snapshotting now binds the lookup to the screen the user actually
-        # tapped on.
-        pre_tap_xml: Optional[str] = None
-        if self._d:
+        # CRITICAL: identificar o elemento contra a tela DE ANTES do tap.
+        # O bug clássico: usuário toca "Entrar" (botão COM resource-id), a
+        # navegação começa em ~200ms, e qualquer dump feito AGORA já devolve a
+        # tela de login — (x,y) não casa com nada lá → fallback de coordenadas.
+        # O _snapshot_loop mantém um dump tirado ANTES do dedo soltar; é ele a
+        # fonte preferida. Só caímos no dump ao vivo se o cache estiver velho.
+        pre_tap_xml: Optional[str] = self._fresh_snapshot()
+        if pre_tap_xml is None and self._d:
             try:
                 from android.ui_inspector import UIInspector
                 if self._dump_sem is None:
@@ -1052,35 +1287,52 @@ class InteractionRecorder:
             except Exception as e:
                 logger.debug(f"[TAP] pre-tap dump failed: {e}")
 
+        # Identifica o alvo ANTES de decidir sobre o teclado: se for outro
+        # campo de texto, a sequência de inputs continua e o teclado fica.
+        element = await self._identify_element(x, y, pre_tap_xml=pre_tap_xml)
+
+        # Sequência de inputs: se o tap é em OUTRO campo de texto, retrai o
+        # hideKeyboard provisório (teclado segue aberto); senão o passo
+        # provisório fica — já está na posição certa, antes deste tap.
+        if self._keyboard_open:
+            if element.get("is_focusable", False):
+                await self._retract_provisional_hide()
+            else:
+                self._keyboard_open = False
+                self._provisional_hide_idx = None
+
         curr_screen = await self._current_screen()
 
-        # Screen change → auto-emit an assertVisible for the new screen so the
-        # generated YAML confirms we've landed where the user expected before
-        # acting. Without this the flow can pass even if a previous step
-        # navigated to the wrong screen.
+        # Screen change → valida a TELA NOVA com até 2 assertVisible AGRUPADOS
+        # (extraídos do snapshot pré-tap, que neste momento é a tela onde o
+        # usuário acabou de tocar). Depois disso, taps nesta tela não geram
+        # asserts redundantes — a tela já foi confirmada na entrada.
         screen_changed = bool(curr_screen and curr_screen != self._prev_activity)
         if screen_changed:
             logger.info(f"[RECORDING] Screen: {self._prev_activity} → {curr_screen}")
             self._prev_activity = curr_screen
+            self._asserted_this_screen = set()
             await asyncio.sleep(0.5)
-            assert_step = await self._build_screen_assert(curr_screen)
-            if assert_step:
-                # Don't emit if the same element is already the last recorded
-                # step — happens when the previous screen's exit step landed
-                # on the same id that's first-visible on the new screen.
-                last = self.recorded_steps[-1] if self.recorded_steps else None
-                if (
-                    last
-                    and last.get("action") == "assertVisible"
-                    and last.get("elementId") == assert_step.get("elementId")
-                ):
-                    logger.info(f"[RECORDING] dedup: skipping screen-change assertVisible id={assert_step.get('elementId')!r}")
-                else:
-                    idx = len(self.recorded_steps)
-                    self.recorded_steps.append(assert_step)
-                    await self._broadcast({**assert_step, "step_index": idx})
 
-        element = await self._identify_element(x, y, pre_tap_xml=pre_tap_xml)
+            ids = self._extract_screen_ids(pre_tap_xml, limit=2) if pre_tap_xml else []
+            if ids:
+                await self._emit_grouped_asserts(ids)
+            else:
+                # Fallback legado: 1 elemento via element map / dump ao vivo
+                assert_step = await self._build_screen_assert(curr_screen)
+                if assert_step:
+                    last = self.recorded_steps[-1] if self.recorded_steps else None
+                    if (
+                        last
+                        and last.get("action") == "assertVisible"
+                        and last.get("elementId") == assert_step.get("elementId")
+                    ):
+                        logger.info(f"[RECORDING] dedup: skipping screen-change assertVisible id={assert_step.get('elementId')!r}")
+                    else:
+                        idx = len(self.recorded_steps)
+                        self.recorded_steps.append(assert_step)
+                        await self._broadcast({**assert_step, "step_index": idx})
+                    self._asserted_this_screen.add(assert_step.get("elementId", ""))
 
         steps = self._build_steps(element, x, y)
         for step in steps:
@@ -1120,6 +1372,12 @@ class InteractionRecorder:
     async def _on_swipe(self, direction: str, sx: int, sy: int, ex: int, ey: int):
         if not self.is_recording:
             return
+        self._notify_stream_activity()
+        # Scroll/swipe encerra a sequência de inputs — o hideKeyboard
+        # provisório (já gravado) vira definitivo.
+        if self._keyboard_open:
+            self._keyboard_open = False
+            self._provisional_hide_idx = None
         logger.info(f"[SWIPE] {direction} ({sx},{sy})→({ex},{ey})")
 
         scroll_map = {

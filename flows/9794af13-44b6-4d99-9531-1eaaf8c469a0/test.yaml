@@ -1,0 +1,28 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: "bt_welcome_login"
+- tapOn:
+    id: "bt_welcome_login"
+- assertVisible:
+    id: "inp_login_email"
+- tapOn:
+    id: "inp_login_email"
+- inputText: "isaiasilva.info@gmail.com"
+- assertVisible:
+    id: "inp_login_password"
+- tapOn:
+    id: "inp_login_password"
+- inputText: "Is@i@s1989"
+- scroll
+- scroll
+- assertVisible:
+    id: "Limpar todas as notificações."
+- tapOn:
+    id: "Limpar todas as notificações."
+- assertVisible:
+    id: "Página inicial"
+- tapOn:
+    id: "Página inicial"

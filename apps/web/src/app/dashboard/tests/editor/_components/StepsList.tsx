@@ -11,7 +11,7 @@ function EmptyStepsState() {
         <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6 opacity-50">
             <div className="text-4xl">🧪</div>
             <p className="text-sm text-zinc-400">Nenhum passo ainda.</p>
-            <p className="text-xs text-zinc-500">Use o prompt abaixo para gerar com IA<br />ou ative o Gravador Manual.</p>
+            <p className="text-xs text-zinc-500">Ative o Gravador para capturar os passos<br />ou adicione passos pelo menu +.</p>
         </div>
     );
 }

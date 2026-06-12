@@ -5,6 +5,7 @@ import { ArrowLeft, Play, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, Down
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { pickWorkspaceDirectory, testYamlFileName, writeYamlToWorkspace } from '@/lib/workspace';
 import { useDeviceStore } from '@/store/deviceStore';
 import { type DevicePreviewHandle, type RecordedInteraction } from '@/components/DevicePreview';
 import type { Project, ScanResults, TestStep, TestCase } from './project-types';
@@ -25,7 +26,7 @@ export default function ProjectDetailPage() {
     const [tests, setTests] = useState<TestCase[]>([]);
     const [loading, setLoading] = useState(true);
     const [editModalOpen, setEditModalOpen] = useState(false);
-    const [formData, setFormData] = useState({ name: '', description: '', platform: 'android', status: 'Ativo' });
+    const [formData, setFormData] = useState({ name: '', description: '', platform: 'android', status: 'Ativo', workspace_path: '' });
     const [saving, setSaving] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState(false);
     const { connectedDevice } = useDeviceStore();
@@ -68,11 +69,16 @@ export default function ProjectDetailPage() {
                 .select('workspace_path')
                 .eq('id', projectId)
                 .single();
-            const workspace = (proj as { workspace_path?: string | null } | null)?.workspace_path || null;
+            let workspace = (proj as { workspace_path?: string | null } | null)?.workspace_path || null;
             if (!workspace) {
-                setShowMaestroStudio(false);  // close pre-opened modal if deep-linked
-                alert('Defina um workspace para este projeto antes. Clique em "Criar Teste" e escolha uma pasta no Maestro Studio.');
-                return;
+                // Sem workspace definido (ex.: teste criado pelo gravador antes
+                // do projeto ter pasta). Pede a pasta na hora e persiste no
+                // projeto para os próximos opens.
+                const wants = confirm('Este projeto ainda não tem um workspace (pasta local dos YAMLs). Deseja escolher uma pasta agora? No seletor você também pode criar uma nova.');
+                if (!wants) { setShowMaestroStudio(false); return; }
+                workspace = await pickWorkspaceDirectory();
+                if (!workspace) { setShowMaestroStudio(false); return; }
+                await supabase.from('projects').update({ workspace_path: workspace }).eq('id', projectId);
             }
 
             // Resolve YAML content with a 3-step fallback so the Studio always
@@ -134,26 +140,30 @@ export default function ProjectDetailPage() {
             }
 
             // Filename derived from test name (snake-case, safe chars only).
-            const safeName = (test.name || 'teste')
-                .toLowerCase()
-                .replace(/\s+/g, '_')
-                .replace(/[^a-z0-9_-]/g, '')
-                .slice(0, 80) || 'teste';
-            const fullPath = `${workspace.replace(/\/$/, '')}/${safeName}.yaml`;
+            const fileName = testYamlFileName(test.name);
 
-            // Persist the YAML to disk via the existing daemon endpoint.
-            const writeRes = await fetch(`${DAEMON}/api/maestro-studio/file/create`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path: fullPath, content: yamlContent }),
-            });
-            const writeData = await writeRes.json().catch(() => ({}));
-            if (!writeData?.success) {
-                console.error('Failed to write YAML for studio:', writeData);
-                setShowMaestroStudio(false);
-                alert('Falha ao escrever o YAML no workspace. Verifique o caminho e tente novamente.');
-                return;
+            // Persist the YAML to disk via the daemon. Se a escrita falhar
+            // (workspace apontando para um caminho inválido nesta máquina,
+            // sem permissão, etc.), oferece escolher outra pasta e re-tenta.
+            let writeRes = await writeYamlToWorkspace(workspace, fileName, yamlContent);
+            if (!writeRes.success) {
+                console.error('Failed to write YAML for studio:', writeRes);
+                const retry = confirm(`Falha ao escrever o YAML no workspace "${workspace}" (${writeRes.error || 'erro desconhecido'}).\n\nDeseja escolher outra pasta para o workspace deste projeto?`);
+                if (retry) {
+                    const newWs = await pickWorkspaceDirectory();
+                    if (newWs) {
+                        workspace = newWs;
+                        await supabase.from('projects').update({ workspace_path: newWs }).eq('id', projectId);
+                        writeRes = await writeYamlToWorkspace(newWs, fileName, yamlContent);
+                    }
+                }
+                if (!writeRes.success) {
+                    setShowMaestroStudio(false);
+                    alert('Falha ao escrever o YAML no workspace. Verifique o caminho e tente novamente.');
+                    return;
+                }
             }
+            const fullPath = writeRes.path!;
 
             // Pre-open the file as active tab. localStorage is shared with the
             // iframe (same origin) so the bundle picks this up on next load.
@@ -919,7 +929,8 @@ export default function ProjectDetailPage() {
                 name: proj.name,
                 description: proj.description,
                 platform: proj.platform || 'android',
-                status: proj.status
+                status: proj.status,
+                workspace_path: proj.workspace_path || ''
             });
 
             // Fetch tests from Supabase only
@@ -999,7 +1010,8 @@ export default function ProjectDetailPage() {
                     name: formData.name,
                     description: formData.description,
                     platform: formData.platform,
-                    status: formData.status
+                    status: formData.status,
+                    workspace_path: formData.workspace_path.trim() || null
                 })
                 .eq('id', projectId);
             if (error) throw error;
@@ -1252,7 +1264,7 @@ export default function ProjectDetailPage() {
 
             {/* Delete Confirmation */}
             {deleteConfirm && (
-                <div className="fixed inset-0 bg-foreground/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-card border border-border rounded-2xl w-full max-w-sm p-6 shadow-2xl">
                         <h3 className="text-lg font-bold text-foreground mb-2">Excluir Projeto?</h3>
                         <p className="text-sm text-muted-foreground mb-6">O projeto &quot;{project.name}&quot; será excluído permanentemente.</p>
@@ -1266,7 +1278,7 @@ export default function ProjectDetailPage() {
 
             {/* Delete Test Confirmation */}
             {deletingTestId && (
-                <div className="fixed inset-0 bg-foreground/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-card border border-border rounded-2xl w-full max-w-sm p-6 shadow-2xl">
                         <h3 className="text-lg font-bold text-foreground mb-2">Excluir Teste?</h3>
                         <p className="text-sm text-muted-foreground mb-6">

@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, X, Loader2 } from 'lucide-react';
+import { Save, X, Loader2, FolderSearch } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { pickWorkspaceDirectory } from '@/lib/workspace';
 
 interface Project {
     id: string;
     name: string;
+    workspace_path?: string | null;
 }
 
 interface SaveRecordingModalProps {
@@ -14,7 +16,7 @@ interface SaveRecordingModalProps {
     stepCount: number;
     durationSeconds: number;
     currentProjectId?: string | null;
-    onSave: (testName: string, projectId: string, yamlContent?: string) => void;
+    onSave: (testName: string, projectId: string, yamlContent?: string, workspacePath?: string | null) => void | Promise<void>;
     onCancel: () => void;
     engine?: 'uiautomator2' | 'maestro';
     maestroYaml?: string;
@@ -38,6 +40,11 @@ export function SaveRecordingModal({
     const [loadingProjects, setLoadingProjects] = useState(false);
     const [editableYaml, setEditableYaml] = useState('');
     const [isEditingYaml, setIsEditingYaml] = useState(false);
+    const [workspacePath, setWorkspacePath] = useState('');
+    const [pickingWorkspace, setPickingWorkspace] = useState(false);
+    // Trava anti duplo-clique + spinner: sem isso o salvar parecia "morto"
+    // (nenhum feedback) e cada clique extra criava um teste duplicado.
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         if (maestroYaml) setEditableYaml(maestroYaml);
@@ -51,7 +58,7 @@ export function SaveRecordingModal({
         // Fetch projects from Supabase
         supabase
             .from('projects')
-            .select('id, name')
+            .select('id, name, workspace_path')
             .order('name')
             .then(({ data }) => {
                 if (data && data.length > 0) {
@@ -70,6 +77,23 @@ export function SaveRecordingModal({
             });
     }, [isOpen, currentProjectId]);
 
+    // O workspace acompanha o projeto selecionado: é a pasta local onde o
+    // YAML deste teste será gravado (a mesma usada pelo Maestro Studio).
+    useEffect(() => {
+        const proj = projects.find(p => p.id === projectId);
+        setWorkspacePath(proj?.workspace_path || '');
+    }, [projectId, projects]);
+
+    const handlePickWorkspace = async () => {
+        setPickingWorkspace(true);
+        try {
+            const path = await pickWorkspaceDirectory();
+            if (path) setWorkspacePath(path);
+        } finally {
+            setPickingWorkspace(false);
+        }
+    };
+
     if (!isOpen) return null;
 
     const formatDuration = (s: number) => {
@@ -78,10 +102,38 @@ export function SaveRecordingModal({
         return `${m}:${sec}`;
     };
 
+    const handleSubmit = async () => {
+        if (saving) return;
+        if (!testName.trim()) {
+            alert('Informe o nome do teste');
+            return;
+        }
+        if (!workspacePath.trim()) {
+            const proceed = confirm(
+                'Nenhum workspace selecionado. Sem workspace, o YAML não será salvo em uma pasta local e o botão "Studio" pedirá uma pasta depois.\n\nSalvar mesmo assim?'
+            );
+            if (!proceed) return;
+        }
+        setSaving(true);
+        try {
+            await onSave(
+                testName.trim(),
+                projectId,
+                engine === 'maestro' ? editableYaml : undefined,
+                workspacePath.trim() || null,
+            );
+        } catch (e) {
+            // Mantém o modal aberto para o usuário corrigir e tentar de novo.
+            alert('Erro ao salvar: ' + (e instanceof Error ? e.message : String(e)));
+        } finally {
+            setSaving(false);
+        }
+    };
+
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md">
-                <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+            <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
                     <h2 className="text-lg font-bold text-foreground">Salvar Teste Gravado</h2>
                     <button
                         onClick={onCancel}
@@ -91,7 +143,7 @@ export function SaveRecordingModal({
                     </button>
                 </div>
 
-                <div className="px-6 py-5 flex flex-col gap-4">
+                <div className="px-6 py-5 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
                     <div className="flex flex-col gap-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
                             Nome do teste
@@ -128,6 +180,33 @@ export function SaveRecordingModal({
                                 ))}
                             </select>
                         )}
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                            Workspace (pasta do YAML)
+                        </label>
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={workspacePath}
+                                onChange={(e) => setWorkspacePath(e.target.value)}
+                                placeholder="Nenhum workspace definido para este projeto"
+                                className="flex-1 min-w-0 bg-background border border-border rounded-lg px-3 py-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-brand/50 font-mono"
+                            />
+                            <button
+                                type="button"
+                                onClick={handlePickWorkspace}
+                                disabled={pickingWorkspace}
+                                title="Selecionar pasta existente ou criar uma nova"
+                                className="px-3 py-2.5 bg-background border border-border rounded-lg text-muted-foreground hover:text-brand hover:border-brand/50 transition-colors disabled:opacity-50"
+                            >
+                                {pickingWorkspace ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderSearch className="w-4 h-4" />}
+                            </button>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                            O YAML do teste será salvo nesta pasta (a mesma usada pelo Maestro Studio do projeto).
+                        </p>
                     </div>
 
                     <div className="bg-foreground/5 border border-border rounded-lg px-4 py-3">
@@ -175,25 +254,21 @@ export function SaveRecordingModal({
                     )}
                 </div>
 
-                <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
+                <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border shrink-0">
                     <button
                         onClick={onCancel}
-                        className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        disabled={saving}
+                        className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
                     >
                         Cancelar
                     </button>
                     <button
-                        onClick={() => {
-                            if (!testName.trim()) {
-                                alert('Informe o nome do teste');
-                                return;
-                            }
-                            onSave(testName.trim(), projectId, engine === 'maestro' ? editableYaml : undefined);
-                        }}
-                        className="flex items-center gap-2 px-5 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-bold rounded-lg transition-colors shadow-sm shadow-green-500/20"
+                        onClick={handleSubmit}
+                        disabled={saving}
+                        className="flex items-center gap-2 px-5 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-bold rounded-lg transition-colors shadow-sm shadow-green-500/20"
                     >
-                        <Save className="w-4 h-4" />
-                        Salvar Teste
+                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        {saving ? 'Salvando…' : 'Salvar Teste'}
                     </button>
                 </div>
             </div>

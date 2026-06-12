@@ -1,31 +1,29 @@
 'use client';
 
-import { Loader2, ArrowUp, Plus, FlaskConical, Trash2, ListPlus, Clapperboard, BookOpen } from 'lucide-react';
-import { VisualGuide } from '@/components/VisualGuide';
+import { Plus, FlaskConical, Trash2, ListPlus, Clapperboard } from 'lucide-react';
 import { LLM_MODELS } from '../editor-utils';
 
+// Painel enxuto: a caixa de prompt "Descreva o teste..." e o módulo de
+// Screenshots de referências (VisualGuide) foram REMOVIDOS a pedido — sobra
+// a barra de ações (engine, modelo e o menu +). Props extras seguem aceitas
+// (não desestruturadas) para não quebrar o call-site.
 export function PromptInputPanel({
     selectedEngine,
     setSelectedEngine,
     selectedModel,
     setSelectedModel,
-    prompt,
-    setPrompt,
     isGenerating,
     isExecuting,
     isRecordingActive,
     showPlusMenu,
     setShowPlusMenu,
     stepsCount,
-    currentProjectId,
-    onGenerate,
     onMockGenerate,
     onClearSteps,
     onToggleRecording,
     onStartRecording,
     onOpenStepTemplates,
     onOpenMaestroStudio,
-    onOpenPromptExamples,
 }: {
     selectedEngine: 'uiautomator2' | 'maestro';
     setSelectedEngine: (engine: 'uiautomator2' | 'maestro') => void;
@@ -51,26 +49,9 @@ export function PromptInputPanel({
 }) {
     return (
         <div className="flex-shrink-0 p-4 border-t border-zinc-800 bg-card">
-            <VisualGuide projectId={selectedEngine === 'maestro' ? (currentProjectId || undefined) : undefined} />
-
-            {/* Chat-style input */}
-            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl focus-within:border-zinc-500 transition-colors">
-                <textarea
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    placeholder="Descreva o teste que deseja criar..."
-                    className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none min-h-[80px] max-h-[160px]"
-                    disabled={isGenerating}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            onGenerate();
-                        }
-                    }}
-                />
-
-                {/* Bottom bar inside input */}
-                <div className="flex items-center justify-between px-3 pb-2.5 pt-1">
+            {/* Barra de ações compacta (sem prompt nem screenshots) */}
+            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl transition-colors">
+                <div className="flex items-center justify-between px-3 py-2.5">
                     <div className="flex items-center gap-1.5">
                         {/* Engine selector pill */}
                         <select
@@ -146,31 +127,11 @@ export function PromptInputPanel({
                                             <Clapperboard className="w-3.5 h-3.5 text-orange-400" />
                                             Maestro Studio
                                         </button>
-                                        <button
-                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-                                            onClick={() => { onOpenPromptExamples(); setShowPlusMenu(false); }}
-                                        >
-                                            <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
-                                            Exemplos de prompt
-                                        </button>
                                     </div>
                                 </>
                             )}
                         </div>
                     </div>
-
-                    {/* Send button */}
-                    <button
-                        onClick={onGenerate}
-                        disabled={isGenerating || !prompt.trim()}
-                        className="w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed bg-card text-foreground hover:bg-accent disabled:bg-zinc-600 disabled:text-zinc-400"
-                    >
-                        {isGenerating ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                            <ArrowUp className="w-4 h-4" strokeWidth={2.5} />
-                        )}
-                    </button>
                 </div>
             </div>
         </div>
