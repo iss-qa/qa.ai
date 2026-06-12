@@ -6,9 +6,10 @@ import ReactFlow, {
     BackgroundVariant,
     Controls,
     MiniMap,
+    SelectionMode,
     type Edge,
     type Node,
-    type NodeChange,
+    type NodeDragHandler,
     type NodeTypes,
     type OnNodesChange,
     type OnEdgesChange,
@@ -17,7 +18,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { Download, LayoutGrid, Maximize2, Minimize2, Sparkles } from 'lucide-react';
+import { Download, Hand, Maximize2, Minimize2, MousePointer2, Sparkles } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { toPng } from 'html-to-image';
 
@@ -25,9 +26,14 @@ import { applyDagreLayout } from '@/lib/qa-journey/layout';
 import { JourneyNode, type JourneyNodeData } from './JourneyNode';
 import { SubflowNode, type SubflowNodeData } from './SubflowNode';
 import { CaseNode, type CaseNodeData } from './CaseNode';
+import { HtmlDocNode, type HtmlDocNodeData } from './HtmlDocNode';
 import { ParticleBackground } from './ParticleBackground';
-import { SubflowDrawer } from './SubflowDrawer';
-import { CaseDetailDrawer } from './CaseDetailDrawer';
+import { SubflowModal } from './SubflowModal';
+import { CaseDetailModal } from './CaseDetailModal';
+import { JourneyHtmlModal } from './JourneyHtmlModal';
+import { MapSettingsPopover } from './MapSettingsPopover';
+import { useMapSettings } from './useMapSettings';
+import { animateNodesTo, collectDescendants, resolveCollisions } from './collision';
 import type { QAJourney, QAJourneyCase, QAJourneySubflow } from '@/types/qa-journey';
 
 interface JourneyMapProps {
@@ -35,18 +41,24 @@ interface JourneyMapProps {
     journeys: QAJourney[];
     subflowsByJourney: Record<string, QAJourneySubflow[]>;
     casesBySubflow: Record<string, QAJourneyCase[]>;
+    // Registro manual de execução no modal de caso — o pai atualiza o estado.
+    onCaseUpdated?: (updated: QAJourneyCase) => void;
+    // Deep-link: jornada que deve abrir já expandida (?journey= na URL).
+    initialExpandedJourneyId?: string;
 }
 
 const NODE_TYPES: NodeTypes = {
     journey: JourneyNode,
     subflow: SubflowNode,
     case: CaseNode,
+    htmlDoc: HtmlDocNode,
 };
 
 // Tamanhos default por tipo de node
 const JOURNEY_DEFAULT = { width: 240, height: 110 };
 const SUBFLOW_DEFAULT = { width: 220, height: 80 };
 const CASE_DEFAULT = { width: 200, height: 64 };
+const HTML_DOC_DEFAULT = { width: 480, height: 360 };
 
 // Layout customizado pelo usuario (drag + resize), persistido em localStorage por projeto.
 type CustomLayout = Record<string, { x?: number; y?: number; width?: number; height?: number }>;
@@ -55,14 +67,59 @@ function layoutStorageKey(projectId: string): string {
     return `qa-journey-map-layout:${projectId}`;
 }
 
-export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubflow }: JourneyMapProps) {
+// Estado de expansão (jornadas/sub-fluxos abertos) também persiste por
+// projeto: "Ver mapa" deve reabrir o mapa como o usuário o deixou.
+function expandedStorageKey(projectId: string, level: 'journeys' | 'subflows'): string {
+    return `qa-journey-map-expanded:${level}:${projectId}`;
+}
+
+function readStoredSet(key: string): Set<string> {
+    try {
+        const raw = localStorage.getItem(key);
+        if (raw) return new Set(JSON.parse(raw) as string[]);
+    } catch {
+        // parse/storage indisponível
+    }
+    return new Set();
+}
+
+function writeStoredSet(key: string, value: Set<string>): void {
+    try {
+        if (value.size === 0) localStorage.removeItem(key);
+        else localStorage.setItem(key, JSON.stringify(Array.from(value)));
+    } catch {
+        // storage indisponível
+    }
+}
+
+export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubflow, onCaseUpdated, initialExpandedJourneyId }: JourneyMapProps) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const [expanded, setExpanded] = useState<Set<string>>(new Set());
+    const [expanded, setExpanded] = useState<Set<string>>(() => {
+        const initial = readStoredSet(expandedStorageKey(projectId, 'journeys'));
+        if (initialExpandedJourneyId) initial.add(initialExpandedJourneyId);
+        return initial;
+    });
     // Sub-fluxos com o ramo de casos de teste expandido no grafo (3º nível).
-    const [expandedSubflows, setExpandedSubflows] = useState<Set<string>>(new Set());
+    const [expandedSubflows, setExpandedSubflows] = useState<Set<string>>(
+        () => readStoredSet(expandedStorageKey(projectId, 'subflows')),
+    );
+
+    // Persiste o estado de expansão sempre que muda.
+    useEffect(() => {
+        writeStoredSet(expandedStorageKey(projectId, 'journeys'), expanded);
+    }, [expanded, projectId]);
+    useEffect(() => {
+        writeStoredSet(expandedStorageKey(projectId, 'subflows'), expandedSubflows);
+    }, [expandedSubflows, projectId]);
     const [activeSubflowId, setActiveSubflowId] = useState<string | null>(null);
     const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
+    // Jornada cujo documento HTML anexado está aberto no modal.
+    const [htmlJourneyId, setHtmlJourneyId] = useState<string | null>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [mapSettings, updateMapSettings] = useMapSettings();
+    // 'pan' = mãozinha (arrastar a tela); 'select' = ponteiro (caixa de
+    // seleção múltipla estilo Miro — arrasta vários nós de uma vez).
+    const [interactionMode, setInteractionMode] = useState<'pan' | 'select'>('pan');
 
     // Layout customizado (carregado do localStorage no mount/troca de projeto)
     const [customLayout, setCustomLayout] = useState<CustomLayout>({});
@@ -137,6 +194,7 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                 automatedSubflows: automated,
                 isExpanded: expanded.has(journey.id),
                 onToggle: toggleJourney,
+                onOpenHtml: setHtmlJourneyId,
             };
 
             const jCustom = customLayout[journey.id];
@@ -150,6 +208,32 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
             });
 
             if (expanded.has(journey.id)) {
+                // Documento HTML anexado vira uma "webview" filha da jornada.
+                if (journey.html_doc) {
+                    const htmlId = `html:${journey.id}`;
+                    const hCustom = customLayout[htmlId];
+                    const htmlData: HtmlDocNodeData = {
+                        journey,
+                        onOpenFull: setHtmlJourneyId,
+                    };
+                    nodes.push({
+                        id: htmlId,
+                        type: 'htmlDoc',
+                        position: { x: 0, y: 0 },
+                        data: htmlData,
+                        dragHandle: '.html-doc-drag',
+                        width: hCustom?.width ?? HTML_DOC_DEFAULT.width,
+                        height: hCustom?.height ?? HTML_DOC_DEFAULT.height,
+                    });
+                    edges.push({
+                        id: `${journey.id}->${htmlId}`,
+                        source: journey.id,
+                        target: htmlId,
+                        animated: false,
+                        style: { stroke: journey.color || '#7c3aed', strokeWidth: 1.5, opacity: 0.5, strokeDasharray: '6 4' },
+                    });
+                }
+
                 sub.forEach(subflow => {
                     const cases = casesBySubflow[subflow.id] || [];
                     const subflowData: SubflowNodeData = {
@@ -198,6 +282,9 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                                 target: c.id,
                                 animated: false,
                                 style: { stroke: journey.color || '#7c3aed', strokeWidth: 1, opacity: 0.35 },
+                                // Empurra os casos 1 rank extra à frente para as
+                                // linhas não cruzarem por baixo de outros sub-fluxos.
+                                data: { minlen: 2 },
                             });
                         });
                     }
@@ -206,7 +293,7 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
         });
 
         // Primeiro aplica dagre para todos
-        const positioned = applyDagreLayout(nodes, edges, { direction: 'LR', rankSep: 130, nodeSep: 28 });
+        const positioned = applyDagreLayout(nodes, edges, { direction: 'LR', rankSep: 150, nodeSep: 28 });
 
         // Sobrescreve posicoes customizadas pelo usuario (drag)
         const final = positioned.map(n => {
@@ -227,30 +314,121 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
     useEffect(() => { setRfNodes(layoutedNodes); }, [layoutedNodes]);
     useEffect(() => { setRfEdges(layoutedEdges); }, [layoutedEdges]);
 
+    // Espelhos em ref para os handlers de drag lerem o estado corrente
+    // sem recriar callbacks a cada render.
+    const rfNodesRef = useRef<Node[]>(rfNodes);
+    rfNodesRef.current = rfNodes;
+    const rfEdgesRef = useRef<Edge[]>(rfEdges);
+    rfEdgesRef.current = rfEdges;
+
+    // Persiste um conjunto de posicoes finais no customLayout (merge funcional).
+    const persistPositions = useCallback((positions: Map<string, { x: number; y: number }>) => {
+        if (positions.size === 0) return;
+        setCustomLayout(prev => {
+            const next = { ...prev };
+            positions.forEach((pos, id) => {
+                next[id] = { ...(next[id] || {}), x: pos.x, y: pos.y };
+            });
+            return next;
+        });
+    }, []);
+
     // Captura changes - persiste posicao/dimensoes em customLayout
     const onNodesChange = useCallback<OnNodesChange>(changes => {
         setRfNodes(ns => applyNodeChanges(changes, ns));
-        captureLayoutChanges(changes);
+        setCustomLayout(prev => {
+            let updated: CustomLayout | null = null;
+            for (const c of changes) {
+                if (c.type === 'position' && c.position && c.dragging === false) {
+                    // Drag terminou - persiste posicao
+                    updated = updated || { ...prev };
+                    updated[c.id] = { ...(updated[c.id] || {}), x: c.position.x, y: c.position.y };
+                } else if (c.type === 'dimensions' && c.dimensions && c.resizing === false) {
+                    // Resize terminou - persiste tamanho
+                    updated = updated || { ...prev };
+                    updated[c.id] = { ...(updated[c.id] || {}), width: c.dimensions.width, height: c.dimensions.height };
+                }
+            }
+            return updated ?? prev;
+        });
     }, []);
     const onEdgesChange = useCallback<OnEdgesChange>(changes => {
         setRfEdges(es => applyEdgeChanges(changes, es));
     }, []);
 
-    const captureLayoutChanges = (changes: NodeChange[]) => {
-        let updated: CustomLayout | null = null;
-        for (const c of changes) {
-            if (c.type === 'position' && c.position && c.dragging === false) {
-                // Drag terminou - persiste posicao
-                updated = updated || { ...customLayout };
-                updated[c.id] = { ...(updated[c.id] || {}), x: c.position.x, y: c.position.y };
-            } else if (c.type === 'dimensions' && c.dimensions && c.resizing === false) {
-                // Resize terminou - persiste tamanho
-                updated = updated || { ...customLayout };
-                updated[c.id] = { ...(updated[c.id] || {}), width: c.dimensions.width, height: c.dimensions.height };
-            }
+    // --- Drag agrupado (jornada move filhas) + anti-sobreposição ---
+
+    // Contexto do drag corrente: posições iniciais do nó e das descendentes.
+    const dragCtx = useRef<{
+        nodeStart: { x: number; y: number };
+        childStarts: Map<string, { x: number; y: number }>;
+    } | null>(null);
+
+    const onNodeDragStart = useCallback<NodeDragHandler>((_e, node) => {
+        dragCtx.current = null;
+        if (!mapSettings.groupDrag) return;
+        const descendants = collectDescendants(node.id, rfEdgesRef.current);
+        if (descendants.length === 0) return;
+        const ids = new Set(descendants);
+        const childStarts = new Map<string, { x: number; y: number }>();
+        for (const n of rfNodesRef.current) {
+            if (ids.has(n.id)) childStarts.set(n.id, { x: n.position.x, y: n.position.y });
         }
-        if (updated) setCustomLayout(updated);
-    };
+        dragCtx.current = {
+            nodeStart: { x: node.position.x, y: node.position.y },
+            childStarts,
+        };
+    }, [mapSettings.groupDrag]);
+
+    const onNodeDrag = useCallback<NodeDragHandler>((_e, node) => {
+        const ctx = dragCtx.current;
+        if (!ctx) return;
+        const dx = node.position.x - ctx.nodeStart.x;
+        const dy = node.position.y - ctx.nodeStart.y;
+        setRfNodes(ns => ns.map(n => {
+            const start = ctx.childStarts.get(n.id);
+            if (!start) return n;
+            return { ...n, position: { x: start.x + dx, y: start.y + dy } };
+        }));
+    }, []);
+
+    const onNodeDragStop = useCallback<NodeDragHandler>((_e, node, draggedNodes) => {
+        const ctx = dragCtx.current;
+        dragCtx.current = null;
+
+        // Conjunto movido pelo usuário: nó arrastado + multi-seleção + filhas
+        // agrupadas. IMPORTANTE: o change de posição que o React Flow emite no
+        // fim do drag vem SEM `position`, então a persistência precisa
+        // acontecer aqui — senão o próximo rebuild (expandir/recolher) volta
+        // tudo para o layout automático.
+        const movedIds = new Set<string>([node.id]);
+        const finals = new Map<string, { x: number; y: number }>();
+        finals.set(node.id, { x: node.position.x, y: node.position.y });
+        for (const n of draggedNodes ?? []) {
+            movedIds.add(n.id);
+            finals.set(n.id, { x: n.position.x, y: n.position.y });
+        }
+        if (ctx) {
+            const dx = node.position.x - ctx.nodeStart.x;
+            const dy = node.position.y - ctx.nodeStart.y;
+            ctx.childStarts.forEach((start, id) => {
+                movedIds.add(id);
+                finals.set(id, { x: start.x + dx, y: start.y + dy });
+            });
+        }
+        persistPositions(finals);
+
+        if (!mapSettings.antiOverlap) return;
+
+        // Estado corrente já reflete o fim do drag (refs atualizados via render).
+        const currentNodes = rfNodesRef.current.map(n => {
+            const f = finals.get(n.id);
+            return f ? { ...n, position: f } : n;
+        });
+        const displaced = resolveCollisions(currentNodes, movedIds);
+        if (displaced.size === 0) return;
+        animateNodesTo(setRfNodes, displaced, 240, () => persistPositions(displaced));
+    }, [mapSettings.antiOverlap, persistPositions]);
 
     const resetLayout = useCallback(() => {
         setCustomLayout({});
@@ -335,16 +513,37 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                     </span>
                 </div>
                 <div className="flex items-center gap-2 pointer-events-auto">
-                    {hasCustomLayout && (
+                    {/* Modo de interação: mãozinha (pan) ou ponteiro (seleção múltipla) */}
+                    <div className="bg-popover/80 backdrop-blur border border-border rounded-lg p-0.5 flex items-center">
                         <button
                             type="button"
-                            onClick={resetLayout}
-                            className="bg-popover/80 backdrop-blur border border-border rounded-lg p-2 text-amber-400 hover:text-amber-300"
-                            title="Resetar layout (volta para auto-organização)"
+                            onClick={() => setInteractionMode('pan')}
+                            className={`p-1.5 rounded-md transition-colors ${
+                                interactionMode === 'pan' ? 'bg-brand/20 text-brand' : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                            title="Mover a tela (pan)"
+                            aria-label="Modo mover a tela"
                         >
-                            <LayoutGrid className="w-4 h-4" />
+                            <Hand className="w-4 h-4" />
                         </button>
-                    )}
+                        <button
+                            type="button"
+                            onClick={() => setInteractionMode('select')}
+                            className={`p-1.5 rounded-md transition-colors ${
+                                interactionMode === 'select' ? 'bg-brand/20 text-brand' : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                            title="Selecionar vários nós (arraste para desenhar a seleção e mova em grupo)"
+                            aria-label="Modo seleção múltipla"
+                        >
+                            <MousePointer2 className="w-4 h-4" />
+                        </button>
+                    </div>
+                    <MapSettingsPopover
+                        settings={mapSettings}
+                        onChange={updateMapSettings}
+                        hasCustomLayout={hasCustomLayout}
+                        onResetLayout={resetLayout}
+                    />
                     <button
                         type="button"
                         onClick={exportPng}
@@ -377,6 +576,9 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                 nodeTypes={NODE_TYPES}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
+                onNodeDragStart={onNodeDragStart}
+                onNodeDrag={onNodeDrag}
+                onNodeDragStop={onNodeDragStop}
                 fitView
                 fitViewOptions={{ padding: 0.25, includeHiddenNodes: false }}
                 minZoom={0.4}
@@ -386,6 +588,11 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                 nodesConnectable={false}
                 panOnScroll
                 zoomOnDoubleClick={false}
+                // Modo ponteiro: arrastar no fundo desenha a caixa de seleção
+                // (pan continua disponível no botão do meio/direito do mouse).
+                selectionOnDrag={interactionMode === 'select'}
+                panOnDrag={interactionMode === 'select' ? [1, 2] : true}
+                selectionMode={SelectionMode.Partial}
             >
                 <Background variant={BackgroundVariant.Dots} gap={32} size={1} color="#1a1d2e" />
                 <Controls
@@ -395,15 +602,20 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                 <MiniMap
                     pannable
                     zoomable
-                    nodeColor={n => (n.type === 'journey' ? '#7c3aed' : n.type === 'case' ? '#475569' : '#3b82f6')}
+                    nodeColor={n => (
+                        n.type === 'journey' ? '#7c3aed'
+                        : n.type === 'htmlDoc' ? '#0ea5e9'
+                        : n.type === 'case' ? '#475569'
+                        : '#3b82f6'
+                    )}
                     maskColor="rgba(5, 6, 10, 0.7)"
                     className="!bg-popover/80 !border !border-border !rounded-lg"
                 />
             </ReactFlow>
 
             <AnimatePresence>
-                {activeJourney && activeSubflow && (
-                    <SubflowDrawer
+                {activeJourney && activeSubflow && !activeCaseId && (
+                    <SubflowModal
                         key={activeSubflow.id}
                         journey={activeJourney}
                         subflow={activeSubflow}
@@ -416,14 +628,28 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
 
             <AnimatePresence>
                 {activeCase && activeCaseSubflow && (
-                    <CaseDetailDrawer
+                    <CaseDetailModal
                         key={activeCase.id}
                         subflow={activeCaseSubflow}
                         case_={activeCase}
                         onBack={() => setActiveCaseId(null)}
                         onClose={() => { setActiveCaseId(null); setActiveSubflowId(null); }}
+                        onCaseUpdated={onCaseUpdated}
                     />
                 )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {htmlJourneyId && (() => {
+                    const j = journeys.find(x => x.id === htmlJourneyId);
+                    return j?.html_doc ? (
+                        <JourneyHtmlModal
+                            key={j.id}
+                            journey={j}
+                            onClose={() => setHtmlJourneyId(null)}
+                        />
+                    ) : null;
+                })()}
             </AnimatePresence>
         </div>
     );

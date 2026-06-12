@@ -9,6 +9,7 @@ import type { QAJourneySubflow, QAJourneySubflowDraft, AutomationStatus } from '
 
 interface SubflowFormModalProps {
     journeyId: string;
+    journeyTitle?: string;      // nome da jornada pai, exibido no título do modal
     initial?: QAJourneySubflow | null;
     defaultSequence?: number;   // usado quando initial é null
     testCases: TestCaseOption[];
@@ -16,7 +17,7 @@ interface SubflowFormModalProps {
     onSave: (draft: QAJourneySubflowDraft) => Promise<void>;
 }
 
-export function SubflowFormModal({ journeyId, initial, defaultSequence = 0, testCases, onClose, onSave }: SubflowFormModalProps) {
+export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequence = 0, testCases, onClose, onSave }: SubflowFormModalProps) {
     const [draft, setDraft] = useState<QAJourneySubflowDraft>(() => ({
         journey_id: journeyId,
         title: initial?.title ?? '',
@@ -40,6 +41,8 @@ export function SubflowFormModal({ journeyId, initial, defaultSequence = 0, test
                 description: (draft.description || '').trim() || null,
                 test_case_id: draft.test_case_id || null,
             });
+        } catch {
+            // O pai já alertou o erro — só não fecha o modal.
         } finally {
             setSaving(false);
         }
@@ -47,7 +50,19 @@ export function SubflowFormModal({ journeyId, initial, defaultSequence = 0, test
 
     return (
         <ModalShell
-            title={<><GitBranch className="w-5 h-5 text-brand" /> {isEdit ? 'Editar Sub-fluxo' : 'Novo Sub-fluxo'}</>}
+            title={
+                <>
+                    <GitBranch className="w-5 h-5 text-brand" />
+                    <span className="flex flex-wrap items-baseline gap-x-1.5 min-w-0">
+                        {isEdit ? 'Editar Sub-fluxo' : 'Novo Sub-fluxo'}
+                        {journeyTitle && (
+                            <span className="text-muted-foreground font-normal truncate">
+                                de <span className="text-brand font-bold">{journeyTitle}</span>
+                            </span>
+                        )}
+                    </span>
+                </>
+            }
             onClose={onClose}
             footer={
                 <>

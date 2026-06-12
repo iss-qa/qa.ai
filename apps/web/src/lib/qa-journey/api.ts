@@ -32,6 +32,61 @@ function isMigrationMissing(error: unknown): boolean {
     return Boolean(error && (error as { code?: string }).code === QA_JOURNEY_MIGRATION_MISSING_CODE);
 }
 
+// Mensagem legível para qualquer erro (Error, PostgrestError ou desconhecido).
+// Erros de coluna/tabela ausente ganham instrução de migration acionável.
+export function errorMessage(e: unknown): string {
+    let msg: string | null = null;
+    let code: string | undefined;
+    if (e instanceof Error) {
+        msg = e.message;
+    } else if (e && typeof e === 'object') {
+        const obj = e as { message?: string; code?: string };
+        msg = obj.message ?? null;
+        code = obj.code;
+    }
+    if (!msg) return String(e);
+    if (code === 'PGRST204' || code === '42703' || code === QA_JOURNEY_MIGRATION_MISSING_CODE || /schema cache|does not exist/i.test(msg)) {
+        return `${msg}\n\nProvável migration pendente: rode os arquivos .sql mais recentes de supabase/migrations/ no SQL Editor do Supabase e tente de novo.`;
+    }
+    return msg;
+}
+
+// ============================================================
+// Evidência de execução manual (Supabase Storage, bucket qa-evidence)
+// ============================================================
+
+export async function uploadCaseEvidence(
+    caseId: string,
+    file: File,
+): Promise<{ url: string; type: 'image' | 'video' }> {
+    const type = file.type.startsWith('video/') ? 'video' : 'image';
+    const ext = (file.name.split('.').pop() || (type === 'video' ? 'mp4' : 'png')).toLowerCase();
+    const path = `${caseId}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage
+        .from('qa-evidence')
+        .upload(path, file, { upsert: true, contentType: file.type || undefined });
+    if (error) throw error;
+    const { data } = supabase.storage.from('qa-evidence').getPublicUrl(path);
+    return { url: data.publicUrl, type };
+}
+
+// ============================================================
+// Último projeto usado (localStorage) — permite começar a carregar
+// as jornadas no mount, sem esperar a lista de projetos chegar.
+// ============================================================
+
+const LAST_PROJECT_KEY = 'qa-journey:last-project';
+
+export function getLastProjectId(): string | null {
+    if (typeof window === 'undefined') return null;
+    try { return localStorage.getItem(LAST_PROJECT_KEY); } catch { return null; }
+}
+
+export function setLastProjectId(id: string): void {
+    if (typeof window === 'undefined') return;
+    try { localStorage.setItem(LAST_PROJECT_KEY, id); } catch { /* storage indisponível */ }
+}
+
 // ============================================================
 // Projects + Test Cases (auxiliares para selectors nos forms)
 // ============================================================
@@ -81,6 +136,66 @@ export async function loadJourneys(projectId: string): Promise<QAJourneyListResu
         return { journeys: [], migrationMissing: false };
     }
     return { journeys: (data || []) as QAJourney[], migrationMissing: false };
+}
+
+export interface QAJourneyMapData {
+    journeys: QAJourney[];
+    subflows: QAJourneySubflow[];
+    cases: QAJourneyCase[];
+    migrationMissing: boolean;
+}
+
+// Carrega tudo que o mapa público precisa em 2 roundtrips:
+// 1) jornadas publicadas do projeto; 2) subflows + cases em paralelo
+// (cases filtrados por journey_id via inner join, sem esperar os subflows).
+export async function loadJourneyMapData(projectId: string): Promise<QAJourneyMapData> {
+    const { journeys, migrationMissing } = await loadJourneys(projectId);
+    if (migrationMissing) {
+        return { journeys: [], subflows: [], cases: [], migrationMissing: true };
+    }
+    const published = journeys.filter(j => j.is_published);
+    if (published.length === 0) {
+        return { journeys: published, subflows: [], cases: [], migrationMissing: false };
+    }
+
+    const journeyIds = published.map(j => j.id);
+    const [subRes, caseRes] = await Promise.all([
+        supabase
+            .from('qa_journey_subflows')
+            .select('*')
+            .in('journey_id', journeyIds)
+            .order('sequence', { ascending: true })
+            .order('created_at', { ascending: true }),
+        supabase
+            .from('qa_journey_cases')
+            .select('*, qa_journey_subflows!inner(journey_id)')
+            .in('qa_journey_subflows.journey_id', journeyIds)
+            .is('archived_at', null)
+            .order('created_at', { ascending: true }),
+    ]);
+
+    if (subRes.error) {
+        if (isMigrationMissing(subRes.error)) {
+            return { journeys: [], subflows: [], cases: [], migrationMissing: true };
+        }
+        console.error('loadJourneyMapData subflows failed:', subRes.error);
+    }
+    if (caseRes.error) console.error('loadJourneyMapData cases failed:', caseRes.error);
+
+    // Remove o objeto embutido do join antes de devolver
+    const cases = ((caseRes.data || []) as (QAJourneyCase & { qa_journey_subflows?: unknown })[])
+        .map(row => {
+            const c = { ...row };
+            delete c.qa_journey_subflows;
+            return c as QAJourneyCase;
+        });
+
+    return {
+        journeys: published,
+        subflows: (subRes.data || []) as QAJourneySubflow[],
+        cases,
+        migrationMissing: false,
+    };
 }
 
 export async function loadJourneyDetail(journeyId: string): Promise<QAJourneyDetailResult> {
@@ -155,7 +270,7 @@ export async function setJourneyPublished(id: string, isPublished: boolean): Pro
 }
 
 function sanitizeJourneyPayload(draft: QAJourneyDraft): Record<string, unknown> {
-    return {
+    const payload: Record<string, unknown> = {
         project_id: draft.project_id,
         slug: draft.slug,
         title: draft.title,
@@ -165,6 +280,10 @@ function sanitizeJourneyPayload(draft: QAJourneyDraft): Record<string, unknown> 
         sequence: typeof draft.sequence === 'number' ? draft.sequence : 0,
         is_published: Boolean(draft.is_published),
     };
+    // Só envia html_doc quando o form mexeu no campo — evita erro de coluna
+    // inexistente em instalações que ainda não aplicaram a migration 008.
+    if (draft.html_doc !== undefined) payload.html_doc = draft.html_doc;
+    return payload;
 }
 
 // ============================================================
@@ -244,7 +363,7 @@ export async function deleteCase(id: string): Promise<void> {
 }
 
 function sanitizeCasePayload(draft: QAJourneyCaseDraft): Record<string, unknown> {
-    return {
+    const payload: Record<string, unknown> = {
         subflow_id: draft.subflow_id,
         external_id: draft.external_id ?? null,
         title: draft.title,
@@ -254,4 +373,10 @@ function sanitizeCasePayload(draft: QAJourneyCaseDraft): Record<string, unknown>
         last_run_status: draft.last_run_status ?? null,
         last_run_at: draft.last_run_at ?? null,
     };
+    // Campos de migrations recentes só entram no payload quando o form/import
+    // mexeu neles — evita erro de coluna inexistente em bancos desatualizados.
+    if (draft.platform !== undefined) payload.platform = draft.platform ?? null;          // 009
+    if (draft.evidence_url !== undefined) payload.evidence_url = draft.evidence_url ?? null;    // 010
+    if (draft.evidence_type !== undefined) payload.evidence_type = draft.evidence_type ?? null; // 010
+    return payload;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useQueryState } from 'nuqs';
 import {
@@ -12,6 +12,7 @@ import {
     History,
     Loader2,
     Map as MapIcon,
+    MoreVertical,
     Pencil,
     Plus,
     Trash2,
@@ -23,9 +24,12 @@ import { MigrationMissingBanner } from '@/components/qa-journey/MigrationMissing
 import {
     createJourney,
     deleteJourney,
+    errorMessage,
+    getLastProjectId,
     loadJourneys,
     loadProjectOptions,
     setJourneyPublished,
+    setLastProjectId,
     updateJourney,
 } from '@/lib/qa-journey/api';
 import type { ProjectOption } from '@/lib/qa-journey/api';
@@ -42,19 +46,31 @@ export default function QAJourneyAdminPage() {
     const [creating, setCreating] = useState(false);
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
-    // Carrega projetos uma vez
+    // Boot: sem ?project na URL, usa o último projeto visitado para
+    // disparar o carregamento das jornadas sem esperar a lista de projetos.
+    useEffect(() => {
+        if (!projectId) {
+            const last = getLastProjectId();
+            if (last) setProjectId(last);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Carrega a lista de projetos do combobox uma única vez
     useEffect(() => {
         let cancelled = false;
         (async () => {
             const list = await loadProjectOptions();
             if (cancelled) return;
             setProjects(list);
-            if (!projectId && list.length > 0) {
-                setProjectId(list[0].id);
-            }
+            setProjectId(prev => {
+                if (prev && list.some(p => p.id === prev)) return prev;
+                return list[0]?.id ?? null;
+            });
         })();
         return () => { cancelled = true; };
-    }, [projectId, setProjectId]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Carrega jornadas sempre que o projeto muda
     useEffect(() => {
@@ -65,6 +81,7 @@ export default function QAJourneyAdminPage() {
         }
         let cancelled = false;
         setLoading(true);
+        setLastProjectId(projectId);
         (async () => {
             const { journeys: list, migrationMissing: mm } = await loadJourneys(projectId);
             if (cancelled) return;
@@ -94,7 +111,7 @@ export default function QAJourneyAdminPage() {
                 setCreating(false);
             }
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e);
+            const msg = errorMessage(e);
             alert('Erro ao salvar Jornada: ' + msg);
             throw e;
         }
@@ -108,7 +125,7 @@ export default function QAJourneyAdminPage() {
             await deleteJourney(targetId);
             setJourneys(prev => prev.filter(j => j.id !== targetId));
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e);
+            const msg = errorMessage(e);
             alert('Erro ao excluir: ' + msg);
         }
     };
@@ -122,7 +139,7 @@ export default function QAJourneyAdminPage() {
         } catch (e: unknown) {
             // Rollback
             setJourneys(prev => prev.map(x => x.id === j.id ? { ...x, is_published: !next } : x));
-            const msg = e instanceof Error ? e.message : String(e);
+            const msg = errorMessage(e);
             alert('Erro ao alternar publicação: ' + msg);
         }
     };
@@ -133,46 +150,44 @@ export default function QAJourneyAdminPage() {
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-                        <MapIcon className="w-6 h-6 text-brand" />
-                        Jornada do QA — Admin
-                    </h1>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+                            <MapIcon className="w-6 h-6 text-brand" />
+                            Jornadas — Admin
+                        </h1>
+                        <Link
+                            href={`/dashboard/qa-journey?project=${projectId}`}
+                            className="text-xs font-bold text-brand border border-brand/30 rounded-lg px-3 py-1.5 inline-flex items-center gap-1.5 hover:bg-brand/10 transition-colors"
+                            title="Abrir o mapa visual das jornadas deste projeto"
+                        >
+                            <Eye className="w-3.5 h-3.5" /> Ver mapa
+                        </Link>
+                    </div>
                     <p className="text-textSecondary mt-1">
                         Cadastre as Jornadas (blocos macro), Sub-fluxos e Casos que vão alimentar o mapa público.
                     </p>
                 </div>
 
+                {/* Ordem fixa: Projeto → Nova Jornada → menu ⋮ */}
                 <div className="flex flex-wrap items-center gap-3">
-                    <select
-                        value={projectId}
-                        onChange={e => setProjectId(e.target.value || null)}
-                        className="bg-card border border-border rounded-lg px-4 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/20 min-w-[200px]"
-                        disabled={projects.length === 0}
-                    >
-                        {projects.length === 0 && <option value="">Sem projetos cadastrados</option>}
-                        {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-
-                    <Link
-                        href={`/dashboard/qa-journey/insights?project=${projectId}`}
-                        className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
-                    >
-                        <BarChart3 className="w-3.5 h-3.5" /> Insights
-                    </Link>
-
-                    <Link
-                        href={`/dashboard/qa-journey/admin/sheets?project=${projectId}`}
-                        className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
-                    >
-                        <FileSpreadsheet className="w-3.5 h-3.5" /> Sync Sheets
-                    </Link>
-
-                    <Link
-                        href={`/dashboard/qa-journey/admin/syncs?project=${projectId}`}
-                        className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-2 inline-flex items-center gap-1.5"
-                    >
-                        <History className="w-3.5 h-3.5" /> Histórico
-                    </Link>
+                    <div className="flex items-center gap-2">
+                        <label
+                            htmlFor="qa-journey-admin-project"
+                            className="text-xs font-bold text-muted-foreground uppercase tracking-wider shrink-0"
+                        >
+                            Projeto
+                        </label>
+                        <select
+                            id="qa-journey-admin-project"
+                            value={projectId}
+                            onChange={e => setProjectId(e.target.value || null)}
+                            className="bg-card border border-border rounded-lg px-4 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/20 min-w-[180px]"
+                            disabled={projects.length === 0}
+                        >
+                            {projects.length === 0 && <option value="">Sem projetos cadastrados</option>}
+                            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                    </div>
 
                     <button
                         onClick={() => setCreating(true)}
@@ -181,6 +196,8 @@ export default function QAJourneyAdminPage() {
                     >
                         <Plus className="w-4 h-4" /> Nova Jornada
                     </button>
+
+                    <AdminActionsMenu projectId={projectId} />
                 </div>
             </div>
 
@@ -297,6 +314,67 @@ export default function QAJourneyAdminPage() {
                     onCancel={() => setDeletingId(null)}
                     onConfirm={handleDelete}
                 />
+            )}
+        </div>
+    );
+}
+
+// Menu ⋮ com as ações secundárias do admin (Insights, Sync Sheets, Histórico).
+function AdminActionsMenu({ projectId }: { projectId: string }) {
+    const [open, setOpen] = useState(false);
+    const rootRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const onPointerDown = (e: PointerEvent) => {
+            if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setOpen(false);
+        };
+        document.addEventListener('pointerdown', onPointerDown);
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.removeEventListener('pointerdown', onPointerDown);
+            document.removeEventListener('keydown', onKeyDown);
+        };
+    }, [open]);
+
+    const items = [
+        { href: `/dashboard/qa-journey/insights?project=${projectId}`, icon: BarChart3, label: 'Insights' },
+        { href: `/dashboard/qa-journey/admin/sheets?project=${projectId}`, icon: FileSpreadsheet, label: 'Sync Sheets' },
+        { href: `/dashboard/qa-journey/admin/syncs?project=${projectId}`, icon: History, label: 'Histórico' },
+    ];
+
+    return (
+        <div ref={rootRef} className="relative">
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                className={`border border-border rounded-lg p-2 transition-colors ${
+                    open ? 'text-brand bg-brand/10' : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                }`}
+                title="Mais ações"
+                aria-label="Mais ações"
+                aria-expanded={open}
+            >
+                <MoreVertical className="w-4 h-4" />
+            </button>
+
+            {open && (
+                <div className="absolute right-0 top-full mt-2 w-48 bg-popover border border-border rounded-xl shadow-xl py-1.5 z-30">
+                    {items.map(item => (
+                        <Link
+                            key={item.label}
+                            href={item.href}
+                            onClick={() => setOpen(false)}
+                            className="flex items-center gap-2.5 px-3.5 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                        >
+                            <item.icon className="w-4 h-4" />
+                            {item.label}
+                        </Link>
+                    ))}
+                </div>
             )}
         </div>
     );

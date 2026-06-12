@@ -17,6 +17,9 @@ type ShellContextValue = {
     isNavigating: boolean;
     mobileSidebarOpen: boolean;
     setMobileSidebarOpen: (open: boolean) => void;
+    /** Controles que a página corrente injeta no Header global (ganha área útil). */
+    headerSlot: React.ReactNode | null;
+    setHeaderSlot: (node: React.ReactNode | null) => void;
 };
 
 const ShellContext = createContext<ShellContextValue | null>(null);
@@ -27,6 +30,12 @@ export function ShellProvider({ children }: { children: React.ReactNode }) {
     const [isPending, startTransition] = useTransition();
     const [pendingHref, setPendingHref] = useState<string | null>(null);
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+    const [headerSlot, setHeaderSlot] = useState<React.ReactNode | null>(null);
+
+    // Slot não sobrevive à troca de rota — cada página injeta o seu.
+    useEffect(() => {
+        setHeaderSlot(null);
+    }, [pathname]);
 
     // Clear the optimistic target once the route actually commits.
     useEffect(() => {
@@ -61,6 +70,8 @@ export function ShellProvider({ children }: { children: React.ReactNode }) {
                 isNavigating: isPending,
                 mobileSidebarOpen,
                 setMobileSidebarOpen,
+                headerSlot,
+                setHeaderSlot,
             }}
         >
             {children}
@@ -78,6 +89,8 @@ export function useShell(): ShellContextValue {
             isNavigating: false,
             mobileSidebarOpen: false,
             setMobileSidebarOpen: () => {},
+            headerSlot: null,
+            setHeaderSlot: () => {},
         };
     }
     return ctx;

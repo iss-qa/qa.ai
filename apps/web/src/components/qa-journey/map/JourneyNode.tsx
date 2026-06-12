@@ -3,7 +3,7 @@
 import { memo } from 'react';
 import { Handle, NodeResizer, Position } from 'reactflow';
 import * as Icons from 'lucide-react';
-import { ChevronRight, Map, Rocket } from 'lucide-react';
+import { ChevronRight, FileCode2, Map, Rocket } from 'lucide-react';
 import type { QAJourney } from '@/types/qa-journey';
 
 export interface JourneyNodeData {
@@ -12,6 +12,8 @@ export interface JourneyNodeData {
     automatedSubflows: number;
     isExpanded: boolean;
     onToggle: (journeyId: string) => void;
+    // Abre o documento HTML anexado (quando journey.html_doc existe).
+    onOpenHtml?: (journeyId: string) => void;
 }
 
 // Lookup type-safe para icones do lucide a partir do nome string.
@@ -37,7 +39,7 @@ function coverageColor(pct: number, total: number): string {
 }
 
 export const JourneyNode = memo(function JourneyNode({ data, selected }: { data: JourneyNodeData; selected?: boolean }) {
-    const { journey, totalSubflows, automatedSubflows, isExpanded, onToggle } = data;
+    const { journey, totalSubflows, automatedSubflows, isExpanded, onToggle, onOpenHtml } = data;
     const Icon = resolveIcon(journey.icon);
     const pct = coveragePct(totalSubflows, automatedSubflows);
     const color = journey.color || '#7c3aed';
@@ -107,7 +109,26 @@ export const JourneyNode = memo(function JourneyNode({ data, selected }: { data:
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold ${coverageColor(pct, totalSubflows)}`}>
                     {totalSubflows === 0 ? 'Sem sub-fluxos' : `${automatedSubflows}/${totalSubflows} automatizados`}
                 </span>
-                <span className="text-[10px] font-mono text-muted-foreground">{totalSubflows === 0 ? '—' : `${pct}%`}</span>
+                <span className="flex items-center gap-1.5">
+                    {journey.html_doc && onOpenHtml && (
+                        <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={e => { e.stopPropagation(); onOpenHtml(journey.id); }}
+                            onKeyDown={e => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.stopPropagation();
+                                    onOpenHtml(journey.id);
+                                }
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-brand/15 text-brand hover:bg-brand/25 transition-colors cursor-pointer"
+                            title="Ver documento HTML da jornada"
+                        >
+                            <FileCode2 className="w-3 h-3" /> Doc
+                        </span>
+                    )}
+                    <span className="text-[10px] font-mono text-muted-foreground">{totalSubflows === 0 ? '—' : `${pct}%`}</span>
+                </span>
             </div>
 
             {/* Progress bar */}

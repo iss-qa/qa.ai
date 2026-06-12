@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Loader2, Map } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { FileCode2, Loader2, Map, Trash2, Upload } from 'lucide-react';
 import { ModalShell } from './ModalShell';
 import { COLOR_SUGGESTIONS, ICON_SUGGESTIONS, toSlug } from '@/lib/qa-journey/constants';
 import type { QAJourney, QAJourneyDraft } from '@/types/qa-journey';
@@ -28,6 +28,29 @@ export function JourneyFormModal({ projectId, initial, defaultSequence = 0, onCl
     const [slugTouched, setSlugTouched] = useState(Boolean(initial?.slug));
     const [saving, setSaving] = useState(false);
 
+    // Documento HTML anexado à jornada (renderizado no mapa em iframe).
+    const [htmlEnabled, setHtmlEnabled] = useState(Boolean(initial?.html_doc));
+    const [htmlDoc, setHtmlDoc] = useState<string | null>(initial?.html_doc ?? null);
+    const [htmlFileName, setHtmlFileName] = useState<string | null>(initial?.html_doc ? 'documento atual' : null);
+    const [htmlError, setHtmlError] = useState<string | null>(null);
+    const htmlInputRef = useRef<HTMLInputElement>(null);
+
+    const handleHtmlFile = (file: File | undefined) => {
+        setHtmlError(null);
+        if (!file) return;
+        if (file.size > 2 * 1024 * 1024) {
+            setHtmlError('Arquivo muito grande (máx. 2 MB). Remova imagens embutidas pesadas e tente de novo.');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            setHtmlDoc(String(reader.result || ''));
+            setHtmlFileName(file.name);
+        };
+        reader.onerror = () => setHtmlError('Falha ao ler o arquivo.');
+        reader.readAsText(file);
+    };
+
     // Slug auto-derivado do titulo enquanto o usuario nao tocar manualmente
     useEffect(() => {
         if (slugTouched) return;
@@ -43,13 +66,21 @@ export function JourneyFormModal({ projectId, initial, defaultSequence = 0, onCl
         if (!canSave) return;
         setSaving(true);
         try {
+            // html_doc: undefined = campo não tocado (não vai no payload —
+            // compatível com banco sem a migration 008).
+            const htmlPayload = htmlEnabled
+                ? (htmlDoc ?? null)
+                : (initial?.html_doc ? null : undefined);
             await onSave({
                 ...draft,
                 title: (draft.title || '').trim(),
                 slug: (draft.slug || '').trim(),
                 description: (draft.description || '').trim() || null,
                 icon: (draft.icon || '').trim() || null,
+                html_doc: htmlPayload,
             });
+        } catch {
+            // O pai já alertou o erro — só não fecha o modal.
         } finally {
             setSaving(false);
         }
@@ -168,6 +199,71 @@ export function JourneyFormModal({ projectId, initial, defaultSequence = 0, onCl
                         ))}
                     </div>
                 </div>
+            </div>
+
+            {/* Documento HTML anexado */}
+            <div className="border border-border rounded-xl p-4 flex flex-col gap-3">
+                <div className="flex items-start gap-3">
+                    <button
+                        type="button"
+                        role="switch"
+                        aria-checked={htmlEnabled}
+                        onClick={() => setHtmlEnabled(v => !v)}
+                        className={`relative w-9 h-5 rounded-full shrink-0 mt-0.5 transition-colors ${
+                            htmlEnabled ? 'bg-brand' : 'bg-foreground/15'
+                        }`}
+                    >
+                        <span
+                            className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${
+                                htmlEnabled ? 'left-[18px]' : 'left-0.5'
+                            }`}
+                        />
+                    </button>
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                            <FileCode2 className="w-3.5 h-3.5 text-brand" /> Documento HTML
+                        </span>
+                        <span className="text-[11px] text-muted-foreground leading-snug">
+                            Importe um HTML formatado (ex.: planilha de testes estilizada). Ele será renderizado
+                            ao abrir a jornada no mapa — com cores, abas e interações preservadas.
+                        </span>
+                    </div>
+                </div>
+
+                {htmlEnabled && (
+                    <div className="flex flex-wrap items-center gap-2 pl-12">
+                        <input
+                            ref={htmlInputRef}
+                            type="file"
+                            accept=".html,.htm,text/html"
+                            className="hidden"
+                            onChange={e => { handleHtmlFile(e.target.files?.[0]); e.target.value = ''; }}
+                        />
+                        <button
+                            type="button"
+                            onClick={() => htmlInputRef.current?.click()}
+                            className="inline-flex items-center gap-1.5 text-xs font-bold text-brand border border-brand/30 rounded-lg px-3 py-1.5 hover:bg-brand/10 transition-colors"
+                        >
+                            <Upload className="w-3.5 h-3.5" />
+                            {htmlDoc ? 'Substituir arquivo' : 'Importar arquivo HTML'}
+                        </button>
+                        {htmlDoc && (
+                            <>
+                                <span className="text-[11px] text-muted-foreground">
+                                    {htmlFileName} · {(htmlDoc.length / 1024).toFixed(0)} KB
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => { setHtmlDoc(null); setHtmlFileName(null); }}
+                                    className="inline-flex items-center gap-1 text-[11px] text-danger hover:underline"
+                                >
+                                    <Trash2 className="w-3 h-3" /> Remover
+                                </button>
+                            </>
+                        )}
+                        {htmlError && <span className="text-[11px] text-danger w-full">{htmlError}</span>}
+                    </div>
+                )}
             </div>
 
             <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">

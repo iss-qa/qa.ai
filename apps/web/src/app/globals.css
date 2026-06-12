@@ -120,9 +120,16 @@
     @apply bg-background text-foreground;
   }
 
+  /* color-scheme segue a CLASSE de tema do app (não a preferência do SO):
+     controla a cor dos widgets nativos — dropdown de <select>, scrollbar,
+     date picker. Sem isso, app em dark + SO em light = dropdown branco. */
   html {
     @apply font-sans;
-    color-scheme: light dark;
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 }
 

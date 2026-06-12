@@ -6,6 +6,8 @@ import {
     ArrowLeft,
     ChevronDown,
     ChevronRight,
+    Eye,
+    FileSpreadsheet,
     FileText,
     GitBranch,
     Link2,
@@ -18,6 +20,7 @@ import {
 
 import { SubflowFormModal } from '@/components/qa-journey/SubflowFormModal';
 import { CaseFormModal } from '@/components/qa-journey/CaseFormModal';
+import { ImportCasesModal } from '@/components/qa-journey/ImportCasesModal';
 import { DeleteConfirmModal } from '@/components/qa-journey/DeleteConfirmModal';
 import { MigrationMissingBanner } from '@/components/qa-journey/MigrationMissingBanner';
 import { MaestroImportModal } from '@/components/qa-journey/MaestroImportModal';
@@ -26,13 +29,14 @@ import {
     createSubflow,
     deleteCase,
     deleteSubflow,
+    errorMessage,
     loadJourneyDetail,
     loadTestCaseOptions,
     updateCase,
     updateSubflow,
 } from '@/lib/qa-journey/api';
 import type { TestCaseOption } from '@/lib/qa-journey/api';
-import { AUTOMATION_STATUS_OPTIONS, PRIORITY_OPTIONS } from '@/lib/qa-journey/constants';
+import { AUTOMATION_STATUS_OPTIONS, PRIORITY_OPTIONS, RUN_STATUS_DISPLAY } from '@/lib/qa-journey/constants';
 import type {
     QAJourney,
     QAJourneyCase,
@@ -60,6 +64,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
     const [subflowDialogOpen, setSubflowDialogOpen] = useState(false);
 
     const [caseDialog, setCaseDialog] = useState<{ subflowId: string; subject: QAJourneyCase | null } | null>(null);
+    const [importDialog, setImportDialog] = useState<{ subflowId: string } | null>(null);
 
     const [deleteSubflowId, setDeleteSubflowId] = useState<string | null>(null);
     const [deleteCaseId, setDeleteCaseId] = useState<string | null>(null);
@@ -132,7 +137,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
             }
             setSubflowDialogOpen(false);
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e);
+            const msg = errorMessage(e);
             alert('Erro ao salvar Sub-fluxo: ' + msg);
             throw e;
         }
@@ -147,7 +152,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
             setSubflows(prev => prev.filter(s => s.id !== targetId));
             setCases(prev => prev.filter(c => c.subflow_id !== targetId));
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e);
+            const msg = errorMessage(e);
             alert('Erro ao excluir Sub-fluxo: ' + msg);
         }
     };
@@ -165,7 +170,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
             }
             setCaseDialog(null);
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e);
+            const msg = errorMessage(e);
             alert('Erro ao salvar Caso: ' + msg);
             throw e;
         }
@@ -179,7 +184,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
             await deleteCase(targetId);
             setCases(prev => prev.filter(c => c.id !== targetId));
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e);
+            const msg = errorMessage(e);
             alert('Erro ao excluir Caso: ' + msg);
         }
     };
@@ -234,6 +239,13 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                         <span className="text-xs font-mono text-muted-foreground">/{journey.slug}</span>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <Link
+                            href={`/dashboard/qa-journey?project=${journey.project_id}&journey=${journey.id}`}
+                            className="text-xs font-bold text-brand border border-brand/30 rounded-lg px-3 py-2 inline-flex items-center gap-1.5 hover:bg-brand/10 transition-colors"
+                            title="Abrir esta jornada no mapa visual"
+                        >
+                            <Eye className="w-3.5 h-3.5" /> Ver no mapa
+                        </Link>
                         <button
                             onClick={() => setMaestroOpen(true)}
                             disabled={subflows.length === 0}
@@ -319,7 +331,14 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
 
                             {isOpen && (
                                 <div className="border-t border-border bg-surface-muted/30">
-                                    <div className="flex justify-end px-6 py-3">
+                                    <div className="flex justify-end items-center gap-4 px-6 py-3">
+                                        <button
+                                            onClick={() => setImportDialog({ subflowId: sub.id })}
+                                            className="text-xs font-bold text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1"
+                                            title="Importar casos de uma planilha Google Sheets"
+                                        >
+                                            <FileSpreadsheet className="w-3 h-3" /> Importar da planilha
+                                        </button>
                                         <button
                                             onClick={() => setCaseDialog({ subflowId: sub.id, subject: null })}
                                             className="text-xs font-bold text-brand hover:underline flex items-center gap-1"
@@ -337,8 +356,9 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                         <table className="w-full text-left text-sm text-muted-foreground whitespace-nowrap">
                                             <thead className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest">
                                                 <tr>
-                                                    <th className="px-6 py-2 w-24">ID externo</th>
+                                                    <th className="px-6 py-2 w-20">ID externo</th>
                                                     <th className="px-6 py-2">Título</th>
+                                                    <th className="px-6 py-2 w-28">Plataforma</th>
                                                     <th className="px-6 py-2 w-28">Prioridade</th>
                                                     <th className="px-6 py-2 w-32">Última exec.</th>
                                                     <th className="px-6 py-2 text-right w-32">Ações</th>
@@ -347,8 +367,13 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                             <tbody className="divide-y divide-border">
                                                 {subCases.map(c => {
                                                     const prio = PRIORITY_OPTIONS.find(o => o.value === c.priority);
+                                                    const rowTone = c.last_run_status === 'pass'
+                                                        ? 'bg-success/10 hover:bg-success/15'
+                                                        : c.last_run_status === 'fail'
+                                                            ? 'bg-danger/10 hover:bg-danger/15'
+                                                            : 'hover:bg-accent';
                                                     return (
-                                                        <tr key={c.id} className="hover:bg-accent">
+                                                        <tr key={c.id} className={`transition-colors ${rowTone}`}>
                                                             <td className="px-6 py-2 text-[11px] font-mono text-muted-foreground">
                                                                 {c.external_id || '—'}
                                                             </td>
@@ -358,6 +383,9 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                                                     <span className="text-foreground">{c.title}</span>
                                                                 </div>
                                                             </td>
+                                                            <td className="px-6 py-2 text-[11px] text-muted-foreground">
+                                                                {c.platform || '—'}
+                                                            </td>
                                                             <td className="px-6 py-2">
                                                                 {prio && (
                                                                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${prio.color}`}>
@@ -365,8 +393,18 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                                                     </span>
                                                                 )}
                                                             </td>
-                                                            <td className="px-6 py-2 text-[11px] text-muted-foreground">
-                                                                {c.last_run_status || '—'}
+                                                            <td className="px-6 py-2 text-[11px]">
+                                                                {c.last_run_status ? (
+                                                                    <span className={`font-bold uppercase tracking-wide ${
+                                                                        c.last_run_status === 'pass'
+                                                                            ? 'text-success'
+                                                                            : c.last_run_status === 'fail'
+                                                                                ? 'text-danger'
+                                                                                : 'text-muted-foreground'
+                                                                    }`}>
+                                                                        {RUN_STATUS_DISPLAY[c.last_run_status]}
+                                                                    </span>
+                                                                ) : '—'}
                                                             </td>
                                                             <td className="px-6 py-2 text-right">
                                                                 <div className="flex items-center justify-end gap-1">
@@ -406,6 +444,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
             {subflowDialogOpen && (
                 <SubflowFormModal
                     journeyId={journey.id}
+                    journeyTitle={journey.title}
                     initial={subflowDialog.mode === 'edit' ? subflowDialog.subflow : null}
                     defaultSequence={subflows.length > 0 ? Math.max(...subflows.map(s => s.sequence)) + 1 : 0}
                     testCases={testCases}
@@ -417,6 +456,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
             {caseDialog && (
                 <CaseFormModal
                     subflowId={caseDialog.subflowId}
+                    subflowTitle={subflows.find(s => s.id === caseDialog.subflowId)?.title}
                     initial={caseDialog.subject}
                     onClose={() => setCaseDialog(null)}
                     onSave={handleSaveCase}
@@ -438,6 +478,19 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                     message={`O caso "${deleteCaseTarget.title}" será excluído permanentemente.`}
                     onCancel={() => setDeleteCaseId(null)}
                     onConfirm={handleDeleteCase}
+                />
+            )}
+
+            {importDialog && (
+                <ImportCasesModal
+                    projectId={journey.project_id}
+                    subflowId={importDialog.subflowId}
+                    subflowTitle={subflows.find(s => s.id === importDialog.subflowId)?.title || ''}
+                    existingCases={cases.filter(c => c.subflow_id === importDialog.subflowId)}
+                    onClose={() => setImportDialog(null)}
+                    onImported={(created) => {
+                        setCases(prev => [...prev, ...created]);
+                    }}
                 />
             )}
 

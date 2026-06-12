@@ -46,7 +46,8 @@ const qaJourneyRoutes: FastifyPluginAsync = async (fastify) => {
         async (request, reply) => {
             const { spreadsheetId, sheetName } = request.query;
             const headerRow = Number(request.query.headerRow || '1') || 1;
-            const sampleRows = Math.min(Number(request.query.sampleRows || '10') || 10, 50);
+            // Cap alto o suficiente para a importação de casos (modal lê a aba inteira).
+            const sampleRows = Math.min(Number(request.query.sampleRows || '10') || 10, 1000);
             if (!spreadsheetId || !sheetName) {
                 return reply.status(400).send({ error: 'spreadsheetId e sheetName obrigatorios' });
             }

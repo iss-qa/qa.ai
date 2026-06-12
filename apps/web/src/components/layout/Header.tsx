@@ -11,7 +11,7 @@ function titleForPath(pathname: string): string {
     if (pathname.startsWith('/dashboard/devices')) return 'Dispositivos';
     if (pathname.startsWith('/dashboard/logs')) return 'Logs';
     if (pathname.startsWith('/dashboard/bugs')) return 'Bugs';
-    if (pathname.startsWith('/dashboard/qa-journey')) return 'Jornada do QA';
+    if (pathname.startsWith('/dashboard/qa-journey')) return 'Jornadas';
     if (pathname.startsWith('/dashboard/settings')) return 'Configurações';
     if (pathname.startsWith('/dashboard/runs')) return 'Execuções';
     if (pathname.startsWith('/docs')) return 'Docs';
@@ -20,12 +20,12 @@ function titleForPath(pathname: string): string {
 
 export function Header() {
     const pathname = usePathname();
-    const { setMobileSidebarOpen } = useShell();
+    const { setMobileSidebarOpen, headerSlot } = useShell();
     const title = titleForPath(pathname);
 
     return (
-        <header className="h-16 border-b border-border bg-card/80 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 sticky top-0 z-20">
-            <div className="flex items-center gap-3 min-w-0">
+        <header className="h-16 border-b border-border bg-card/80 backdrop-blur-md flex items-center justify-between gap-3 px-4 sm:px-6 sticky top-0 z-20">
+            <div className="flex items-center gap-3 min-w-0 shrink-0">
                 <button
                     onClick={() => setMobileSidebarOpen(true)}
                     aria-label="Abrir menu"
@@ -37,9 +37,15 @@ export function Header() {
                     {title}
                 </div>
             </div>
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                {/* Controles injetados pela página corrente (useShell().setHeaderSlot) */}
+                {headerSlot && (
+                    <div className="flex items-center gap-2 min-w-0 overflow-x-auto">
+                        {headerSlot}
+                    </div>
+                )}
                 <ThemeToggle />
-                <div className="w-8 h-8 rounded-lg bg-surface-muted border border-border flex items-center justify-center text-xs font-bold text-brand">
+                <div className="w-8 h-8 rounded-lg bg-surface-muted border border-border flex items-center justify-center text-xs font-bold text-brand shrink-0">
                     IS
                 </div>
             </div>

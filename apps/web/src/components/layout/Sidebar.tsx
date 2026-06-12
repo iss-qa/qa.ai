@@ -54,7 +54,7 @@ export function Sidebar() {
         { href: '/dashboard/projects', label: 'Projetos', icon: Folder },
         { href: '/dashboard/tests', label: 'Testes', icon: FlaskConical },
         { href: '/dashboard/bugs', label: 'Bug Tracker', icon: Bug },
-        { href: '/dashboard/qa-journey', label: 'Jornada do QA', icon: Map },
+        { href: '/dashboard/qa-journey', label: 'Jornadas', icon: Map },
         { href: '/dashboard/devices', label: 'Dispositivos', icon: Smartphone },
         { href: '/dashboard/logs', label: 'Logs', icon: ScrollText, badge: errorCount > 0 ? errorCount : undefined },
         { href: '/dashboard/settings', label: 'Configurações', icon: Settings },

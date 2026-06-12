@@ -8,12 +8,13 @@ import type { QAJourneyCase, QAJourneyCaseDraft, CasePriority, CaseRunStatus } f
 
 interface CaseFormModalProps {
     subflowId: string;
+    subflowTitle?: string;   // nome do sub-fluxo pai, exibido no título do modal
     initial?: QAJourneyCase | null;
     onClose: () => void;
     onSave: (draft: QAJourneyCaseDraft) => Promise<void>;
 }
 
-export function CaseFormModal({ subflowId, initial, onClose, onSave }: CaseFormModalProps) {
+export function CaseFormModal({ subflowId, subflowTitle, initial, onClose, onSave }: CaseFormModalProps) {
     const [draft, setDraft] = useState<QAJourneyCaseDraft>(() => ({
         subflow_id: subflowId,
         external_id: initial?.external_id ?? '',
@@ -22,6 +23,9 @@ export function CaseFormModal({ subflowId, initial, onClose, onSave }: CaseFormM
         expected_result: initial?.expected_result ?? '',
         priority: initial?.priority ?? 'medium',
         last_run_status: initial?.last_run_status ?? null,
+        // undefined = campo não tocado (não vai no payload — compatível com
+        // banco sem a migration 009 da coluna platform).
+        platform: initial?.platform ?? undefined,
     }));
     const [saving, setSaving] = useState(false);
 
@@ -38,7 +42,10 @@ export function CaseFormModal({ subflowId, initial, onClose, onSave }: CaseFormM
                 external_id: (draft.external_id || '').trim() || null,
                 steps_summary: (draft.steps_summary || '').trim() || null,
                 expected_result: (draft.expected_result || '').trim() || null,
+                platform: draft.platform !== undefined ? ((draft.platform || '').trim() || null) : undefined,
             });
+        } catch {
+            // O pai já alertou o erro — só não fecha o modal.
         } finally {
             setSaving(false);
         }
@@ -46,7 +53,19 @@ export function CaseFormModal({ subflowId, initial, onClose, onSave }: CaseFormM
 
     return (
         <ModalShell
-            title={<><FileText className="w-5 h-5 text-brand" /> {isEdit ? 'Editar Caso' : 'Novo Caso'}</>}
+            title={
+                <>
+                    <FileText className="w-5 h-5 text-brand" />
+                    <span className="flex flex-wrap items-baseline gap-x-1.5 min-w-0">
+                        {isEdit ? 'Editar Caso' : 'Novo Caso'}
+                        {subflowTitle && (
+                            <span className="text-muted-foreground font-normal truncate">
+                                em <span className="text-brand font-bold">{subflowTitle}</span>
+                            </span>
+                        )}
+                    </span>
+                </>
+            }
             onClose={onClose}
             footer={
                 <>
@@ -110,7 +129,17 @@ export function CaseFormModal({ subflowId, initial, onClose, onSave }: CaseFormM
                 />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="flex flex-col gap-1.5">
+                    <Label>Plataforma</Label>
+                    <input
+                        type="text"
+                        value={draft.platform || ''}
+                        onChange={e => setDraft({ ...draft, platform: e.target.value })}
+                        placeholder="ex: Web, Mobile, API"
+                        className={inputClass}
+                    />
+                </div>
                 <div className="flex flex-col gap-1.5">
                     <Label>Prioridade</Label>
                     <select

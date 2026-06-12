@@ -38,7 +38,13 @@ export function applyDagreLayout<T = unknown>(
             height: n.height ?? nodeHeight,
         });
     });
-    edges.forEach(e => g.setEdge(e.source, e.target));
+    // minlen (via edge.data) afasta o alvo em N ranks — usado para empurrar
+    // os casos de teste mais à frente e evitar que as linhas passem por
+    // baixo de outros nós.
+    edges.forEach(e => {
+        const minlen = (e.data as { minlen?: number } | undefined)?.minlen ?? 1;
+        g.setEdge(e.source, e.target, { minlen });
+    });
 
     dagre.layout(g);
 

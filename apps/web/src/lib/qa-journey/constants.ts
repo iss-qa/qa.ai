@@ -21,6 +21,14 @@ export const RUN_STATUS_OPTIONS: { value: CaseRunStatus; label: string; color: s
     { value: 'not_run', label: 'Não rodado',  color: 'bg-slate-500/20 text-slate-500' },
 ];
 
+// Rótulo curto em caixa alta para tabelas/badges de resultado (PASS / FAIL).
+export const RUN_STATUS_DISPLAY: Record<CaseRunStatus, string> = {
+    pass: 'PASS',
+    fail: 'FAIL',
+    skipped: 'PULADO',
+    not_run: 'NÃO RODADO',
+};
+
 // Sugestoes de icones lucide para escolha no admin.
 // Lista enxuta - usuario tambem pode digitar qualquer nome valido.
 export const ICON_SUGGESTIONS = [

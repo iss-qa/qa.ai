@@ -17,6 +17,9 @@ export interface QAJourney {
     color: string | null;
     sequence: number;
     is_published: boolean;
+    // Documento HTML completo importado pelo admin (migration 008).
+    // Renderizado em iframe sandbox quando a jornada é aberta no mapa.
+    html_doc?: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -42,6 +45,11 @@ export interface QAJourneyCase {
     steps_summary: string | null;
     expected_result: string | null;
     priority: CasePriority;
+    // Plataforma/ambiente do caso (Web, Mobile, API, ...) — migration 009.
+    platform?: string | null;
+    // Evidência da última execução manual (migration 010).
+    evidence_url?: string | null;
+    evidence_type?: 'image' | 'video' | null;
     last_run_status: CaseRunStatus | null;
     last_run_at: string | null;
     archived_at: string | null;
