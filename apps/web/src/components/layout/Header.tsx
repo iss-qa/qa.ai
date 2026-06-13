@@ -3,10 +3,13 @@
 import { usePathname } from 'next/navigation';
 import { Menu } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
+import { UserMenu } from './UserMenu';
 import { useShell } from './shell-context';
 
 function titleForPath(pathname: string): string {
     if (pathname.startsWith('/dashboard/projects')) return 'Projetos';
+    if (pathname.startsWith('/dashboard/profile')) return 'Meu Perfil';
+    if (pathname.startsWith('/dashboard/admin')) return 'Administração';
     if (pathname.startsWith('/dashboard/tests')) return 'Testes';
     if (pathname.startsWith('/dashboard/devices')) return 'Dispositivos';
     if (pathname.startsWith('/dashboard/logs')) return 'Logs';
@@ -46,9 +49,7 @@ export function Header() {
                     </div>
                 )}
                 <ThemeToggle />
-                <div className="w-8 h-8 rounded-lg bg-surface-muted border border-border flex items-center justify-center text-xs font-bold text-brand shrink-0">
-                    IS
-                </div>
+                <UserMenu />
             </div>
         </header>
     );

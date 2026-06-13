@@ -310,3 +310,6 @@ adb start-server
 ### Tela espelhada travou
 
 Reconectar o dispositivo no dashboard. O espelhamento usa scrcpy via WebSocket na porta 8001.
+
+
+Q@mind2026!@#$

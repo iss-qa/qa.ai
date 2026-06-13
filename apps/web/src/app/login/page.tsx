@@ -6,9 +6,8 @@ import Link from 'next/link';
 import { Mail, Lock, ArrowRight, Activity, ShieldCheck } from 'lucide-react';
 
 export default function LoginPage() {
-    // Valores padrão preenchidos para facilitar os testes do usuário Isaias
-    const [email, setEmail] = useState('isaias.silva@foxbit.com.br');
-    const [password, setPassword] = useState('Q@mind2026!@#$');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
