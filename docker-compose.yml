@@ -41,10 +41,16 @@ services:
       - easypanel-network
     labels:
       - traefik.enable=true
+      # HTTPS (443)
       - traefik.http.routers.qamind-api.rule=Host(`${API_HOST}`)
       - traefik.http.routers.qamind-api.entrypoints=websecure
       - traefik.http.routers.qamind-api.tls.certresolver=letsencrypt
       - traefik.http.services.qamind-api.loadbalancer.server.port=3001
+      # HTTP (80) — necessario para o desafio HTTP-01 do Let's Encrypt + redirect p/ HTTPS
+      - traefik.http.routers.qamind-api-http.rule=Host(`${API_HOST}`)
+      - traefik.http.routers.qamind-api-http.entrypoints=web
+      - traefik.http.routers.qamind-api-http.middlewares=qamind-https-redirect
+      - traefik.http.middlewares.qamind-https-redirect.redirectscheme.scheme=https
 
   web:
     build:
@@ -68,10 +74,15 @@ services:
       - easypanel-network
     labels:
       - traefik.enable=true
+      # HTTPS (443)
       - traefik.http.routers.qamind-web.rule=Host(`${WEB_HOST}`)
       - traefik.http.routers.qamind-web.entrypoints=websecure
       - traefik.http.routers.qamind-web.tls.certresolver=letsencrypt
       - traefik.http.services.qamind-web.loadbalancer.server.port=3000
+      # HTTP (80) — necessario para o desafio HTTP-01 do Let's Encrypt + redirect p/ HTTPS
+      - traefik.http.routers.qamind-web-http.rule=Host(`${WEB_HOST}`)
+      - traefik.http.routers.qamind-web-http.entrypoints=web
+      - traefik.http.routers.qamind-web-http.middlewares=qamind-https-redirect
 
 networks:
   # Network gerenciada pelo Dokploy - Traefik vive nela

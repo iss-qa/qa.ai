@@ -6,8 +6,13 @@ import Link from 'next/link';
 import { Mail, Lock, ArrowRight, Activity, ShieldCheck } from 'lucide-react';
 
 export default function LoginPage() {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
+    // ⚠️⚠️⚠️ TODO ANTES DE SUBIR / COMMITAR ⚠️⚠️⚠️
+    // ESTE ARQUIVO CONTÉM CREDENCIAIS EM TEXTO CLARO (apenas para testes locais).
+    // REVERTA email e password para '' ANTES de qualquer commit/push/deploy.
+    // NÃO subir este arquivo com a senha preenchida.
+    // ⚠️⚠️⚠️ ----------------------- ⚠️⚠️⚠️
+    const [email, setEmail] = useState('isaias.silva@foxbit.com.br');
+    const [password, setPassword] = useState('Q@mind2026!@#$');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
