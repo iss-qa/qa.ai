@@ -73,8 +73,11 @@ export function RecorderConfigModal({
             }}
         >
             <div className="bg-card border border-border rounded-2xl w-full max-w-md shadow-2xl">
-                <div className="px-6 pt-6 pb-4">
-                    <h3 className="text-base font-bold text-foreground">Choose a template</h3>
+                <div className="px-6 pt-6 pb-1">
+                    <h3 className="text-base font-bold text-foreground">Selecionar app para gravar</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                        Escolha o app a testar. O nome do teste você define ao salvar a gravação.
+                    </p>
                 </div>
 
                 {/* Template type tabs — keep the four-button row from the bundle's
@@ -117,24 +120,6 @@ export function RecorderConfigModal({
                 </div>
 
                 <div className="px-6 pb-2 flex flex-col gap-4">
-                    {/* Name with `.yaml` suffix shown inside the input */}
-                    <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-medium text-muted-foreground">Name</label>
-                        <div className="relative">
-                            <input
-                                type="text"
-                                value={recorderConfig.testName}
-                                onChange={(e) => setRecorderConfig(prev => ({ ...prev, testName: e.target.value }))}
-                                placeholder="e.g. signup_flow"
-                                autoFocus
-                                className="w-full bg-foreground/5 border border-border rounded-lg pl-3 pr-14 py-2 text-sm text-foreground placeholder-slate-500 focus:outline-none focus:border-brand/50 font-mono"
-                            />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-500 font-mono pointer-events-none">
-                                .yaml
-                            </span>
-                        </div>
-                    </div>
-
                     {/* Busca por nome do app — preenche o App ID automaticamente */}
                     <div className="flex flex-col gap-1.5">
                         <label className="text-xs font-medium text-muted-foreground flex items-center gap-2">
@@ -147,6 +132,7 @@ export function RecorderConfigModal({
                                 type="text"
                                 value={appSearch}
                                 onChange={(e) => setAppSearch(e.target.value)}
+                                autoFocus
                                 placeholder='ex: "foxbit" — acha o App ID sozinho'
                                 className="w-full bg-foreground/5 border border-border rounded-lg pl-9 pr-3 py-2 text-sm text-foreground placeholder-slate-500 focus:outline-none focus:border-brand/50"
                             />
@@ -265,7 +251,7 @@ export function RecorderConfigModal({
                         disabled={!recorderConfig.appId.trim()}
                         className="px-4 py-1.5 bg-red-500 hover:bg-red-600 disabled:bg-foreground/5 disabled:text-zinc-500 disabled:cursor-not-allowed text-white text-sm font-bold rounded-lg transition-all"
                     >
-                        Create
+                        Iniciar gravação
                     </button>
                 </div>
             </div>

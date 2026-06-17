@@ -2,12 +2,23 @@
 // projeto são gravados. O daemon expõe o seletor nativo de pastas e a
 // escrita em disco; o front nunca toca o filesystem diretamente.
 
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 const DAEMON = process.env.NEXT_PUBLIC_DAEMON_URL || 'http://localhost:8001';
 
 // Bucket do Supabase Storage onde os YAMLs vivem (workspace na nuvem).
 const WORKSPACE_BUCKET = 'workspaces';
+
+// Cliente SSR (cookie-based) — carrega a sessao do usuario logado, entao o
+// role e 'authenticated' e as policies do bucket 'workspaces' liberam o upload.
+// O client anon de '@/lib/supabase' nao carrega a sessao -> RLS barra o INSERT
+// com "new row violates row-level security policy". So roda no browser.
+let _storageClient: SupabaseClient | null = null;
+function storageClient(): SupabaseClient {
+    if (!_storageClient) _storageClient = createClient();
+    return _storageClient;
+}
 
 // Tipo de workspace por projeto:
 //   'local'    -> daemon (filesystem da maquina com o device)
@@ -90,7 +101,7 @@ export async function writeYamlToSupabase(
 ): Promise<WorkspaceWriteResult> {
     const path = `${prefix}/${fileName}`;
     try {
-        const { error } = await supabase.storage
+        const { error } = await storageClient().storage
             .from(WORKSPACE_BUCKET)
             .upload(path, new Blob([content], { type: 'text/yaml' }), { upsert: true, contentType: 'text/yaml' });
         if (error) return { success: false, error: error.message };
@@ -118,7 +129,7 @@ export async function writeYaml(
 export async function readYaml(ref: WorkspaceRef, fileName: string): Promise<string | null> {
     try {
         if (ref.type === 'supabase') {
-            const { data, error } = await supabase.storage.from(WORKSPACE_BUCKET).download(`${ref.prefix}/${fileName}`);
+            const { data, error } = await storageClient().storage.from(WORKSPACE_BUCKET).download(`${ref.prefix}/${fileName}`);
             if (error || !data) return null;
             return await data.text();
         }
