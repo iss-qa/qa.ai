@@ -15,7 +15,7 @@ import { AmbiguityDialog } from '@/components/AmbiguityDialog';
 import { SaveRecordingModal } from '@/components/SaveRecordingModal';
 import { ExecutionOverlay } from '@/components/ExecutionOverlay';
 import { supabase } from '@/lib/supabase';
-import { testYamlFileName, writeYamlToWorkspace } from '@/lib/workspace';
+import { testYamlFileName, writeYaml, type WorkspaceRef } from '@/lib/workspace';
 import type { TestStep, ConfidenceReport, RecorderConfigState, ExecutionErrorState } from './editor-types';
 import { MOCK_MAESTRO_STEPS, MOCK_MAESTRO_YAML, MOCK_U2_STEPS, recordedStepsToMaestroYaml, normalizeMaestroCommand } from './editor-utils';
 import { persistRunResult, saveTestCase } from './editor-persistence';
@@ -454,7 +454,7 @@ export default function TestEditorPage() {
         }
     };
 
-    const handleSaveRecording = async (testName: string, projectId: string, yamlContent?: string, workspacePath?: string | null) => {
+    const handleSaveRecording = async (testName: string, projectId: string, yamlContent?: string, workspaceRef?: WorkspaceRef | null) => {
         // Generate Maestro YAML from recorded steps — appId from the config
         // modal (recordingAppId) takes precedence over the editor's loaded
         // appId (testAppId). Hardcoded foxbit removed.
@@ -571,19 +571,20 @@ export default function TestEditorPage() {
             throw e instanceof Error ? e : new Error('Erro ao salvar teste. Verifique se o daemon está rodando.');
         }
 
-        // Grava o YAML no workspace do projeto (mesma pasta que o Maestro
-        // Studio usa) e persiste o workspace escolhido no projeto, para que
-        // o botão "Studio" da lista de testes abra direto sem erro.
-        if (workspacePath && generatedYaml) {
-            const writeRes = await writeYamlToWorkspace(workspacePath, testYamlFileName(testName), generatedYaml);
+        // Grava o YAML no workspace do projeto (local via daemon, ou Google
+        // Drive via api) e — no caso local — persiste o workspace escolhido no
+        // projeto, para que o botão "Studio" da lista de testes abra sem erro.
+        if (workspaceRef && generatedYaml) {
+            const writeRes = await writeYaml(workspaceRef, testYamlFileName(testName), generatedYaml);
             if (!writeRes.success) {
                 console.error('Failed to write YAML to workspace:', writeRes);
-                alert(`O teste foi salvo, mas não foi possível gravar o YAML no workspace (${workspacePath}): ${writeRes.error || 'erro desconhecido'}`);
+                const dest = workspaceRef.type === 'supabase' ? 'Supabase Storage' : workspaceRef.path;
+                alert(`O teste foi salvo, mas não foi possível gravar o YAML no workspace (${dest}): ${writeRes.error || 'erro desconhecido'}`);
             }
-            if (projectId && projectId !== 'default') {
+            if (workspaceRef.type === 'local' && projectId && projectId !== 'default') {
                 try {
                     await supabase.from('projects')
-                        .update({ workspace_path: workspacePath })
+                        .update({ workspace_path: workspaceRef.path })
                         .eq('id', projectId);
                 } catch (e) {
                     console.warn('workspace_path persist failed:', e);

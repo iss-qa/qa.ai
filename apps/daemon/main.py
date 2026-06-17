@@ -38,14 +38,26 @@ logger = logging.getLogger("main")
 
 app = FastAPI(title="QAMind Daemon", version="1.0.0")
 
+# Origens permitidas no CORS. Localhost/127.0.0.1 (qualquer porta) sempre
+# liberados via regex. A web em producao (HTTPS) precisa ser liberada
+# explicitamente para que o navegador do usuario, rodando o app deployado,
+# consiga falar com ESTE daemon local (modo "executar na web com device local").
+# Origens extras (ex.: dominio proprio) via env DAEMON_ALLOWED_ORIGINS (CSV).
+_default_web_origins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "https://qamind.issqa.com.br",
+]
+_extra_origins = [
+    o.strip() for o in os.getenv("DAEMON_ALLOWED_ORIGINS", "").split(",") if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001",
-    ],
+    allow_origins=_default_web_origins + _extra_origins,
+    # localhost/127.0.0.1 em qualquer porta (dev local sem impacto).
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],

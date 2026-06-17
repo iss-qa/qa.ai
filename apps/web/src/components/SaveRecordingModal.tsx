@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, X, Loader2, FolderSearch } from 'lucide-react';
+import { Save, X, Loader2, FolderSearch, Cloud } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { pickWorkspaceDirectory } from '@/lib/workspace';
+import { pickWorkspaceDirectory, workspaceRefFromProject, type WorkspaceRef } from '@/lib/workspace';
 
 interface Project {
     id: string;
     name: string;
+    workspace_type?: 'local' | 'supabase' | null;
     workspace_path?: string | null;
 }
 
@@ -16,7 +17,7 @@ interface SaveRecordingModalProps {
     stepCount: number;
     durationSeconds: number;
     currentProjectId?: string | null;
-    onSave: (testName: string, projectId: string, yamlContent?: string, workspacePath?: string | null) => void | Promise<void>;
+    onSave: (testName: string, projectId: string, yamlContent?: string, workspaceRef?: WorkspaceRef | null) => void | Promise<void>;
     onCancel: () => void;
     engine?: 'uiautomator2' | 'maestro';
     maestroYaml?: string;
@@ -58,7 +59,7 @@ export function SaveRecordingModal({
         // Fetch projects from Supabase
         supabase
             .from('projects')
-            .select('id, name, workspace_path')
+            .select('id, name, workspace_type, workspace_path')
             .order('name')
             .then(({ data }) => {
                 if (data && data.length > 0) {
@@ -77,8 +78,12 @@ export function SaveRecordingModal({
             });
     }, [isOpen, currentProjectId]);
 
-    // O workspace acompanha o projeto selecionado: é a pasta local onde o
-    // YAML deste teste será gravado (a mesma usada pelo Maestro Studio).
+    const selectedProject = projects.find(p => p.id === projectId);
+    const wsType = selectedProject?.workspace_type || 'local';
+    const isSupabaseWorkspace = wsType === 'supabase'; // nuvem — não usa pasta local
+
+    // O workspace acompanha o projeto selecionado: pasta local (daemon) ou
+    // pasta no Google Drive (api), onde o YAML deste teste será gravado.
     useEffect(() => {
         const proj = projects.find(p => p.id === projectId);
         setWorkspacePath(proj?.workspace_path || '');
@@ -108,9 +113,14 @@ export function SaveRecordingModal({
             alert('Informe o nome do teste');
             return;
         }
-        if (!workspacePath.trim()) {
+        // Resolve o destino do YAML conforme o tipo de workspace do projeto.
+        const ref: WorkspaceRef | null = isSupabaseWorkspace
+            ? workspaceRefFromProject(selectedProject || {})
+            : (workspacePath.trim() ? { type: 'local', path: workspacePath.trim() } : null);
+
+        if (!ref) {
             const proceed = confirm(
-                'Nenhum workspace selecionado. Sem workspace, o YAML não será salvo em uma pasta local e o botão "Studio" pedirá uma pasta depois.\n\nSalvar mesmo assim?'
+                'Nenhum workspace selecionado. Sem workspace, o YAML não será salvo e o botão "Studio" pedirá uma pasta depois.\n\nSalvar mesmo assim?'
             );
             if (!proceed) return;
         }
@@ -120,7 +130,7 @@ export function SaveRecordingModal({
                 testName.trim(),
                 projectId,
                 engine === 'maestro' ? editableYaml : undefined,
-                workspacePath.trim() || null,
+                ref,
             );
         } catch (e) {
             // Mantém o modal aberto para o usuário corrigir e tentar de novo.
@@ -186,26 +196,35 @@ export function SaveRecordingModal({
                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
                             Workspace (pasta do YAML)
                         </label>
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                value={workspacePath}
-                                onChange={(e) => setWorkspacePath(e.target.value)}
-                                placeholder="Nenhum workspace definido para este projeto"
-                                className="flex-1 min-w-0 bg-background border border-border rounded-lg px-3 py-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-brand/50 font-mono"
-                            />
-                            <button
-                                type="button"
-                                onClick={handlePickWorkspace}
-                                disabled={pickingWorkspace}
-                                title="Selecionar pasta existente ou criar uma nova"
-                                className="px-3 py-2.5 bg-background border border-border rounded-lg text-muted-foreground hover:text-brand hover:border-brand/50 transition-colors disabled:opacity-50"
-                            >
-                                {pickingWorkspace ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderSearch className="w-4 h-4" />}
-                            </button>
-                        </div>
+                        {isSupabaseWorkspace ? (
+                            <div className="flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-2.5 text-xs">
+                                <Cloud className="w-4 h-4 text-brand shrink-0" />
+                                <span className="text-foreground">Nuvem (Supabase Storage) · pasta exclusiva do projeto</span>
+                            </div>
+                        ) : (
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={workspacePath}
+                                    onChange={(e) => setWorkspacePath(e.target.value)}
+                                    placeholder="Nenhum workspace definido para este projeto"
+                                    className="flex-1 min-w-0 bg-background border border-border rounded-lg px-3 py-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-brand/50 font-mono"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handlePickWorkspace}
+                                    disabled={pickingWorkspace}
+                                    title="Selecionar pasta existente ou criar uma nova"
+                                    className="px-3 py-2.5 bg-background border border-border rounded-lg text-muted-foreground hover:text-brand hover:border-brand/50 transition-colors disabled:opacity-50"
+                                >
+                                    {pickingWorkspace ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderSearch className="w-4 h-4" />}
+                                </button>
+                            </div>
+                        )}
                         <p className="text-[11px] text-muted-foreground">
-                            O YAML do teste será salvo nesta pasta (a mesma usada pelo Maestro Studio do projeto).
+                            {isSupabaseWorkspace
+                                ? 'O YAML será gravado no Supabase Storage, numa pasta exclusiva deste projeto.'
+                                : 'O YAML do teste será salvo nesta pasta (a mesma usada pelo Maestro Studio do projeto).'}
                         </p>
                     </div>
 

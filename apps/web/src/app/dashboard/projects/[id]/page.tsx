@@ -5,7 +5,7 @@ import { ArrowLeft, Play, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, Down
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { pickWorkspaceDirectory, testYamlFileName, writeYamlToWorkspace } from '@/lib/workspace';
+import { pickWorkspaceDirectory, testYamlFileName, writeYamlToWorkspace, writeYaml } from '@/lib/workspace';
 import { useDeviceStore } from '@/store/deviceStore';
 import { type DevicePreviewHandle, type RecordedInteraction } from '@/components/DevicePreview';
 import type { Project, ScanResults, TestStep, TestCase } from './project-types';
@@ -23,6 +23,10 @@ export default function ProjectDetailPage() {
     const projectId = params.id as string;
 
     const [project, setProject] = useState<Project | null>(null);
+    // Espelha o project em ref para handlers (postMessage) lerem o valor atual
+    // sem recriar o listener nem capturar closure stale.
+    const projectRef = useRef<Project | null>(null);
+    useEffect(() => { projectRef.current = project; }, [project]);
     const [tests, setTests] = useState<TestCase[]>([]);
     const [loading, setLoading] = useState(true);
     const [editModalOpen, setEditModalOpen] = useState(false);
@@ -328,6 +332,14 @@ export default function ProjectDetailPage() {
                     .insert({ ...baseRow, version: 1 });
                 if (error) throw error;
             }
+
+            // Projeto Nuvem: grava o YAML também no Supabase Storage.
+            const proj = projectRef.current;
+            if (proj?.workspace_type === 'supabase') {
+                const res = await writeYaml({ type: 'supabase', prefix: proj.id }, testYamlFileName(name), saveAsTestData.content);
+                if (!res.success) console.error('Storage mirror (save-as-test) failed:', res.error);
+            }
+
             setSaveAsTestPhase('success');
             fetchProject();
             setTimeout(() => setSaveAsTestOpen(false), 1500);
@@ -456,6 +468,14 @@ export default function ProjectDetailPage() {
                         app_id: appId,
                         raw_yaml: content,  // mantem comentarios e formatacao do Studio
                     }).eq('id', row.id);
+
+                    // Projeto Nuvem: espelha o YAML salvo no Studio para o
+                    // Supabase Storage (workspace na nuvem), além do disco local.
+                    const proj = projectRef.current;
+                    if (proj?.workspace_type === 'supabase') {
+                        const res = await writeYaml({ type: 'supabase', prefix: proj.id }, basename, content);
+                        if (!res.success) console.error('Storage mirror (studio save) failed:', res.error);
+                    }
 
                     fetchProject();  // refresh tests list under the iframe
                 } catch (err) {

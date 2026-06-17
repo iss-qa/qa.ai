@@ -4,6 +4,7 @@ export interface Project {
     description: string;
     platform: string;
     status: string;
+    workspace_type?: 'local' | 'supabase' | null;
     workspace_path?: string | null;
 }
 

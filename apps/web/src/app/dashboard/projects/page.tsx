@@ -1,10 +1,12 @@
 'use client';
 
-import { Plus, LayoutGrid, Trash2, Edit2, X, Loader2, FolderOpen, FolderSearch, FlaskConical } from 'lucide-react';
+import { Plus, LayoutGrid, Trash2, Edit2, X, Loader2, FolderOpen, FolderSearch, FlaskConical, Cloud, Folder } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { pickWorkspaceDirectory } from '@/lib/workspace';
 import Link from 'next/link';
+
+type WorkspaceType = 'local' | 'supabase';
 
 interface Project {
     id: string;
@@ -13,6 +15,7 @@ interface Project {
     platform: string;
     is_archived: boolean;
     created_at: string;
+    workspace_type?: WorkspaceType | null;
     workspace_path?: string | null;
     test_count?: number;
 }
@@ -23,7 +26,11 @@ export default function ProjectsPage() {
     const [modalOpen, setModalOpen] = useState(false);
     const [editingProject, setEditingProject] = useState<Project | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-    const [formData, setFormData] = useState({ name: '', description: '', platform: 'android', is_archived: false, workspace_path: '' });
+    const [formData, setFormData] = useState({
+        name: '', description: '', platform: 'android', is_archived: false,
+        workspace_type: 'local' as WorkspaceType,
+        workspace_path: '',
+    });
     const [saving, setSaving] = useState(false);
     const [pickingWorkspace, setPickingWorkspace] = useState(false);
 
@@ -80,7 +87,10 @@ export default function ProjectsPage() {
 
     const handleOpenCreate = () => {
         setEditingProject(null);
-        setFormData({ name: '', description: '', platform: 'android', is_archived: false, workspace_path: '' });
+        setFormData({
+            name: '', description: '', platform: 'android', is_archived: false,
+            workspace_type: 'local', workspace_path: '',
+        });
         setModalOpen(true);
     };
 
@@ -91,43 +101,38 @@ export default function ProjectsPage() {
             description: project.description,
             platform: project.platform || 'android',
             is_archived: project.is_archived ?? false,
-            workspace_path: project.workspace_path || ''
+            workspace_type: (project.workspace_type as WorkspaceType) || 'local',
+            workspace_path: project.workspace_path || '',
         });
         setModalOpen(true);
     };
 
     const handleSave = async () => {
         if (!formData.name.trim()) return;
-        if (!formData.workspace_path.trim()) {
+        const type = formData.workspace_type;
+        // Supabase nao precisa de selecao: o prefixo e o proprio id do projeto.
+        const hasWorkspace = type === 'supabase' || formData.workspace_path.trim();
+        if (!hasWorkspace) {
             const proceed = confirm(
-                'Nenhum workspace selecionado. O workspace é a pasta onde os YAMLs dos testes (gravador e Maestro Studio) serão salvos.\n\nCriar o projeto mesmo assim? Você poderá definir o workspace depois, ao editar o projeto.'
+                'Nenhum workspace selecionado. O workspace é onde os YAMLs dos testes (gravador e Maestro Studio) serão salvos.\n\nCriar o projeto mesmo assim? Você poderá definir o workspace depois, ao editar o projeto.'
             );
             if (!proceed) return;
         }
         setSaving(true);
         try {
+            const payload = {
+                name: formData.name,
+                description: formData.description,
+                platform: formData.platform,
+                is_archived: formData.is_archived,
+                workspace_type: type,
+                workspace_path: type === 'local' ? (formData.workspace_path.trim() || null) : null,
+            };
             if (editingProject) {
-                const { error } = await supabase
-                    .from('projects')
-                    .update({
-                        name: formData.name,
-                        description: formData.description,
-                        platform: formData.platform,
-                        is_archived: formData.is_archived,
-                        workspace_path: formData.workspace_path.trim() || null
-                    })
-                    .eq('id', editingProject.id);
+                const { error } = await supabase.from('projects').update(payload).eq('id', editingProject.id);
                 if (error) throw error;
             } else {
-                const { error } = await supabase
-                    .from('projects')
-                    .insert({
-                        name: formData.name,
-                        description: formData.description,
-                        platform: formData.platform,
-                        is_archived: formData.is_archived,
-                        workspace_path: formData.workspace_path.trim() || null
-                    });
+                const { error } = await supabase.from('projects').insert(payload);
                 if (error) throw error;
             }
             setModalOpen(false);
@@ -309,28 +314,58 @@ export default function ProjectsPage() {
                                 />
                             </div>
                             <div className="flex flex-col gap-1.5">
-                                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Workspace (pasta dos testes YAML)</label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        value={formData.workspace_path}
-                                        onChange={(e) => setFormData({ ...formData, workspace_path: e.target.value })}
-                                        placeholder="Ex: /Users/voce/projetos/meu-workspace"
-                                        className="flex-1 min-w-0 bg-foreground/5 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-brand/50 font-mono"
-                                    />
+                                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Workspace (onde os YAMLs ficam)</label>
+
+                                {/* Toggle Local / Nuvem (Supabase) */}
+                                <div className="grid grid-cols-2 gap-2 mb-1">
                                     <button
                                         type="button"
-                                        onClick={handlePickWorkspace}
-                                        disabled={pickingWorkspace}
-                                        title="Selecionar pasta existente ou criar uma nova"
-                                        className="px-3 py-2.5 bg-foreground/5 border border-border rounded-lg text-muted-foreground hover:text-brand hover:border-brand/50 transition-colors disabled:opacity-50"
+                                        onClick={() => setFormData(f => ({ ...f, workspace_type: 'local' }))}
+                                        className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-colors ${formData.workspace_type === 'local' ? 'bg-brand/10 border-brand/50 text-brand' : 'bg-foreground/5 border-border text-muted-foreground hover:text-foreground'}`}
                                     >
-                                        {pickingWorkspace ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderSearch className="w-4 h-4" />}
+                                        <Folder className="w-4 h-4" /> Pasta local
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormData(f => ({ ...f, workspace_type: 'supabase' }))}
+                                        className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-colors ${formData.workspace_type === 'supabase' ? 'bg-brand/10 border-brand/50 text-brand' : 'bg-foreground/5 border-border text-muted-foreground hover:text-foreground'}`}
+                                    >
+                                        <Cloud className="w-4 h-4" /> Nuvem
                                     </button>
                                 </div>
-                                <p className="text-[11px] text-muted-foreground">
-                                    Pasta local onde os YAMLs dos testes (gravador e Maestro Studio) serão salvos. No seletor você pode criar uma nova pasta para um novo workspace.
-                                </p>
+
+                                {formData.workspace_type === 'local' ? (
+                                    <>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={formData.workspace_path}
+                                                onChange={(e) => setFormData({ ...formData, workspace_path: e.target.value })}
+                                                placeholder="Ex: /Users/voce/projetos/meu-workspace"
+                                                className="flex-1 min-w-0 bg-foreground/5 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-brand/50 font-mono"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={handlePickWorkspace}
+                                                disabled={pickingWorkspace}
+                                                title="Selecionar pasta existente ou criar uma nova"
+                                                className="px-3 py-2.5 bg-foreground/5 border border-border rounded-lg text-muted-foreground hover:text-brand hover:border-brand/50 transition-colors disabled:opacity-50"
+                                            >
+                                                {pickingWorkspace ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderSearch className="w-4 h-4" />}
+                                            </button>
+                                        </div>
+                                        <p className="text-[11px] text-muted-foreground">
+                                            Pasta local (via daemon) onde os YAMLs serão salvos. Requer o daemon rodando na máquina com o device.
+                                        </p>
+                                    </>
+                                ) : (
+                                    <div className="flex items-start gap-2 bg-foreground/[0.03] border border-border rounded-lg px-3 py-2.5">
+                                        <Cloud className="w-4 h-4 text-brand shrink-0 mt-0.5" />
+                                        <p className="text-[11px] text-muted-foreground">
+                                            Os YAMLs ficam no <strong>Supabase Storage</strong> (nuvem), numa pasta exclusiva deste projeto. Sem configuração extra — funciona direto na web.
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="flex flex-col gap-1.5">

@@ -12,6 +12,7 @@ import {
     saveSlackIntegration,
     testIntegration,
     type GoogleSheetsCredentials,
+    type IntegrationProvider,
     type JiraCredentials,
     type SlackCredentials,
 } from '../services/org-integrations';
@@ -111,7 +112,7 @@ const integrationsRoutes: FastifyPluginAsync = async (fastify) => {
         }
         try {
             const orgId = await resolveDefaultOrgId();
-            const result = await testIntegration(orgId, provider as 'google_sheets' | 'jira' | 'slack');
+            const result = await testIntegration(orgId, provider as IntegrationProvider);
             return result;
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
@@ -127,7 +128,7 @@ const integrationsRoutes: FastifyPluginAsync = async (fastify) => {
         }
         try {
             const orgId = await resolveDefaultOrgId();
-            await deleteIntegration(orgId, provider as 'google_sheets' | 'jira' | 'slack');
+            await deleteIntegration(orgId, provider as IntegrationProvider);
             return { ok: true };
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
