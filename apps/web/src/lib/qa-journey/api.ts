@@ -261,6 +261,12 @@ export async function deleteJourney(id: string): Promise<void> {
     if (error) throw error;
 }
 
+export async function deleteJourneys(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const { error } = await supabase.from('qa_journeys').delete().in('id', ids);
+    if (error) throw error;
+}
+
 export async function setJourneyPublished(id: string, isPublished: boolean): Promise<void> {
     const { error } = await supabase
         .from('qa_journeys')
@@ -319,7 +325,7 @@ export async function deleteSubflow(id: string): Promise<void> {
 }
 
 function sanitizeSubflowPayload(draft: QAJourneySubflowDraft): Record<string, unknown> {
-    return {
+    const payload: Record<string, unknown> = {
         journey_id: draft.journey_id,
         title: draft.title,
         description: draft.description ?? null,
@@ -328,6 +334,10 @@ function sanitizeSubflowPayload(draft: QAJourneySubflowDraft): Record<string, un
         test_case_id: draft.test_case_id ?? null,
         jira_query: draft.jira_query ?? null,
     };
+    // Só envia html_doc quando o form mexeu no campo — evita erro de coluna
+    // inexistente em instalações que ainda não adicionaram html_doc ao subflow.
+    if (draft.html_doc !== undefined) payload.html_doc = draft.html_doc;
+    return payload;
 }
 
 // ============================================================

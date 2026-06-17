@@ -24,6 +24,7 @@ import { MigrationMissingBanner } from '@/components/qa-journey/MigrationMissing
 import {
     createJourney,
     deleteJourney,
+    deleteJourneys,
     errorMessage,
     getLastProjectId,
     loadJourneys,
@@ -45,6 +46,8 @@ export default function QAJourneyAdminPage() {
     const [editing, setEditing] = useState<QAJourney | null>(null);
     const [creating, setCreating] = useState(false);
     const [deletingId, setDeletingId] = useState<string | null>(null);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [bulkDeleting, setBulkDeleting] = useState(false);
 
     // Boot: sem ?project na URL, usa o último projeto visitado para
     // disparar o carregamento das jornadas sem esperar a lista de projetos.
@@ -81,6 +84,7 @@ export default function QAJourneyAdminPage() {
         }
         let cancelled = false;
         setLoading(true);
+        setSelectedIds(new Set());
         setLastProjectId(projectId);
         (async () => {
             const { journeys: list, migrationMissing: mm } = await loadJourneys(projectId);
@@ -127,6 +131,37 @@ export default function QAJourneyAdminPage() {
         } catch (e: unknown) {
             const msg = errorMessage(e);
             alert('Erro ao excluir: ' + msg);
+        }
+    };
+
+    const toggleSelected = (id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const allSelected = sortedJourneys.length > 0 && sortedJourneys.every(j => selectedIds.has(j.id));
+    const someSelected = selectedIds.size > 0 && !allSelected;
+
+    const toggleSelectAll = () => {
+        setSelectedIds(allSelected ? new Set() : new Set(sortedJourneys.map(j => j.id)));
+    };
+
+    const handleBulkDelete = async () => {
+        const ids = Array.from(selectedIds);
+        if (ids.length === 0) return;
+        setBulkDeleting(false);
+        try {
+            await deleteJourneys(ids);
+            const removed = new Set(ids);
+            setJourneys(prev => prev.filter(j => !removed.has(j.id)));
+            setSelectedIds(new Set());
+        } catch (e: unknown) {
+            const msg = errorMessage(e);
+            alert('Erro ao excluir jornadas: ' + msg);
         }
     };
 
@@ -204,6 +239,30 @@ export default function QAJourneyAdminPage() {
             {/* Migration banner */}
             {migrationMissing && <MigrationMissingBanner />}
 
+            {/* Barra de ações em lote */}
+            {!migrationMissing && selectedIds.size > 0 && (
+                <div className="flex items-center justify-between gap-4 bg-card border border-border rounded-xl px-4 py-3 shadow-sm">
+                    <span className="text-sm font-medium text-foreground">
+                        {selectedIds.size} {selectedIds.size === 1 ? 'jornada selecionada' : 'jornadas selecionadas'}
+                    </span>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setSelectedIds(new Set())}
+                            className="px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                            Limpar seleção
+                        </button>
+                        <button
+                            onClick={() => setBulkDeleting(true)}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 transition-colors"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                            Excluir selecionadas
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* List */}
             {!migrationMissing && (
                 <div className="bg-card rounded-2xl shadow-sm border border-border flex flex-col overflow-hidden">
@@ -211,6 +270,17 @@ export default function QAJourneyAdminPage() {
                         <table className="w-full text-left text-sm text-muted-foreground whitespace-nowrap">
                             <thead className="text-[10px] uppercase bg-surface-muted/50 text-muted-foreground font-bold tracking-widest border-b border-border">
                                 <tr>
+                                    <th className="px-6 py-4 w-12">
+                                        <input
+                                            type="checkbox"
+                                            checked={allSelected}
+                                            ref={el => { if (el) el.indeterminate = someSelected; }}
+                                            onChange={toggleSelectAll}
+                                            disabled={sortedJourneys.length === 0}
+                                            className="w-4 h-4 rounded border-border accent-brand cursor-pointer disabled:cursor-not-allowed"
+                                            aria-label="Selecionar todas as jornadas"
+                                        />
+                                    </th>
                                     <th className="px-6 py-4 w-12">Ordem</th>
                                     <th className="px-6 py-4">Jornada</th>
                                     <th className="px-6 py-4">Slug</th>
@@ -220,7 +290,19 @@ export default function QAJourneyAdminPage() {
                             </thead>
                             <tbody className="divide-y divide-border">
                                 {sortedJourneys.map(j => (
-                                    <tr key={j.id} className="hover:bg-accent transition-colors">
+                                    <tr
+                                        key={j.id}
+                                        className={`transition-colors ${selectedIds.has(j.id) ? 'bg-brand/5' : 'hover:bg-accent'}`}
+                                    >
+                                        <td className="px-6 py-4">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedIds.has(j.id)}
+                                                onChange={() => toggleSelected(j.id)}
+                                                className="w-4 h-4 rounded border-border accent-brand cursor-pointer"
+                                                aria-label={`Selecionar jornada ${j.title}`}
+                                            />
+                                        </td>
                                         <td className="px-6 py-4 text-xs text-muted-foreground font-mono">{j.sequence}</td>
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
@@ -313,6 +395,16 @@ export default function QAJourneyAdminPage() {
                     message={`A jornada "${deletingTarget.title}" e TODOS os sub-fluxos e casos vinculados serão excluídos permanentemente.`}
                     onCancel={() => setDeletingId(null)}
                     onConfirm={handleDelete}
+                />
+            )}
+
+            {bulkDeleting && (
+                <DeleteConfirmModal
+                    title={`Excluir ${selectedIds.size} ${selectedIds.size === 1 ? 'jornada' : 'jornadas'}?`}
+                    message={`${selectedIds.size === 1 ? 'A jornada selecionada' : 'As jornadas selecionadas'} e TODOS os sub-fluxos e casos vinculados serão excluídos permanentemente. Esta ação não pode ser desfeita.`}
+                    confirmLabel={`Excluir ${selectedIds.size}`}
+                    onCancel={() => setBulkDeleting(false)}
+                    onConfirm={handleBulkDelete}
                 />
             )}
         </div>

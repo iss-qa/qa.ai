@@ -33,6 +33,9 @@ export interface QAJourneySubflow {
     automation_status: AutomationStatus;
     test_case_id: string | null;
     jira_query: string | null;
+    // Documento HTML completo importado pelo admin (espelha o campo da jornada).
+    // Renderizado em iframe sandbox quando o sub-fluxo é aberto no mapa.
+    html_doc?: string | null;
     created_at: string;
     updated_at: string;
 }

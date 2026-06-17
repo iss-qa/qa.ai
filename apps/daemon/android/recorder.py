@@ -105,6 +105,7 @@ class AdbEventCapture:
         self._state = TouchState()
         self._running = False
         self._read_task: Optional[asyncio.Task] = None
+        self._logged_sample = False     # one-shot raw-line log to aid per-device debugging
 
     def set_physical_resolution(self, w: int, h: int):
         self._phys_w = w
@@ -178,6 +179,7 @@ class AdbEventCapture:
         await self._query_axis_limits()
         self._running = True
         self._state = TouchState()
+        self._logged_sample = False
 
         # Capture ALL input devices — scrcpy creates a virtual uinput device that may
         # appear AFTER startup and won't be in the initial device list from getevent -p.
@@ -204,6 +206,10 @@ class AdbEventCapture:
                 lines = buf.split("\n")
                 buf = lines.pop()
                 for line in lines:
+                    if not self._logged_sample and "/dev/input/" in line and line.strip():
+                        # Log one raw line so we can tell named-vs-hex getevent output per device.
+                        logger.info(f"[GETEVENT] sample line: {line.strip()}")
+                        self._logged_sample = True
                     self._parse_line(line, on_tap, on_swipe)
             except asyncio.TimeoutError:
                 continue
@@ -216,55 +222,72 @@ class AdbEventCapture:
         """
         Parse one getevent -lt line.
         Format: [timestamp] /dev/input/eventN: EV_TYPE  EVENT_CODE  hex_value
+
+        The EVENT_CODE may be printed as a NAMED constant (ABS_MT_POSITION_X) on
+        most devices, or as a RAW HEX code (0035) on others — typically Samsung
+        and certain Qualcomm builds where getevent can't resolve the kernel label.
+        Such devices (e.g. SM-A226BR) emit hex in BOTH `getevent -p` AND
+        `getevent -lt`, so the live parser must accept both forms or zero events
+        are captured (no steps recorded, no input field detected). `_query_axis_limits`
+        was already hex-tolerant; this parser must match.
+
+        The last two whitespace tokens are always EVENT_CODE and hex_value,
+        regardless of how many leading tokens (timestamp / device path) appear.
         """
+        parts = line.split()
+        if len(parts) < 2:
+            return
+        code = parts[-2]
+        hex_val = parts[-1]
+
         state = self._state
 
-        if "ABS_MT_TRACKING_ID" in line:
-            hex_val = line.strip().split()[-1]
+        # ABS_MT_TRACKING_ID (0x0039): slot id on touch-down, 0xFFFFFFFF on lift
+        if code == "ABS_MT_TRACKING_ID" or code == "0039":
             try:
                 val = int(hex_val, 16)
-                if val == 0xFFFFFFFF:
-                    # Finger lifted — classify and emit
-                    if state.touching and state.curr_x is not None and state.curr_y is not None:
-                        sx = state.start_x if state.start_x is not None else state.curr_x
-                        sy = state.start_y if state.start_y is not None else state.curr_y
-                        nx_s, ny_s = self._normalize(sx, sy)
-                        nx_e, ny_e = self._normalize(state.curr_x, state.curr_y)
-                        logger.info(
-                            f"[GETEVENT] raw=({state.curr_x},{state.curr_y}) "
-                            f"max=({self._max_x},{self._max_y}) "
-                            f"→ norm=({nx_e},{ny_e})"
-                        )
-                        gesture = self._classify(nx_s, ny_s, nx_e, ny_e)
-                        if gesture == "tap":
-                            asyncio.create_task(on_tap(nx_e, ny_e))
-                        else:
-                            asyncio.create_task(on_swipe(gesture, nx_s, ny_s, nx_e, ny_e))
-                    state.reset()
-                else:
-                    state.touching = True
             except ValueError:
-                pass
+                return
+            if val == 0xFFFFFFFF:
+                # Finger lifted — classify and emit
+                if state.touching and state.curr_x is not None and state.curr_y is not None:
+                    sx = state.start_x if state.start_x is not None else state.curr_x
+                    sy = state.start_y if state.start_y is not None else state.curr_y
+                    nx_s, ny_s = self._normalize(sx, sy)
+                    nx_e, ny_e = self._normalize(state.curr_x, state.curr_y)
+                    logger.info(
+                        f"[GETEVENT] raw=({state.curr_x},{state.curr_y}) "
+                        f"max=({self._max_x},{self._max_y}) "
+                        f"→ norm=({nx_e},{ny_e})"
+                    )
+                    gesture = self._classify(nx_s, ny_s, nx_e, ny_e)
+                    if gesture == "tap":
+                        asyncio.create_task(on_tap(nx_e, ny_e))
+                    else:
+                        asyncio.create_task(on_swipe(gesture, nx_s, ny_s, nx_e, ny_e))
+                state.reset()
+            else:
+                state.touching = True
 
-        elif "ABS_MT_POSITION_X" in line:
-            hex_val = line.strip().split()[-1]
+        # ABS_MT_POSITION_X (0x0035)
+        elif code == "ABS_MT_POSITION_X" or code == "0035":
             try:
                 val = int(hex_val, 16)
-                if state.start_x is None:
-                    state.start_x = val
-                state.curr_x = val
             except ValueError:
-                pass
+                return
+            if state.start_x is None:
+                state.start_x = val
+            state.curr_x = val
 
-        elif "ABS_MT_POSITION_Y" in line:
-            hex_val = line.strip().split()[-1]
+        # ABS_MT_POSITION_Y (0x0036)
+        elif code == "ABS_MT_POSITION_Y" or code == "0036":
             try:
                 val = int(hex_val, 16)
-                if state.start_y is None:
-                    state.start_y = val
-                state.curr_y = val
             except ValueError:
-                pass
+                return
+            if state.start_y is None:
+                state.start_y = val
+            state.curr_y = val
 
     @staticmethod
     def _classify(sx: int, sy: int, ex: int, ey: int) -> str:
