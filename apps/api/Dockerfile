@@ -52,7 +52,11 @@ USER fastify
 EXPOSE 3001
 
 # Health check para o Docker / Dokploy / Traefik
+# IMPORTANTE: usar 127.0.0.1, NAO "localhost". No Alpine/busybox "localhost"
+# resolve para ::1 (IPv6) primeiro, e o Fastify so faz bind IPv4 (host 0.0.0.0),
+# entao "localhost" da Connection refused -> healthcheck falha eternamente ->
+# o orquestrador (EasyPanel/Traefik) marca unhealthy e entra em restart loop.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD wget --quiet --tries=1 --spider http://localhost:3001/health || exit 1
+    CMD wget --quiet --tries=1 --spider http://127.0.0.1:3001/health || exit 1
 
 CMD ["node", "apps/api/dist/index.js"]
