@@ -8,8 +8,10 @@ import type { QAJourney } from '@/types/qa-journey';
 
 export interface JourneyNodeData {
     journey: QAJourney;
-    totalSubflows: number;
-    automatedSubflows: number;
+    // Cobertura calculada POR CASO (mesma definição do layout em colunas /
+    // computeMetrics): casos cujo subfluxo está 'automated' ÷ total de casos.
+    automatedCount: number;
+    totalCount: number;
     isExpanded: boolean;
     onToggle: (journeyId: string) => void;
     // Abre o documento HTML anexado (quando journey.html_doc existe).
@@ -39,9 +41,9 @@ function coverageColor(pct: number, total: number): string {
 }
 
 export const JourneyNode = memo(function JourneyNode({ data, selected }: { data: JourneyNodeData; selected?: boolean }) {
-    const { journey, totalSubflows, automatedSubflows, isExpanded, onToggle, onOpenHtml } = data;
+    const { journey, automatedCount, totalCount, isExpanded, onToggle, onOpenHtml } = data;
     const Icon = resolveIcon(journey.icon);
-    const pct = coveragePct(totalSubflows, automatedSubflows);
+    const pct = coveragePct(totalCount, automatedCount);
     const color = journey.color || '#7c3aed';
 
     return (
@@ -106,8 +108,8 @@ export const JourneyNode = memo(function JourneyNode({ data, selected }: { data:
             </div>
 
             <div className="mt-3 flex items-center justify-between gap-2">
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold ${coverageColor(pct, totalSubflows)}`}>
-                    {totalSubflows === 0 ? 'Sem sub-fluxos' : `${automatedSubflows}/${totalSubflows} automatizados`}
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold ${coverageColor(pct, totalCount)}`}>
+                    {totalCount === 0 ? 'Sem casos' : `${automatedCount}/${totalCount} automatizados`}
                 </span>
                 <span className="flex items-center gap-1.5">
                     {journey.html_doc && onOpenHtml && (
@@ -127,7 +129,7 @@ export const JourneyNode = memo(function JourneyNode({ data, selected }: { data:
                             <FileCode2 className="w-3 h-3" /> Doc
                         </span>
                     )}
-                    <span className="text-[10px] font-mono text-muted-foreground">{totalSubflows === 0 ? '—' : `${pct}%`}</span>
+                    <span className="text-[10px] font-mono text-muted-foreground">{totalCount === 0 ? '—' : `${pct}%`}</span>
                 </span>
             </div>
 

@@ -27,6 +27,9 @@ export interface QAJourney {
 export interface QAJourneySubflow {
     id: string;
     journey_id: string;
+    // Subfluxo pai (migration 015). NULL = raiz da jornada; preenchido = filho,
+    // formando a árvore de subfluxos.
+    parent_subflow_id?: string | null;
     title: string;
     description: string | null;
     sequence: number;
@@ -48,6 +51,9 @@ export interface QAJourneyCase {
     steps_summary: string | null;
     expected_result: string | null;
     priority: CasePriority;
+    // Teste Maestro vinculado (migration 016). Preenchido = caso automatizado;
+    // null/ausente = manual.
+    test_case_id?: string | null;
     // Plataforma/ambiente do caso (Web, Mobile, API, ...) — migration 009.
     platform?: string | null;
     // Evidência da última execução manual (migration 010).

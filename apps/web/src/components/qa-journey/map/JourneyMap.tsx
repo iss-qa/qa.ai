@@ -34,6 +34,7 @@ import { JourneyHtmlModal } from './JourneyHtmlModal';
 import { MapSettingsPopover } from './MapSettingsPopover';
 import { useMapSettings } from './useMapSettings';
 import { animateNodesTo, collectDescendants, resolveCollisions } from './collision';
+import { computeMetrics } from '../columns/helpers';
 import type { QAJourney, QAJourneyCase, QAJourneySubflow } from '@/types/qa-journey';
 
 interface JourneyMapProps {
@@ -193,12 +194,14 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
 
         journeys.forEach(journey => {
             const sub = subflowsByJourney[journey.id] || [];
-            const automated = sub.filter(s => s.automation_status === 'automated').length;
+            // Cobertura POR CASO — mesma definição do layout em colunas, p/ os
+            // números baterem entre o mapa e os cards.
+            const m = computeMetrics(sub, casesBySubflow);
 
             const journeyData: JourneyNodeData = {
                 journey,
-                totalSubflows: sub.length,
-                automatedSubflows: automated,
+                automatedCount: m.automatedCases,
+                totalCount: m.totalCases,
                 isExpanded: expanded.has(journey.id),
                 onToggle: toggleJourney,
                 onOpenHtml: setHtmlJourneyId,

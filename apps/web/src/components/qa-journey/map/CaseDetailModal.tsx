@@ -21,13 +21,15 @@ import {
     XCircle,
 } from 'lucide-react';
 import { PRIORITY_OPTIONS, RUN_STATUS_DISPLAY, RUN_STATUS_OPTIONS } from '@/lib/qa-journey/constants';
-import { errorMessage, updateCase, uploadCaseEvidence } from '@/lib/qa-journey/api';
+import { errorMessage, updateCase, uploadCaseEvidence, type TestCaseOption } from '@/lib/qa-journey/api';
 import { loadSubflowRuns, type RunEvidence, type SubflowTestRun } from '@/lib/qa-journey/runs';
 import type { CaseRunStatus, QAJourneyCase, QAJourneySubflow } from '@/types/qa-journey';
 
 interface CaseDetailModalProps {
     subflow: QAJourneySubflow;
     case_: QAJourneyCase;
+    // Opcional: usado para exibir o NOME do teste Maestro vinculado ao sub-fluxo.
+    testCases?: TestCaseOption[];
     /** Volta para o drawer do sub-fluxo (mantém-no aberto atrás). */
     onBack: () => void;
     /** Fecha o modal e o drawer do sub-fluxo. */
@@ -40,7 +42,10 @@ interface CaseDetailModalProps {
 // esperado), registro MANUAL do resultado da execução (pass/fail/...) e o
 // histórico de execuções automatizadas do teste Maestro vinculado ao
 // sub-fluxo, quando existir.
-export function CaseDetailModal({ subflow, case_, onBack, onClose, onCaseUpdated }: CaseDetailModalProps) {
+export function CaseDetailModal({ subflow, case_, testCases, onBack, onClose, onCaseUpdated }: CaseDetailModalProps) {
+    // Automatizado = CASO com teste Maestro vinculado (test_case_id).
+    const isAutomated = Boolean(case_.test_case_id);
+    const linkedTest = testCases?.find(t => t.id === case_.test_case_id);
     // Cópia local para refletir o registro de execução na hora, mesmo se o
     // pai não repassar onCaseUpdated.
     const [current, setCurrent] = useState<QAJourneyCase>(case_);
@@ -199,8 +204,17 @@ export function CaseDetailModal({ subflow, case_, onBack, onClose, onCaseUpdated
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-5 flex flex-col gap-5">
-                    {/* Badges: plataforma + prioridade + último status */}
+                    {/* Badges: tipo (manual/automatizado) + plataforma + prioridade + último status */}
                     <div className="flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${isAutomated ? 'bg-green-500/20 text-green-500' : 'bg-blue-500/20 text-blue-400'}`}>
+                            {isAutomated ? 'Automatizado' : 'Manual'}
+                        </span>
+                        {isAutomated && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-foreground/5 border border-border text-muted-foreground">
+                                <Link2 className="w-3 h-3 text-brand" />
+                                Maestro: <span className="text-foreground font-semibold">{linkedTest?.name || case_.test_case_id}</span>
+                            </span>
+                        )}
                         {current.platform && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-brand/15 text-brand">
                                 {current.platform}

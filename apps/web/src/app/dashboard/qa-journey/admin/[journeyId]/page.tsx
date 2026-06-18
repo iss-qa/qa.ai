@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 
 import { SubflowFormModal } from '@/components/qa-journey/SubflowFormModal';
+import { descendantIds } from '@/components/qa-journey/columns/helpers';
 import { CaseFormModal } from '@/components/qa-journey/CaseFormModal';
 import { ImportCasesModal } from '@/components/qa-journey/ImportCasesModal';
 import { DeleteConfirmModal } from '@/components/qa-journey/DeleteConfirmModal';
@@ -448,6 +449,11 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                     initial={subflowDialog.mode === 'edit' ? subflowDialog.subflow : null}
                     defaultSequence={subflows.length > 0 ? Math.max(...subflows.map(s => s.sequence)) + 1 : 0}
                     testCases={testCases}
+                    parentOptions={
+                        subflowDialog.mode === 'edit' && subflowDialog.subflow
+                            ? (() => { const blocked = descendantIds(subflows, subflowDialog.subflow.id); return subflows.filter(s => !blocked.has(s.id)); })()
+                            : subflows
+                    }
                     onClose={() => setSubflowDialogOpen(false)}
                     onSave={handleSaveSubflow}
                 />
@@ -458,6 +464,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                     subflowId={caseDialog.subflowId}
                     subflowTitle={subflows.find(s => s.id === caseDialog.subflowId)?.title}
                     initial={caseDialog.subject}
+                    testCases={testCases}
                     onClose={() => setCaseDialog(null)}
                     onSave={handleSaveCase}
                 />

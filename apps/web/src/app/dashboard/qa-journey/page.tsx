@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useQueryState } from 'nuqs';
-import { BarChart3, Loader2, Settings } from 'lucide-react';
+import { BarChart3, ChevronLeft, LayoutGrid, Loader2, Plus, Settings } from 'lucide-react';
 import { useShell } from '@/components/layout/shell-context';
 
 // JourneyMap pulls in React Flow (~300kB). Lazy-load it so the page shell +
@@ -15,60 +15,68 @@ const JourneyMap = dynamic(
     { ssr: false, loading: () => <LoadingState /> },
 );
 import { MigrationMissingBanner } from '@/components/qa-journey/MigrationMissingBanner';
+import { ProjectHub } from '@/components/qa-journey/hub/ProjectHub';
+import { JourneyColumnView } from '@/components/qa-journey/columns/JourneyColumnView';
+import { JourneyFormModal } from '@/components/qa-journey/JourneyFormModal';
 import {
-    getLastProjectId,
+    createJourney,
     loadJourneyMapData,
-    loadProjectOptions,
+    loadProjectsHub,
+    loadTestCaseOptions,
     setLastProjectId,
+    setProjectJourneyViewMode,
 } from '@/lib/qa-journey/api';
-import type { ProjectOption } from '@/lib/qa-journey/api';
+import type { JourneyViewMode, ProjectHubCard, TestCaseOption } from '@/lib/qa-journey/api';
 import type {
     QAJourney,
     QAJourneyCase,
+    QAJourneyDraft,
     QAJourneySubflow,
 } from '@/types/qa-journey';
 
 export default function QAJourneyPublicPage() {
-    const [projects, setProjects] = useState<ProjectOption[]>([]);
+    const [projects, setProjects] = useState<ProjectHubCard[]>([]);
+    const [projectsLoading, setProjectsLoading] = useState(true);
+
+    // Navegação por query params (back/forward do browser funciona):
+    //   project -> projeto selecionado (vazio = hub de projetos)
+    //   view    -> 'all' abre o mapa completo (card GOLD "Todas as jornadas")
+    //   solo    -> id de jornada: abre só aquela jornada
+    //   journey -> deep-link do admin: abre o mapa com essa jornada expandida
     const [projectId, setProjectId] = useQueryState('project', { defaultValue: '' });
-    // Deep-link vindo do admin: ?journey=<id> abre o mapa com essa jornada expandida.
-    const [focusJourneyId] = useQueryState('journey', { defaultValue: '' });
+    const [view, setView] = useQueryState('view', { defaultValue: '' });
+    const [solo, setSolo] = useQueryState('solo', { defaultValue: '' });
+    const [focusJourneyId, setFocusJourneyId] = useQueryState('journey', { defaultValue: '' });
 
     const [journeys, setJourneys] = useState<QAJourney[]>([]);
     const [subflows, setSubflows] = useState<QAJourneySubflow[]>([]);
     const [cases, setCases] = useState<QAJourneyCase[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [testCases, setTestCases] = useState<TestCaseOption[]>([]);
+    const [loading, setLoading] = useState(false);
     const [migrationMissing, setMigrationMissing] = useState(false);
+    // Bump para re-buscar os dados do projeto após mutações no layout de colunas.
+    const [refreshNonce, setRefreshNonce] = useState(0);
+    const reload = useCallback(() => setRefreshNonce(n => n + 1), []);
+    const [journeyFormOpen, setJourneyFormOpen] = useState(false);
     const { setHeaderSlot } = useShell();
 
-    // Boot: se não veio ?project na URL, usa o último projeto visitado
-    // (localStorage) — assim as jornadas começam a carregar de imediato,
-    // em paralelo com a lista de projetos do combobox.
-    useEffect(() => {
-        if (!projectId) {
-            const last = getLastProjectId();
-            if (last) setProjectId(last);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    // Lista de projetos do combobox — carregada uma única vez.
+    // Lista de projetos do hub (com modo + nº de jornadas) — carregada uma vez.
     useEffect(() => {
         let cancelled = false;
         (async () => {
-            const list = await loadProjectOptions();
+            const list = await loadProjectsHub();
             if (cancelled) return;
             setProjects(list);
-            setProjectId(prev => {
-                // Valida o projeto atual (URL/localStorage pode apontar para
-                // um projeto excluído) e cai para o primeiro da lista.
-                if (prev && list.some(p => p.id === prev)) return prev;
-                return list[0]?.id ?? null;
-            });
+            setProjectsLoading(false);
         })();
         return () => { cancelled = true; };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    const selectedProject = useMemo(
+        () => projects.find(p => p.id === projectId) || null,
+        [projects, projectId],
+    );
+    const mode: JourneyViewMode = selectedProject?.journey_view_mode ?? 'single';
 
     // Carrega o mapa do projeto selecionado (apenas UM projeto por vez).
     useEffect(() => {
@@ -79,13 +87,16 @@ export default function QAJourneyPublicPage() {
             setLoading(false);
             return;
         }
-
         let cancelled = false;
         setLoading(true);
         setLastProjectId(projectId);
         (async () => {
-            const data = await loadJourneyMapData(projectId);
+            const [data, tcs] = await Promise.all([
+                loadJourneyMapData(projectId),
+                loadTestCaseOptions(projectId),
+            ]);
             if (cancelled) return;
+            setTestCases(tcs);
             if (data.migrationMissing) {
                 setMigrationMissing(true);
                 setLoading(false);
@@ -97,45 +108,122 @@ export default function QAJourneyPublicPage() {
             setLoading(false);
         })();
         return () => { cancelled = true; };
-    }, [projectId]);
+    }, [projectId, refreshNonce]);
 
     const subflowsByJourney = useMemo(() => {
         const m: Record<string, QAJourneySubflow[]> = {};
-        for (const s of subflows) {
-            (m[s.journey_id] ||= []).push(s);
-        }
+        for (const s of subflows) (m[s.journey_id] ||= []).push(s);
         return m;
     }, [subflows]);
 
     const casesBySubflow = useMemo(() => {
         const m: Record<string, QAJourneyCase[]> = {};
-        for (const c of cases) {
-            (m[c.subflow_id] ||= []).push(c);
-        }
+        for (const c of cases) (m[c.subflow_id] ||= []).push(c);
         return m;
     }, [cases]);
 
-    // Controles da página vivem no Header global (linha do dark mode/avatar) —
-    // libera toda a altura útil para o mapa.
+
+    // Deep-link do admin (?journey=) em modo cards abre aquela jornada sozinha;
+    // em modo single mantém o comportamento antigo (mapa completo + expandida).
+    const effectiveSolo = solo || (mode === 'cards' && focusJourneyId ? focusJourneyId : '');
+    // Em modo 'cards', sem view/solo, mostramos os cards de jornada (não o mapa).
+    const showingCards = Boolean(projectId) && mode === 'cards' && view !== 'all' && !effectiveSolo;
+    // O mapa renderiza: modo single, ou (modo cards com view=all), ou solo.
+    const soloJourneys = useMemo(
+        () => (effectiveSolo ? journeys.filter(j => j.id === effectiveSolo) : journeys),
+        [effectiveSolo, journeys],
+    );
+
+    // IMPORTANTE: limpar também o param `journey` (deep-link). Sem isso o
+    // effectiveSolo continua valendo e a tela não muda — a seta de voltar
+    // parecia "não funcionar".
+    const goToHub = useCallback(() => {
+        setView(null); setSolo(null); setFocusJourneyId(null); setProjectId(null);
+    }, [setView, setSolo, setFocusJourneyId, setProjectId]);
+
+    const goToCards = useCallback(() => {
+        setView(null); setSolo(null); setFocusJourneyId(null);
+    }, [setView, setSolo, setFocusJourneyId]);
+
+    const handleToggleMode = useCallback(async (id: string, next: JourneyViewMode) => {
+        // Otimista: reflete na UI e persiste. Se falhar, reverte.
+        setProjects(prev => prev.map(p => p.id === id ? { ...p, journey_view_mode: next } : p));
+        try {
+            await setProjectJourneyViewMode(id, next);
+        } catch {
+            setProjects(prev => prev.map(p => p.id === id ? { ...p, journey_view_mode: next === 'cards' ? 'single' : 'cards' } : p));
+            alert('Não foi possível alterar o modo de visualização. Verifique se a migration 014 foi aplicada.');
+        }
+    }, []);
+
+    // "Separar em cards" a partir do mapa único: liga o modo e vai pros cards.
+    const handleSwitchToCards = useCallback(async () => {
+        if (!projectId) return;
+        await handleToggleMode(projectId, 'cards');
+        goToCards();
+    }, [projectId, handleToggleMode, goToCards]);
+
+    // "+ Nova Jornada" no header — cria a jornada no projeto atual e recarrega.
+    const saveJourney = useCallback(async (draft: QAJourneyDraft) => {
+        try {
+            await createJourney(draft);
+            setJourneyFormOpen(false);
+            reload();
+        } catch (e) {
+            alert('Erro ao criar jornada: ' + (e instanceof Error ? e.message : String(e)));
+            throw e;
+        }
+    }, [reload]);
+
+    // Modal de nova jornada — renderizado nas vistas com projeto selecionado.
+    const journeyModal = journeyFormOpen && projectId ? (
+        <JourneyFormModal
+            projectId={projectId}
+            defaultSequence={journeys.length}
+            onClose={() => setJourneyFormOpen(false)}
+            onSave={saveJourney}
+        />
+    ) : null;
+
+    // Header global (linha do dark mode/avatar). No hub fica vazio; nas demais
+    // vistas tem o "voltar" contextual + seletor de projeto + insights/admin.
     useEffect(() => {
+        if (!projectId) {
+            setHeaderSlot(null);
+            return () => setHeaderSlot(null);
+        }
+        const onBack = mode === 'cards' && (view === 'all' || effectiveSolo) ? goToCards : goToHub;
         setHeaderSlot(
             <div className="flex items-center gap-2">
-                <label
-                    htmlFor="qa-journey-project"
-                    className="hidden md:block text-[10px] font-bold text-muted-foreground uppercase tracking-wider shrink-0"
+                <button
+                    type="button"
+                    onClick={onBack}
+                    className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors shrink-0"
+                    title="Voltar"
                 >
-                    Projeto
-                </label>
+                    <ChevronLeft className="w-4 h-4" />
+                </button>
                 <select
-                    id="qa-journey-project"
+                    aria-label="Projeto"
                     value={projectId}
-                    onChange={e => setProjectId(e.target.value || null)}
+                    onChange={e => { setView(null); setSolo(null); setFocusJourneyId(null); setProjectId(e.target.value || null); }}
                     className="bg-card border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 max-w-[140px] sm:max-w-[200px]"
                     disabled={projects.length === 0}
                 >
                     {projects.length === 0 && <option value="">Sem projetos</option>}
                     {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
+                {mode === 'single' && (
+                    <button
+                        type="button"
+                        onClick={handleSwitchToCards}
+                        title="Separar jornadas em cards (um mapa por jornada)"
+                        className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-2.5 py-1.5 inline-flex items-center gap-1.5 transition-colors shrink-0"
+                    >
+                        <LayoutGrid className="w-3.5 h-3.5" />
+                        <span className="hidden lg:inline">Separar em cards</span>
+                    </button>
+                )}
                 <Link
                     href={`/dashboard/qa-journey/insights?project=${projectId}`}
                     className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-2.5 py-1.5 inline-flex items-center gap-1.5 transition-colors shrink-0"
@@ -152,28 +240,93 @@ export default function QAJourneyPublicPage() {
                     <Settings className="w-3.5 h-3.5" />
                     <span className="hidden lg:inline">Admin</span>
                 </Link>
+                <button
+                    type="button"
+                    onClick={() => setJourneyFormOpen(true)}
+                    title="Criar nova jornada neste projeto"
+                    className="text-xs font-bold text-white bg-brand hover:bg-brand/90 rounded-lg px-2.5 py-1.5 inline-flex items-center gap-1.5 transition-colors shrink-0"
+                >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Nova Jornada</span>
+                </button>
             </div>,
         );
         return () => setHeaderSlot(null);
-    }, [projects, projectId, setProjectId, setHeaderSlot]);
+    }, [projects, projectId, mode, view, effectiveSolo, setProjectId, setView, setSolo, setFocusJourneyId, setHeaderSlot, goToCards, goToHub, handleSwitchToCards]);
 
-    return (
-        <div className="p-2 sm:p-3 flex flex-col h-full">
-            {/* Body — mapa ocupa toda a área útil */}
-            <div className="flex-1 min-h-0">
-                {migrationMissing ? (
-                    <MigrationMissingBanner />
-                ) : loading ? (
+    // ── Render ────────────────────────────────────────────────────────────
+    if (migrationMissing) {
+        return <div className="p-2 sm:p-3 h-full"><MigrationMissingBanner /></div>;
+    }
+
+    // Hub de projetos (sem projeto selecionado).
+    if (!projectId) {
+        return (
+            <div className="p-2 sm:p-3 h-full">
+                <ProjectHub
+                    projects={projects}
+                    loading={projectsLoading}
+                    onSelect={id => { setView(null); setSolo(null); setFocusJourneyId(null); setProjectId(id); }}
+                    onToggleMode={handleToggleMode}
+                />
+            </div>
+        );
+    }
+
+    // Projeto selecionado mas a lista de projetos (que carrega o modo) ainda
+    // não chegou: espera, senão o `mode` cai para 'single' e o mapa React Flow
+    // pisca antes de virar o layout de colunas (projeto em modo cards).
+    if (projectId && !selectedProject && projectsLoading) {
+        return <div className="p-2 sm:p-3 h-full"><LoadingState /></div>;
+    }
+
+    // Layout em colunas (modo cards, sem view/solo): coluna de jornadas +
+    // subfluxos (árvore) + métricas + drawer de detalhe.
+    if (showingCards) {
+        return (
+            <div className="p-2 sm:p-3 h-full">
+                {loading ? (
                     <LoadingState />
                 ) : journeys.length === 0 ? (
                     <EmptyState projectId={projectId} />
                 ) : (
-                    <JourneyMap
+                    <JourneyColumnView
                         projectId={projectId}
+                        projectName={selectedProject?.name || 'Projeto'}
                         journeys={journeys}
                         subflowsByJourney={subflowsByJourney}
                         casesBySubflow={casesBySubflow}
-                        initialExpandedJourneyId={focusJourneyId || undefined}
+                        testCases={testCases}
+                        onReload={reload}
+                        onOpenJourneyMap={id => { setView(null); setSolo(id); }}
+                        onCaseUpdated={updated =>
+                            setCases(prev => prev.map(c => c.id === updated.id ? updated : c))
+                        }
+                    />
+                )}
+                {journeyModal}
+            </div>
+        );
+    }
+
+    // Mapa (single, view=all, ou solo).
+    return (
+        <div className="p-2 sm:p-3 flex flex-col h-full">
+            {journeyModal}
+            <div className="flex-1 min-h-0">
+                {loading ? (
+                    <LoadingState />
+                ) : journeys.length === 0 ? (
+                    <EmptyState projectId={projectId} />
+                ) : effectiveSolo && soloJourneys.length === 0 ? (
+                    <EmptyState projectId={projectId} />
+                ) : (
+                    <JourneyMap
+                        projectId={projectId}
+                        journeys={soloJourneys}
+                        subflowsByJourney={subflowsByJourney}
+                        casesBySubflow={casesBySubflow}
+                        initialExpandedJourneyId={solo || focusJourneyId || undefined}
                         onCaseUpdated={updated =>
                             setCases(prev => prev.map(c => c.id === updated.id ? updated : c))
                         }

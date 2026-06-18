@@ -388,6 +388,49 @@ def _parse_maestro_line(line: str) -> Optional[dict]:
     return {"type": "info", "text": line}
 
 
+async def _adb_device_state(udid: str) -> Optional[str]:
+    """Estado do device no adb ('device', 'offline', 'unauthorized') ou None se
+    não aparece em `adb devices`. É a fonte da verdade de "está conectado?"."""
+    try:
+        p = await asyncio.create_subprocess_exec(
+            "adb", "devices",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await asyncio.wait_for(p.communicate(), timeout=5)
+        for line in out.decode(errors="replace").splitlines()[1:]:  # pula "List of devices"
+            parts = line.split()
+            if len(parts) >= 2 and parts[0] == udid:
+                return parts[1]
+    except Exception as e:
+        logger.debug(f"[device-check] adb devices falhou: {e}")
+    return None
+
+
+async def _wait_for_device(udid: str, timeout: float = 15.0) -> bool:
+    """Espera (poll) até o device estar em estado 'device', até `timeout`s.
+    Usado após `adb reconnect` (que derruba o device transitoriamente) e no
+    pre-flight, para não rodar o maestro antes do device re-anexar."""
+    import time as _t
+    deadline = _t.perf_counter() + timeout
+    while _t.perf_counter() < deadline:
+        if await _adb_device_state(udid) == "device":
+            return True
+        await asyncio.sleep(0.4)
+    return await _adb_device_state(udid) == "device"
+
+
+def _device_unavailable_message(udid: str, state: Optional[str]) -> str:
+    """Mensagem clara e acionável para cada estado de device indisponível."""
+    return {
+        None: f"Dispositivo {udid} não está conectado (não aparece em `adb devices`). "
+              f"Conecte o aparelho via USB/Wi-Fi e tente novamente.",
+        "offline": f"Dispositivo {udid} está OFFLINE no adb. Reconecte o cabo USB / Wi-Fi "
+                   f"(ou rode `adb reconnect`) e tente novamente.",
+        "unauthorized": f"Dispositivo {udid} não autorizado. Aceite o prompt de "
+                        f"depuração USB na tela do aparelho e tente novamente.",
+    }.get(state, f"Dispositivo {udid} indisponível (estado adb: {state}).")
+
+
 async def _run_maestro_test_file(
     udid: str,
     file_path: str,
@@ -409,6 +452,19 @@ async def _run_maestro_test_file(
         return False, f"Maestro CLI not found at {maestro_bin}. Install via `curl -Ls 'https://get.maestro.mobile.dev' | bash`."
 
     logger.info(f"[runtest] preparing {file_path} for {udid} (bin={maestro_bin})")
+
+    # Pre-flight: o device PRECISA estar conectado antes de gastar ~30s+ no JVM
+    # do maestro só para falhar com "Device X was requested, but it is not
+    # connected" no final. Se estiver fora, falha já com mensagem acionável.
+    state_now = await _adb_device_state(udid)
+    if state_now != "device":
+        # Pode estar transitoriamente fora (ex.: reconnect recente). Dá uma
+        # janela curta antes de desistir.
+        if not await _wait_for_device(udid, timeout=8):
+            msg = _device_unavailable_message(udid, await _adb_device_state(udid))
+            logger.error(f"[runtest] pre-flight falhou: {msg}")
+            return False, msg
+
     await _ensure_maestro_apks(udid)
     await _wake_and_unlock_device(udid)
 
@@ -600,7 +656,12 @@ async def _reset_maestro_driver_state(udid: str, hard: bool = False) -> None:
         # 4. Nuke the adb side of this device. `reconnect` triggers re-handshake
         #    without killing the global adb server.
         await _adb("reconnect", timeout=5)
-        await asyncio.sleep(1.5)  # let the device re-attach + process queues
+        # NÃO usar sleep fixo: `adb reconnect` derruba o device transitoriamente
+        # e no MIUI/Xiaomi ele pode levar vários segundos para re-anexar. Rodar o
+        # maestro (ou reinstalar APK) antes disso produz o erro enganoso
+        # "Device X was requested, but it is not connected". Espera ele voltar.
+        if not await _wait_for_device(udid, timeout=15):
+            logger.warning(f"[reset] {udid} não re-anexou em 15s após `adb reconnect`")
     else:
         # Force-stop on MIUI takes noticeably longer than stock AOSP to fully
         # tear down the process group. 150ms was too tight and produced the

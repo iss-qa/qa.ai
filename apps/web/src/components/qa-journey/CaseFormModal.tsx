@@ -1,20 +1,23 @@
 'use client';
 
 import { useState } from 'react';
-import { FileText, Loader2 } from 'lucide-react';
+import { FileText, Loader2, Sparkles } from 'lucide-react';
 import { ModalShell } from './ModalShell';
 import { PRIORITY_OPTIONS, RUN_STATUS_OPTIONS } from '@/lib/qa-journey/constants';
+import type { TestCaseOption } from '@/lib/qa-journey/api';
 import type { QAJourneyCase, QAJourneyCaseDraft, CasePriority, CaseRunStatus } from '@/types/qa-journey';
 
 interface CaseFormModalProps {
     subflowId: string;
     subflowTitle?: string;   // nome do sub-fluxo pai, exibido no título do modal
     initial?: QAJourneyCase | null;
+    // Testes Maestro do projeto, para vincular quando o caso for automatizado.
+    testCases?: TestCaseOption[];
     onClose: () => void;
     onSave: (draft: QAJourneyCaseDraft) => Promise<void>;
 }
 
-export function CaseFormModal({ subflowId, subflowTitle, initial, onClose, onSave }: CaseFormModalProps) {
+export function CaseFormModal({ subflowId, subflowTitle, initial, testCases = [], onClose, onSave }: CaseFormModalProps) {
     const [draft, setDraft] = useState<QAJourneyCaseDraft>(() => ({
         subflow_id: subflowId,
         external_id: initial?.external_id ?? '',
@@ -23,10 +26,13 @@ export function CaseFormModal({ subflowId, subflowTitle, initial, onClose, onSav
         expected_result: initial?.expected_result ?? '',
         priority: initial?.priority ?? 'medium',
         last_run_status: initial?.last_run_status ?? null,
+        test_case_id: initial?.test_case_id ?? null,
         // undefined = campo não tocado (não vai no payload — compatível com
         // banco sem a migration 009 da coluna platform).
         platform: initial?.platform ?? undefined,
     }));
+    // Tipo do caso: automatizado = tem teste Maestro vinculado.
+    const [tipo, setTipo] = useState<'manual' | 'automated'>(initial?.test_case_id ? 'automated' : 'manual');
     const [saving, setSaving] = useState(false);
 
     const isEdit = Boolean(initial?.id);
@@ -36,12 +42,17 @@ export function CaseFormModal({ subflowId, subflowTitle, initial, onClose, onSav
         if (!canSave) return;
         setSaving(true);
         try {
+            // Manual => limpa o vínculo. Guarded (padrão das migrations recentes):
+            // só envia test_case_id quando há vínculo ou ao limpar um existente.
+            const linkId = tipo === 'automated' ? (draft.test_case_id || null) : null;
+            const test_case_id = linkId ? linkId : (initial?.test_case_id ? null : undefined);
             await onSave({
                 ...draft,
                 title: (draft.title || '').trim(),
                 external_id: (draft.external_id || '').trim() || null,
                 steps_summary: (draft.steps_summary || '').trim() || null,
                 expected_result: (draft.expected_result || '').trim() || null,
+                test_case_id,
                 platform: draft.platform !== undefined ? ((draft.platform || '').trim() || null) : undefined,
             });
         } catch {
@@ -128,6 +139,52 @@ export function CaseFormModal({ subflowId, subflowTitle, initial, onClose, onSav
                     className={`${inputClass} resize-y min-h-[110px]`}
                 />
             </div>
+
+            {/* Tipo do teste: manual ou automatizado (com vínculo Maestro) */}
+            <div className="flex flex-col gap-1.5">
+                <Label>Tipo de teste</Label>
+                <div className="inline-flex bg-foreground/5 border border-border rounded-lg p-1 gap-1 self-start">
+                    <button
+                        type="button"
+                        onClick={() => { setTipo('manual'); setDraft(d => ({ ...d, test_case_id: null })); }}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                            tipo === 'manual' ? 'bg-blue-500/20 text-blue-400' : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                    >
+                        Manual
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setTipo('automated')}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-md inline-flex items-center gap-1.5 transition-colors ${
+                            tipo === 'automated' ? 'bg-green-500/20 text-green-500' : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                    >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Automatizado
+                    </button>
+                </div>
+            </div>
+
+            {tipo === 'automated' && (
+                <div className="flex flex-col gap-1.5">
+                    <Label>Teste Maestro vinculado</Label>
+                    <select
+                        value={draft.test_case_id || ''}
+                        onChange={e => setDraft({ ...draft, test_case_id: e.target.value || null })}
+                        className={inputClass}
+                        disabled={testCases.length === 0}
+                    >
+                        <option value="">{testCases.length === 0 ? '— Nenhum teste Maestro no projeto —' : '— Selecione um teste —'}</option>
+                        {testCases.map(tc => (
+                            <option key={tc.id} value={tc.id}>{tc.name}</option>
+                        ))}
+                    </select>
+                    <p className="text-[10px] text-muted-foreground">
+                        Liga este caso a um teste automatizado do Maestro. Sem vínculo, o caso conta como manual.
+                    </p>
+                </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="flex flex-col gap-1.5">

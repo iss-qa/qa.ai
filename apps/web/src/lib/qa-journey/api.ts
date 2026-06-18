@@ -13,8 +13,21 @@ import type {
 } from '@/types/qa-journey';
 import { QA_JOURNEY_MIGRATION_MISSING_CODE } from '@/types/qa-journey';
 
-export type ProjectOption = { id: string; name: string };
+// Modo de exibição das jornadas por projeto (migration 014):
+//   'single' -> mapa único com todas as jornadas (default)
+//   'cards'  -> hub de cards (GOLD "Todas as jornadas" + um card por jornada)
+export type JourneyViewMode = 'single' | 'cards';
+
+export type ProjectOption = { id: string; name: string; journey_view_mode?: JourneyViewMode };
 export type TestCaseOption = { id: string; name: string; project_id: string | null };
+
+// Card de projeto no hub de Jornadas: projeto + nº de jornadas publicadas.
+export interface ProjectHubCard {
+    id: string;
+    name: string;
+    journey_view_mode: JourneyViewMode;
+    journey_count: number;
+}
 
 export interface QAJourneyListResult {
     journeys: QAJourney[];
@@ -101,6 +114,65 @@ export async function loadProjectOptions(): Promise<ProjectOption[]> {
         return [];
     }
     return (data || []) as ProjectOption[];
+}
+
+// Hub de Jornadas: lista de projetos + modo de visualização + nº de jornadas
+// publicadas. Tolerante a migrations pendentes:
+//   - coluna journey_view_mode ausente (014) -> default 'single' p/ todos.
+//   - tabela qa_journeys ausente (006)       -> contagem 0.
+export async function loadProjectsHub(): Promise<ProjectHubCard[]> {
+    type Row = { id: string; name: string; journey_view_mode?: string };
+    let rows: Row[] = [];
+
+    const withMode = await supabase
+        .from('projects')
+        .select('id, name, journey_view_mode')
+        .order('name', { ascending: true });
+    if (withMode.error) {
+        // Provável coluna journey_view_mode inexistente — cai para id,name.
+        const basic = await supabase
+            .from('projects')
+            .select('id, name')
+            .order('name', { ascending: true });
+        if (basic.error) {
+            console.error('loadProjectsHub projects failed:', basic.error);
+            return [];
+        }
+        rows = (basic.data || []) as Row[];
+    } else {
+        rows = (withMode.data || []) as Row[];
+    }
+
+    // Contagem de jornadas publicadas por projeto em 1 roundtrip.
+    const counts: Record<string, number> = {};
+    const jr = await supabase
+        .from('qa_journeys')
+        .select('project_id')
+        .eq('is_published', true);
+    if (!jr.error) {
+        for (const r of (jr.data || []) as { project_id: string }[]) {
+            counts[r.project_id] = (counts[r.project_id] || 0) + 1;
+        }
+    }
+
+    return rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        journey_view_mode: (r.journey_view_mode === 'cards' ? 'cards' : 'single') as JourneyViewMode,
+        journey_count: counts[r.id] || 0,
+    }));
+}
+
+// Liga/desliga o modo "cards" do projeto (a "marcação" do PO).
+export async function setProjectJourneyViewMode(
+    projectId: string,
+    mode: JourneyViewMode,
+): Promise<void> {
+    const { error } = await supabase
+        .from('projects')
+        .update({ journey_view_mode: mode })
+        .eq('id', projectId);
+    if (error) throw error;
 }
 
 export async function loadTestCaseOptions(projectId?: string | null): Promise<TestCaseOption[]> {
@@ -337,6 +409,9 @@ function sanitizeSubflowPayload(draft: QAJourneySubflowDraft): Record<string, un
     // Só envia html_doc quando o form mexeu no campo — evita erro de coluna
     // inexistente em instalações que ainda não adicionaram html_doc ao subflow.
     if (draft.html_doc !== undefined) payload.html_doc = draft.html_doc;
+    // parent_subflow_id (migration 015) — só entra no payload quando definido,
+    // p/ não quebrar bancos sem a coluna. null é válido (subfluxo raiz).
+    if (draft.parent_subflow_id !== undefined) payload.parent_subflow_id = draft.parent_subflow_id;
     return payload;
 }
 
@@ -388,5 +463,6 @@ function sanitizeCasePayload(draft: QAJourneyCaseDraft): Record<string, unknown>
     if (draft.platform !== undefined) payload.platform = draft.platform ?? null;          // 009
     if (draft.evidence_url !== undefined) payload.evidence_url = draft.evidence_url ?? null;    // 010
     if (draft.evidence_type !== undefined) payload.evidence_type = draft.evidence_type ?? null; // 010
+    if (draft.test_case_id !== undefined) payload.test_case_id = draft.test_case_id ?? null;    // 016
     return payload;
 }

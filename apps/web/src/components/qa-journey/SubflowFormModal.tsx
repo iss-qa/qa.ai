@@ -13,11 +13,15 @@ interface SubflowFormModalProps {
     initial?: QAJourneySubflow | null;
     defaultSequence?: number;   // usado quando initial é null
     testCases: TestCaseOption[];
+    // Candidatos a subfluxo pai (mesma jornada). O chamador já exclui o próprio
+    // subfluxo e seus descendentes para evitar ciclos.
+    parentOptions?: QAJourneySubflow[];
+    defaultParentId?: string | null;  // pré-seleciona o pai ao criar dentro de um subfluxo
     onClose: () => void;
     onSave: (draft: QAJourneySubflowDraft) => Promise<void>;
 }
 
-export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequence = 0, testCases, onClose, onSave }: SubflowFormModalProps) {
+export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequence = 0, testCases, parentOptions = [], defaultParentId = null, onClose, onSave }: SubflowFormModalProps) {
     const [draft, setDraft] = useState<QAJourneySubflowDraft>(() => ({
         journey_id: journeyId,
         title: initial?.title ?? '',
@@ -25,6 +29,7 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
         sequence: initial?.sequence ?? defaultSequence,
         automation_status: initial?.automation_status ?? 'manual',
         test_case_id: initial?.test_case_id ?? null,
+        parent_subflow_id: initial?.parent_subflow_id ?? defaultParentId ?? null,
     }));
     const [saving, setSaving] = useState(false);
 
@@ -63,11 +68,18 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
             const htmlPayload = htmlEnabled
                 ? (htmlDoc ?? null)
                 : (initial?.html_doc ? null : undefined);
+            // Mesmo padrão do html_doc: só manda parent_subflow_id quando há um
+            // pai definido ou quando se está limpando um pai existente. Raiz que
+            // nunca teve pai -> undefined (omitido), compatível com banco sem 015.
+            const parentPayload = draft.parent_subflow_id
+                ? draft.parent_subflow_id
+                : (initial?.parent_subflow_id ? null : undefined);
             await onSave({
                 ...draft,
                 title: (draft.title || '').trim(),
                 description: (draft.description || '').trim() || null,
                 test_case_id: draft.test_case_id || null,
+                parent_subflow_id: parentPayload,
                 html_doc: htmlPayload,
             });
         } catch {
@@ -141,6 +153,23 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
                     rows={3}
                     className={`${inputClass} resize-none`}
                 />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+                <Label>Subfluxo pai (opcional)</Label>
+                <select
+                    value={draft.parent_subflow_id || ''}
+                    onChange={e => setDraft({ ...draft, parent_subflow_id: e.target.value || null })}
+                    className={inputClass}
+                >
+                    <option value="">— Raiz da jornada —</option>
+                    {parentOptions.map(s => (
+                        <option key={s.id} value={s.id}>{s.title}</option>
+                    ))}
+                </select>
+                <p className="text-[10px] text-muted-foreground">
+                    Sem pai = subfluxo raiz da jornada. Com pai = vira ramo (filho) daquele subfluxo.
+                </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
