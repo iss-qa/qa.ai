@@ -313,3 +313,6 @@ Reconectar o dispositivo no dashboard. O espelhamento usa scrcpy via WebSocket n
 
 
 Q@mind2026!@#$
+
+
+Rodar deamon, local

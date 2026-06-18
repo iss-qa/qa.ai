@@ -80,9 +80,9 @@ export function formatRelativeTime(iso: string | null | undefined): string | nul
 
 export interface JourneyMetrics {
     totalCases: number;
-    automatedCases: number;   // casos cujo subfluxo TEM teste Maestro vinculado (test_case_id)
-    manualCases: number;      // casos cujo subfluxo NÃO tem vínculo Maestro
-    coveragePct: number;      // automatedCases / totalCases
+    automatedCases: number;   // casos COM teste Maestro vinculado (c.test_case_id)
+    manualCases: number;      // casos SEM vínculo Maestro (c.test_case_id nulo)
+    coveragePct: number;      // round(automatedCases / totalCases * 100)
     passing: number;          // last_run_status === 'pass'
     failing: number;          // last_run_status === 'fail'
     healthPct: number | null; // passing / (passing+failing); null se sem execuções
@@ -90,8 +90,9 @@ export interface JourneyMetrics {
 
 /**
  * Métricas agregadas de um conjunto de subfluxos (uma jornada inteira ou uma
- * subárvore). "automatizado" é definido no nível do CASO via o status do seu
- * subfluxo (automation_status === 'automated').
+ * subárvore). "automatizado" é definido no nível do CASO: o caso conta como
+ * automatizado quando tem um teste Maestro vinculado (c.test_case_id != null);
+ * sem vínculo = manual. Cobertura = automatizados / total de casos.
  */
 export function computeMetrics(
     subflows: QAJourneySubflow[],

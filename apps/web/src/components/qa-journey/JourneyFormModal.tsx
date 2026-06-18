@@ -23,7 +23,8 @@ export function JourneyFormModal({ projectId, initial, defaultSequence = 0, onCl
         icon: initial?.icon ?? '',
         color: initial?.color ?? COLOR_SUGGESTIONS[0],
         sequence: initial?.sequence ?? defaultSequence,
-        is_published: initial?.is_published ?? false,
+        // Nova jornada já nasce publicada; ao editar, respeita o valor atual.
+        is_published: initial?.is_published ?? true,
     }));
     const [slugTouched, setSlugTouched] = useState(Boolean(initial?.slug));
     const [saving, setSaving] = useState(false);

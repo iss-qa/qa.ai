@@ -9,6 +9,7 @@ import {
     ChevronRight,
     ClipboardCheck,
     ExternalLink,
+    FileCode2,
     FileText,
     History,
     Image as ImageIcon,
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react';
 import { PRIORITY_OPTIONS, RUN_STATUS_DISPLAY, RUN_STATUS_OPTIONS } from '@/lib/qa-journey/constants';
 import { errorMessage, updateCase, uploadCaseEvidence, type TestCaseOption } from '@/lib/qa-journey/api';
+import { GherkinView } from '@/components/qa-journey/GherkinEditor';
 import { loadSubflowRuns, type RunEvidence, type SubflowTestRun } from '@/lib/qa-journey/runs';
 import type { CaseRunStatus, QAJourneyCase, QAJourneySubflow } from '@/types/qa-journey';
 
@@ -43,13 +45,19 @@ interface CaseDetailModalProps {
 // histórico de execuções automatizadas do teste Maestro vinculado ao
 // sub-fluxo, quando existir.
 export function CaseDetailModal({ subflow, case_, testCases, onBack, onClose, onCaseUpdated }: CaseDetailModalProps) {
-    // Automatizado = CASO com teste Maestro vinculado (test_case_id).
-    const isAutomated = Boolean(case_.test_case_id);
-    const linkedTest = testCases?.find(t => t.id === case_.test_case_id);
     // Cópia local para refletir o registro de execução na hora, mesmo se o
     // pai não repassar onCaseUpdated.
     const [current, setCurrent] = useState<QAJourneyCase>(case_);
     useEffect(() => { setCurrent(case_); }, [case_]);
+
+    // Automatizado = CASO com teste Maestro vinculado (test_case_id).
+    const isAutomated = Boolean(current.test_case_id);
+    const linkedTest = testCases?.find(t => t.id === current.test_case_id);
+    // Teste Maestro cujo histórico de execução exibimos: o vínculo do CASO tem
+    // prioridade; cai para o do sub-fluxo (modelos antigos) quando ausente.
+    const linkedTestId = current.test_case_id || subflow.test_case_id || null;
+    // Caso escrito em Gherkin → exibimos o código do cenário em vez de passos.
+    const isGherkin = current.writing_mode === 'gherkin' || Boolean(current.gherkin && current.gherkin.trim());
 
     const prio = PRIORITY_OPTIONS.find(o => o.value === current.priority);
 
@@ -69,14 +77,14 @@ export function CaseDetailModal({ subflow, case_, testCases, onBack, onClose, on
         setRuns([]);
         setEvidenceByRun({});
         (async () => {
-            const res = await loadSubflowRuns(subflow.test_case_id);
+            const res = await loadSubflowRuns(linkedTestId);
             if (cancelled) return;
             setRuns(res.runs);
             setEvidenceByRun(res.evidenceByRun);
             setLoading(false);
         })();
         return () => { cancelled = true; };
-    }, [subflow.test_case_id, case_.id]);
+    }, [linkedTestId, case_.id]);
 
     // Snapshot dos campos atuais — updateCase regrava o registro inteiro.
     const baseDraft = () => ({
@@ -187,12 +195,12 @@ export function CaseDetailModal({ subflow, case_, testCases, onBack, onClose, on
                             <ChevronRight className="w-3 h-3 shrink-0" />
                             <span className="text-brand">Caso</span>
                         </div>
-                        <div className="flex items-center gap-2 mt-1">
-                            {current.external_id && (
-                                <span className="text-[11px] font-mono text-muted-foreground shrink-0">{current.external_id}</span>
-                            )}
-                            <h2 className="text-lg font-bold text-foreground leading-tight">{current.title}</h2>
-                        </div>
+                        <h2 className="text-lg font-bold text-foreground leading-snug mt-1 break-words">{current.title}</h2>
+                        {current.external_id && (
+                            <span className="block text-[11px] font-mono text-muted-foreground truncate mt-0.5" title={current.external_id}>
+                                {current.external_id}
+                            </span>
+                        )}
                     </div>
                     <button
                         onClick={onClose}
@@ -212,7 +220,7 @@ export function CaseDetailModal({ subflow, case_, testCases, onBack, onClose, on
                         {isAutomated && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-foreground/5 border border-border text-muted-foreground">
                                 <Link2 className="w-3 h-3 text-brand" />
-                                Maestro: <span className="text-foreground font-semibold">{linkedTest?.name || case_.test_case_id}</span>
+                                Maestro: <span className="text-foreground font-semibold">{linkedTest?.name || current.test_case_id}</span>
                             </span>
                         )}
                         {current.platform && (
@@ -239,18 +247,33 @@ export function CaseDetailModal({ subflow, case_, testCases, onBack, onClose, on
                         )}
                     </div>
 
-                    {/* Spec: passos + resultado esperado */}
-                    <Section icon={<FileText className="w-4 h-4 text-brand" />} title="Passos">
-                        {current.steps_summary
-                            ? <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{current.steps_summary}</p>
-                            : <Empty>Nenhum passo descrito.</Empty>}
-                    </Section>
+                    {/* Spec — adapta-se ao modo de escrita do caso */}
+                    {isGherkin ? (
+                        <Section icon={<FileCode2 className="w-4 h-4 text-brand" />} title="Cenário Gherkin">
+                            {current.gherkin && current.gherkin.trim()
+                                ? <GherkinView value={current.gherkin} />
+                                : <Empty>Nenhum cenário Gherkin informado.</Empty>}
+                        </Section>
+                    ) : (
+                        <>
+                            {current.description && current.description.trim() && (
+                                <Section icon={<FileText className="w-4 h-4 text-brand" />} title="Descrição">
+                                    <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{current.description}</p>
+                                </Section>
+                            )}
+                            <Section icon={<FileText className="w-4 h-4 text-brand" />} title="Passos">
+                                {current.steps_summary
+                                    ? <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{current.steps_summary}</p>
+                                    : <Empty>Nenhum passo descrito.</Empty>}
+                            </Section>
 
-                    <Section icon={<Target className="w-4 h-4 text-brand" />} title="Resultado esperado">
-                        {current.expected_result
-                            ? <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{current.expected_result}</p>
-                            : <Empty>Não informado.</Empty>}
-                    </Section>
+                            <Section icon={<Target className="w-4 h-4 text-brand" />} title="Resultado esperado">
+                                {current.expected_result
+                                    ? <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{current.expected_result}</p>
+                                    : <Empty>Não informado.</Empty>}
+                            </Section>
+                        </>
+                    )}
 
                     {/* Registro manual do resultado + evidência */}
                     <Section
@@ -351,12 +374,12 @@ export function CaseDetailModal({ subflow, case_, testCases, onBack, onClose, on
                     <Section
                         icon={<History className="w-4 h-4 text-brand" />}
                         title="Execuções automatizadas"
-                        subtitle="Histórico do teste Maestro vinculado ao sub-fluxo"
+                        subtitle={linkedTest ? `Histórico do teste Maestro: ${linkedTest.name}` : 'Histórico do teste Maestro vinculado'}
                     >
-                        {!subflow.test_case_id ? (
+                        {!linkedTestId ? (
                             <div className="bg-foreground/[0.02] border border-border rounded-lg p-3 flex items-center gap-2 text-xs text-muted-foreground">
                                 <Link2 className="w-3.5 h-3.5 shrink-0" />
-                                Sem teste Maestro vinculado a este sub-fluxo — use &quot;Registrar execução&quot; acima para acompanhar o resultado manual.
+                                Sem teste Maestro vinculado a este caso — use &quot;Registrar execução&quot; acima para acompanhar o resultado manual.
                             </div>
                         ) : loading ? (
                             <div className="flex items-center gap-2 text-xs text-muted-foreground py-3">

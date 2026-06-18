@@ -1,4 +1,4 @@
-import type { TestStep, ScanSelectorGroup, ScanSelectorCommand } from './project-types';
+import type { TestStep, ScanSelectorGroup, ScanSelectorCommand, TestCase, TestFolder, TestTreeNode } from './project-types';
 
 // Parse a Maestro YAML test file into the step shape used by test_cases.steps.
 // Shared between the "Importar YAML" upload flow and "Salvar como Teste" from
@@ -186,4 +186,64 @@ export const extractElementName = (text: string): string => {
     }
 
     return label.trim();
+};
+
+// ── Pastas de testes (migration 018) ───────────────────────────────────────
+
+// Normaliza um path de pasta: remove barras nas pontas, colapsa barras
+// duplicadas e espacos. Retorna '' para a raiz. Segmentos sao sanitizados
+// para evitar caracteres problematicos em filesystem/Storage.
+export const normalizeFolderPath = (p?: string | null): string => {
+    if (!p) return '';
+    return p
+        .split('/')
+        .map(seg => seg.trim().replace(/[^a-zA-Z0-9._ -]/g, '').trim())
+        .filter(Boolean)
+        .join('/');
+};
+
+// Monta a árvore de pastas/testes do projeto a partir da lista plana de
+// testes (cada um com folder_path) e das pastas registradas (inclui vazias).
+// O nó retornado é a RAIZ: seus `tests` são os testes sem pasta e seus
+// `folders` são as pastas de primeiro nível.
+export const buildTestTree = (tests: TestCase[], folders: TestFolder[]): TestTreeNode => {
+    const root: TestTreeNode = { name: '', path: '', folders: [], tests: [] };
+
+    // getNode: garante (criando se preciso) o nó da pasta com o path dado.
+    const getNode = (path: string): TestTreeNode => {
+        const norm = normalizeFolderPath(path);
+        if (!norm) return root;
+        const segments = norm.split('/');
+        let node = root;
+        let acc = '';
+        for (const seg of segments) {
+            acc = acc ? `${acc}/${seg}` : seg;
+            let child = node.folders.find(f => f.name === seg);
+            if (!child) {
+                child = { name: seg, path: acc, folders: [], tests: [] };
+                node.folders.push(child);
+            }
+            node = child;
+        }
+        return node;
+    };
+
+    // Pastas registradas primeiro — garante que pastas vazias apareçam.
+    for (const f of folders) getNode(f.path);
+
+    // Distribui os testes em seus nós.
+    for (const t of tests) {
+        const node = getNode(normalizeFolderPath(t.folder_path));
+        node.tests.push(t);
+    }
+
+    // Ordena recursivamente: pastas por nome, testes por nome.
+    const sortNode = (n: TestTreeNode) => {
+        n.folders.sort((a, b) => a.name.localeCompare(b.name));
+        n.tests.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        n.folders.forEach(sortNode);
+    };
+    sortNode(root);
+
+    return root;
 };

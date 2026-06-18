@@ -465,6 +465,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                     subflowTitle={subflows.find(s => s.id === caseDialog.subflowId)?.title}
                     initial={caseDialog.subject}
                     testCases={testCases}
+                    siblingCount={(casesBySubflow[caseDialog.subflowId] || []).length}
                     onClose={() => setCaseDialog(null)}
                     onSave={handleSaveCase}
                 />

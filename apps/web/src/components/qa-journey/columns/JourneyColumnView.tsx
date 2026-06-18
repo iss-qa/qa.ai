@@ -3,10 +3,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import {
-    ChevronRight, GitBranch, Map as MapIcon, PanelLeftClose, PanelLeftOpen, Plus,
+    ChevronRight, GitBranch, GripVertical, Map as MapIcon, PanelLeftClose, PanelLeftOpen, Plus,
 } from 'lucide-react';
 import {
-    createCase, createSubflow, updateCase, updateSubflow, type TestCaseOption,
+    DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors,
+    type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+    SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable,
+    verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import {
+    createCase, createSubflow, reorderJourneys, updateCase, updateSubflow, errorMessage, type TestCaseOption,
 } from '@/lib/qa-journey/api';
 import type {
     QAJourney, QAJourneyCase, QAJourneyCaseDraft, QAJourneySubflow, QAJourneySubflowDraft,
@@ -43,6 +52,30 @@ export function JourneyColumnView({
     const [selectedId, setSelectedId] = useState<string>('');
     const [collapsed, setCollapsed] = useState(false);
 
+    // Ordem local das jornadas (otimista) — sincroniza com as props e é
+    // reescrita ao arrastar; a persistência roda em background.
+    const [orderedJourneys, setOrderedJourneys] = useState<QAJourney[]>(journeys);
+    useEffect(() => { setOrderedJourneys(journeys); }, [journeys]);
+
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    );
+
+    const handleJourneyDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+        if (!over || active.id === over.id) return;
+        setOrderedJourneys(prev => {
+            const oldIndex = prev.findIndex(j => j.id === active.id);
+            const newIndex = prev.findIndex(j => j.id === over.id);
+            if (oldIndex === -1 || newIndex === -1) return prev;
+            const next = arrayMove(prev, oldIndex, newIndex);
+            // Persiste a nova ordem; em caso de erro, recarrega para reverter.
+            reorderJourneys(next.map(j => j.id)).catch(() => onReload());
+            return next;
+        });
+    };
+
     const [subflowForm, setSubflowForm] = useState<SubflowFormState>({ open: false, initial: null, defaultParentId: null });
     const [caseForm, setCaseForm] = useState<CaseFormState>({ open: false, subflowId: '', initial: null });
     const [importSubflowId, setImportSubflowId] = useState<string | null>(null);
@@ -61,10 +94,10 @@ export function JourneyColumnView({
 
     // Seleciona a 1ª jornada (ou mantém a atual se ainda existir).
     useEffect(() => {
-        setSelectedId(prev => (prev && journeys.some(j => j.id === prev) ? prev : (journeys[0]?.id ?? '')));
-    }, [journeys]);
+        setSelectedId(prev => (prev && orderedJourneys.some(j => j.id === prev) ? prev : (orderedJourneys[0]?.id ?? '')));
+    }, [orderedJourneys]);
 
-    const selectedJourney = journeys.find(j => j.id === selectedId) || null;
+    const selectedJourney = orderedJourneys.find(j => j.id === selectedId) || null;
     const journeySubflows = useMemo(
         () => (selectedId ? subflowsByJourney[selectedId] || [] : []),
         [selectedId, subflowsByJourney],
@@ -80,7 +113,7 @@ export function JourneyColumnView({
             setSubflowForm({ open: false, initial: null, defaultParentId: null });
             onReload();
         } catch (e) {
-            alert('Erro ao salvar subfluxo: ' + (e instanceof Error ? e.message : String(e)));
+            alert('Erro ao salvar subfluxo: ' + errorMessage(e));
             throw e;
         }
     };
@@ -91,7 +124,7 @@ export function JourneyColumnView({
             setCaseForm({ open: false, subflowId: '', initial: null });
             onReload();
         } catch (e) {
-            alert('Erro ao salvar caso: ' + (e instanceof Error ? e.message : String(e)));
+            alert('Erro ao salvar caso: ' + errorMessage(e));
             throw e;
         }
     };
@@ -131,7 +164,7 @@ export function JourneyColumnView({
                     {!collapsed && (
                         <span className="text-xs font-bold text-foreground inline-flex items-center gap-1.5">
                             <GitBranch className="w-4 h-4 text-brand" /> Jornadas
-                            <span className="text-muted-foreground font-normal">{journeys.length}</span>
+                            <span className="text-muted-foreground font-normal">{orderedJourneys.length}</span>
                         </span>
                     )}
                     <button
@@ -145,54 +178,20 @@ export function JourneyColumnView({
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-2 flex flex-col gap-1.5">
-                    {journeys.map(j => {
-                        const m = computeMetrics(subflowsByJourney[j.id] || [], casesBySubflow);
-                        const active = j.id === selectedId;
-                        if (collapsed) {
-                            return (
-                                <button
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleJourneyDragEnd}>
+                        <SortableContext items={orderedJourneys.map(j => j.id)} strategy={verticalListSortingStrategy}>
+                            {orderedJourneys.map(j => (
+                                <SortableJourneyCard
                                     key={j.id}
-                                    type="button"
-                                    onClick={() => setSelectedId(j.id)}
-                                    title={j.title}
-                                    className={`w-10 h-10 mx-auto rounded-lg flex items-center justify-center text-xs font-bold transition-colors ${
-                                        active ? 'bg-brand/15 text-brand' : 'text-muted-foreground hover:bg-foreground/5'
-                                    }`}
-                                >
-                                    {j.title.slice(0, 2).toUpperCase()}
-                                </button>
-                            );
-                        }
-                        return (
-                            <button
-                                key={j.id}
-                                type="button"
-                                onClick={() => setSelectedId(j.id)}
-                                className={`text-left rounded-xl border px-3 py-2.5 transition-colors ${
-                                    active ? 'border-brand/50 bg-brand/[0.06]' : 'border-border hover:border-brand/30 hover:bg-foreground/5'
-                                }`}
-                            >
-                                <div className="flex items-center gap-2">
-                                    <span className="font-semibold text-sm text-foreground truncate flex-1">{j.title}</span>
-                                    {!j.is_published && (
-                                        <span className="text-[8px] uppercase font-bold text-muted-foreground bg-foreground/10 rounded px-1 py-0.5">Rascunho</span>
-                                    )}
-                                </div>
-                                <div className="flex items-center gap-2 mt-1.5">
-                                    <div className="flex-1 h-1.5 rounded-full bg-foreground/10 overflow-hidden">
-                                        <div className="h-full rounded-full bg-brand" style={{ width: `${m.coveragePct}%` }} />
-                                    </div>
-                                    <span className="text-[10px] font-bold text-brand tabular-nums">{m.coveragePct}%</span>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[10px] text-muted-foreground">
-                                    <span>{m.automatedCases} auto</span>
-                                    <span>{m.manualCases} manual</span>
-                                    <span className="text-green-500">{m.passing} ok</span>
-                                    <span className="text-red-500">{m.failing} falhas</span>
-                                </div>
-                            </button>
-                        );
-                    })}
+                                    journey={j}
+                                    collapsed={collapsed}
+                                    active={j.id === selectedId}
+                                    metrics={computeMetrics(subflowsByJourney[j.id] || [], casesBySubflow)}
+                                    onSelect={() => setSelectedId(j.id)}
+                                />
+                            ))}
+                        </SortableContext>
+                    </DndContext>
                 </div>
             </aside>
 
@@ -271,6 +270,7 @@ export function JourneyColumnView({
                     subflowTitle={journeySubflows.find(s => s.id === caseForm.subflowId)?.title}
                     initial={caseForm.initial}
                     testCases={testCases}
+                    siblingCount={(casesBySubflow[caseForm.subflowId] || []).length}
                     onClose={() => setCaseForm({ open: false, subflowId: '', initial: null })}
                     onSave={saveCase}
                 />
@@ -312,6 +312,77 @@ export function JourneyColumnView({
                 )}
             </AnimatePresence>
         </div>
+    );
+}
+
+function SortableJourneyCard({
+    journey, collapsed, active, metrics, onSelect,
+}: {
+    journey: QAJourney;
+    collapsed: boolean;
+    active: boolean;
+    metrics: ReturnType<typeof computeMetrics>;
+    onSelect: () => void;
+}) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: journey.id });
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 2 : 1,
+        opacity: isDragging ? 0.85 : 1,
+    };
+
+    if (collapsed) {
+        return (
+            <button
+                ref={setNodeRef}
+                style={style}
+                type="button"
+                onClick={onSelect}
+                title={journey.title}
+                {...attributes}
+                {...listeners}
+                className={`w-10 h-10 mx-auto rounded-lg flex items-center justify-center text-xs font-bold transition-colors cursor-grab active:cursor-grabbing ${
+                    active ? 'bg-brand/15 text-brand' : 'text-muted-foreground hover:bg-foreground/5'
+                } ${isDragging ? 'ring-2 ring-brand shadow-xl' : ''}`}
+            >
+                {journey.title.slice(0, 2).toUpperCase()}
+            </button>
+        );
+    }
+
+    return (
+        <button
+            ref={setNodeRef}
+            style={style}
+            type="button"
+            onClick={onSelect}
+            {...attributes}
+            {...listeners}
+            className={`group text-left rounded-xl border px-3 py-2.5 transition-colors cursor-grab active:cursor-grabbing ${
+                active ? 'border-brand/50 bg-brand/[0.06]' : 'border-border hover:border-brand/30 hover:bg-foreground/5'
+            } ${isDragging ? 'ring-2 ring-brand shadow-xl' : ''}`}
+        >
+            <div className="flex items-center gap-2">
+                <GripVertical className="w-3.5 h-3.5 -ml-1 text-muted-foreground/40 group-hover:text-muted-foreground shrink-0 transition-colors" />
+                <span className="font-semibold text-sm text-foreground truncate flex-1">{journey.title}</span>
+                {!journey.is_published && (
+                    <span className="text-[8px] uppercase font-bold text-muted-foreground bg-foreground/10 rounded px-1 py-0.5">Rascunho</span>
+                )}
+            </div>
+            <div className="flex items-center gap-2 mt-1.5">
+                <div className="flex-1 h-1.5 rounded-full bg-foreground/10 overflow-hidden">
+                    <div className="h-full rounded-full bg-brand" style={{ width: `${metrics.coveragePct}%` }} />
+                </div>
+                <span className="text-[10px] font-bold text-brand tabular-nums">{metrics.coveragePct}%</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[10px] text-muted-foreground">
+                <span>{metrics.automatedCases} auto</span>
+                <span>{metrics.manualCases} manual</span>
+                <span className="text-green-500">{metrics.passing} ok</span>
+                <span className="text-red-500">{metrics.failing} falhas</span>
+            </div>
+        </button>
     );
 }
 

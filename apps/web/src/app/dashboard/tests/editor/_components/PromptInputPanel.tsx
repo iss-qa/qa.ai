@@ -1,19 +1,12 @@
 'use client';
 
 import { Plus, FlaskConical, Trash2, ListPlus, Clapperboard } from 'lucide-react';
-import { LLM_MODELS } from '../editor-utils';
 
-// Painel enxuto: a caixa de prompt "Descreva o teste..." e o módulo de
-// Screenshots de referências (VisualGuide) foram REMOVIDOS a pedido — sobra
-// a barra de ações (engine, modelo e o menu +). Props extras seguem aceitas
-// (não desestruturadas) para não quebrar o call-site.
+// Painel enxuto: a caixa de prompt "Descreva o teste...", o módulo de
+// Screenshots de referências (VisualGuide) e os seletores de engine/modelo (LLM)
+// foram REMOVIDOS a pedido — sobra apenas o menu de ações (+). Props extras
+// seguem aceitas (não desestruturadas) para não quebrar o call-site.
 export function PromptInputPanel({
-    selectedEngine,
-    setSelectedEngine,
-    selectedModel,
-    setSelectedModel,
-    isGenerating,
-    isExecuting,
     isRecordingActive,
     showPlusMenu,
     setShowPlusMenu,
@@ -53,29 +46,6 @@ export function PromptInputPanel({
             <div className="bg-zinc-900 border border-zinc-700 rounded-2xl transition-colors">
                 <div className="flex items-center justify-between px-3 py-2.5">
                     <div className="flex items-center gap-1.5">
-                        {/* Engine selector pill */}
-                        <select
-                            value={selectedEngine}
-                            onChange={(e) => setSelectedEngine(e.target.value as 'uiautomator2' | 'maestro')}
-                            className="bg-zinc-800 border border-zinc-700 rounded-full px-2.5 py-1 text-[11px] font-medium text-zinc-300 focus:outline-none focus:border-zinc-500 cursor-pointer hover:bg-zinc-700 transition-colors appearance-none pr-5 bg-[url('data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2210%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%239ca3af%22%20stroke-width%3D%222%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[center_right_6px]"
-                            disabled={isGenerating || isExecuting}
-                        >
-                            <option value="uiautomator2">UIAutomator2</option>
-                            <option value="maestro">Maestro</option>
-                        </select>
-
-                        {/* LLM selector pill */}
-                        <select
-                            value={selectedModel}
-                            onChange={(e) => setSelectedModel(e.target.value)}
-                            className="bg-zinc-800 border border-zinc-700 rounded-full px-2.5 py-1 text-[11px] font-medium text-zinc-300 focus:outline-none focus:border-zinc-500 cursor-pointer hover:bg-zinc-700 transition-colors appearance-none pr-5 bg-[url('data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2210%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%239ca3af%22%20stroke-width%3D%222%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[center_right_6px] max-w-[140px]"
-                            disabled={isGenerating}
-                        >
-                            {LLM_MODELS.map((m) => (
-                                <option key={m.value} value={m.value}>{m.label}</option>
-                            ))}
-                        </select>
-
                         {/* Plus menu */}
                         <div className="relative">
                             <button

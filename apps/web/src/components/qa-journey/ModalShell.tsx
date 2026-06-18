@@ -15,8 +15,8 @@ interface ModalShellProps {
 // Reproduz o estilo de /dashboard/bugs (dark card sobre overlay blur).
 export function ModalShell({ title, onClose, footer, maxWidth = 'max-w-2xl', children }: ModalShellProps) {
     return (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className={`bg-card border border-border rounded-2xl w-full ${maxWidth} shadow-2xl flex flex-col max-h-[90vh]`}>
+        <div className="fixed inset-0 bg-black/85 flex items-center justify-center z-50 p-4">
+            <div className={`bg-card border border-border rounded-2xl w-full ${maxWidth} shadow-2xl flex flex-col max-h-[90vh] transform-gpu`}>
                 <div className="p-6 border-b border-border flex items-center justify-between">
                     <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
                         {title}

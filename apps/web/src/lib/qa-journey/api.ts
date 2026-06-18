@@ -19,7 +19,7 @@ import { QA_JOURNEY_MIGRATION_MISSING_CODE } from '@/types/qa-journey';
 export type JourneyViewMode = 'single' | 'cards';
 
 export type ProjectOption = { id: string; name: string; journey_view_mode?: JourneyViewMode };
-export type TestCaseOption = { id: string; name: string; project_id: string | null };
+export type TestCaseOption = { id: string; name: string; project_id: string | null; folder_path?: string | null };
 
 // Card de projeto no hub de Jornadas: projeto + nº de jornadas publicadas.
 export interface ProjectHubCard {
@@ -176,19 +176,25 @@ export async function setProjectJourneyViewMode(
 }
 
 export async function loadTestCaseOptions(projectId?: string | null): Promise<TestCaseOption[]> {
-    let query = supabase
-        .from('test_cases')
-        .select('id, name, project_id')
-        .order('name', { ascending: true });
-    if (projectId) {
-        query = query.eq('project_id', projectId);
+    const run = async (columns: string) => {
+        let query = supabase
+            .from('test_cases')
+            .select(columns)
+            .order('name', { ascending: true });
+        if (projectId) query = query.eq('project_id', projectId);
+        return query;
+    };
+    // Tenta com folder_path (migration 018); cai para o conjunto antigo se a
+    // coluna ainda não existir, mantendo compatibilidade com bancos defasados.
+    let { data, error } = await run('id, name, project_id, folder_path');
+    if (error) {
+        ({ data, error } = await run('id, name, project_id'));
     }
-    const { data, error } = await query;
     if (error) {
         console.error('loadTestCaseOptions failed:', error);
         return [];
     }
-    return (data || []) as TestCaseOption[];
+    return (data || []) as unknown as TestCaseOption[];
 }
 
 // ============================================================
@@ -217,20 +223,25 @@ export interface QAJourneyMapData {
     migrationMissing: boolean;
 }
 
-// Carrega tudo que o mapa público precisa em 2 roundtrips:
-// 1) jornadas publicadas do projeto; 2) subflows + cases em paralelo
+// Carrega tudo que o mapa precisa em 2 roundtrips:
+// 1) jornadas do projeto; 2) subflows + cases em paralelo
 // (cases filtrados por journey_id via inner join, sem esperar os subflows).
-export async function loadJourneyMapData(projectId: string): Promise<QAJourneyMapData> {
+// `includeUnpublished`: o mapa público usa só publicadas (default); o dashboard
+// de gestão passa true para também exibir rascunhos (badge "Rascunho").
+export async function loadJourneyMapData(
+    projectId: string,
+    includeUnpublished = false,
+): Promise<QAJourneyMapData> {
     const { journeys, migrationMissing } = await loadJourneys(projectId);
     if (migrationMissing) {
         return { journeys: [], subflows: [], cases: [], migrationMissing: true };
     }
-    const published = journeys.filter(j => j.is_published);
-    if (published.length === 0) {
-        return { journeys: published, subflows: [], cases: [], migrationMissing: false };
+    const visible = includeUnpublished ? journeys : journeys.filter(j => j.is_published);
+    if (visible.length === 0) {
+        return { journeys: visible, subflows: [], cases: [], migrationMissing: false };
     }
 
-    const journeyIds = published.map(j => j.id);
+    const journeyIds = visible.map(j => j.id);
     const [subRes, caseRes] = await Promise.all([
         supabase
             .from('qa_journey_subflows')
@@ -263,7 +274,7 @@ export async function loadJourneyMapData(projectId: string): Promise<QAJourneyMa
         });
 
     return {
-        journeys: published,
+        journeys: visible,
         subflows: (subRes.data || []) as QAJourneySubflow[],
         cases,
         migrationMissing: false,
@@ -326,6 +337,18 @@ export async function updateJourney(id: string, draft: QAJourneyDraft): Promise<
         .single();
     if (error) throw error;
     return data as QAJourney;
+}
+
+/**
+ * Persiste a nova ordem das jornadas reescrevendo `sequence` = índice na lista.
+ * `orderedIds` deve conter todas as jornadas na ordem final desejada.
+ */
+export async function reorderJourneys(orderedIds: string[]): Promise<void> {
+    await Promise.all(
+        orderedIds.map((id, index) =>
+            supabase.from('qa_journeys').update({ sequence: index }).eq('id', id),
+        ),
+    );
 }
 
 export async function deleteJourney(id: string): Promise<void> {
@@ -464,5 +487,8 @@ function sanitizeCasePayload(draft: QAJourneyCaseDraft): Record<string, unknown>
     if (draft.evidence_url !== undefined) payload.evidence_url = draft.evidence_url ?? null;    // 010
     if (draft.evidence_type !== undefined) payload.evidence_type = draft.evidence_type ?? null; // 010
     if (draft.test_case_id !== undefined) payload.test_case_id = draft.test_case_id ?? null;    // 016
+    if (draft.writing_mode !== undefined) payload.writing_mode = draft.writing_mode;            // 017
+    if (draft.description !== undefined) payload.description = draft.description ?? null;        // 017
+    if (draft.gherkin !== undefined) payload.gherkin = draft.gherkin ?? null;                   // 017
     return payload;
 }

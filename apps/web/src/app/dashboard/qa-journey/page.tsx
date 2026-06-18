@@ -92,7 +92,7 @@ export default function QAJourneyPublicPage() {
         setLastProjectId(projectId);
         (async () => {
             const [data, tcs] = await Promise.all([
-                loadJourneyMapData(projectId),
+                loadJourneyMapData(projectId, true),  // dashboard mostra rascunhos também
                 loadTestCaseOptions(projectId),
             ]);
             if (cancelled) return;

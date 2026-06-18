@@ -92,9 +92,19 @@ export function UserMenu() {
             {open && (
                 <div className="absolute right-0 top-full mt-2 w-64 rounded-xl bg-popover border border-border shadow-xl z-50 overflow-hidden">
                     <div className="px-4 py-3 border-b border-border">
-                        <p className="text-sm font-semibold text-foreground truncate">
-                            {profile?.full_name || 'Usuário'}
-                        </p>
+                        <div className="flex items-center gap-2 min-w-0">
+                            <p className="text-sm font-semibold text-foreground truncate">
+                                {profile?.full_name || 'Usuário'}
+                            </p>
+                            <span className="shrink-0 text-[9px] text-brand uppercase font-bold tracking-wider rounded-full border border-brand/30 bg-brand/10 px-1.5 py-0.5">
+                                Pro
+                            </span>
+                            {profile?.is_master_admin && (
+                                <span className="shrink-0 text-[9px] text-muted-foreground uppercase font-bold tracking-wider rounded-full border border-border bg-foreground/5 px-1.5 py-0.5">
+                                    Admin
+                                </span>
+                            )}
+                        </div>
                         <p className="text-xs text-muted-foreground truncate">{profile?.email}</p>
                     </div>
                     <div className="p-1.5">

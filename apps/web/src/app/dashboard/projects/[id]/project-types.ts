@@ -60,4 +60,21 @@ export interface TestCase {
     tags?: string[];
     raw_yaml?: string | null;
     app_id?: string | null;
+    // Pasta relativa do teste dentro do projeto (migration 018). NULL/'' = raiz.
+    folder_path?: string | null;
+}
+
+// Pasta de testes do projeto (migration 018). Persiste pastas vazias.
+export interface TestFolder {
+    id: string;
+    project_id: string;
+    path: string;
+}
+
+// Nó da árvore de testes do projeto: uma pasta com sub-pastas e testes.
+export interface TestTreeNode {
+    name: string;        // nome da pasta (último segmento do path)
+    path: string;        // path completo da pasta (ex.: tests/basic)
+    folders: TestTreeNode[];
+    tests: TestCase[];
 }

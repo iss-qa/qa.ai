@@ -66,6 +66,19 @@ export function testYamlFileName(testName: string): string {
     return `${safe}.yaml`;
 }
 
+/**
+ * Caminho do YAML dentro do workspace respeitando a pasta do teste.
+ * `folderPath` é o caminho relativo da pasta (ex.: 'tests/basic') ou vazio
+ * para a raiz. Retorna algo como 'tests/basic/login.yaml'. Os segmentos da
+ * pasta são preservados (já vêm normalizados); só o nome do arquivo é
+ * sanitizado por testYamlFileName.
+ */
+export function testYamlPath(folderPath: string | null | undefined, testName: string): string {
+    const file = testYamlFileName(testName);
+    const folder = (folderPath || '').replace(/^\/+|\/+$/g, '');
+    return folder ? `${folder}/${file}` : file;
+}
+
 export interface WorkspaceWriteResult {
     success: boolean;
     path?: string;
@@ -123,6 +136,31 @@ export async function writeYaml(
 ): Promise<WorkspaceWriteResult> {
     if (ref.type === 'supabase') return writeYamlToSupabase(ref.prefix, fileName, content);
     return writeYamlToWorkspace(ref.path, fileName, content);
+}
+
+/**
+ * Apaga um YAML do workspace (local via daemon, ou Supabase Storage).
+ * Best-effort: usado ao mover um teste para outra pasta (remove o arquivo
+ * antigo após gravar no novo caminho). `relPath` pode conter subpastas.
+ */
+export async function deleteYaml(ref: WorkspaceRef, relPath: string): Promise<WorkspaceWriteResult> {
+    try {
+        if (ref.type === 'supabase') {
+            const { error } = await storageClient().storage.from(WORKSPACE_BUCKET).remove([`${ref.prefix}/${relPath}`]);
+            if (error) return { success: false, error: error.message };
+            return { success: true };
+        }
+        const fullPath = `${ref.path.replace(/\/$/, '')}/${relPath}`;
+        const res = await fetch(`${DAEMON}/api/maestro-studio/file/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: fullPath }),
+        });
+        const data = await res.json().catch(() => ({}));
+        return data?.success ? { success: true, path: fullPath } : { success: false, error: data?.error || 'unknown error' };
+    } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+    }
 }
 
 /** Le um YAML do workspace (local via daemon, ou Supabase Storage). */

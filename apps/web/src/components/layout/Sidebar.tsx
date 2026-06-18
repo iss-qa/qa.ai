@@ -136,19 +136,6 @@ export function Sidebar() {
                         );
                     })}
                 </nav>
-
-                {/* Footer */}
-                <div className={`py-4 border-t border-sidebar-border ${isCollapsed ? 'px-1.5' : 'px-3'}`}>
-                    <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
-                        <div className="w-8 h-8 rounded-full bg-brand/20 border border-brand/20 flex items-center justify-center text-brand font-bold text-[10px] shrink-0">IS</div>
-                        {!isCollapsed && (
-                            <div className="flex flex-col min-w-0">
-                                <span className="text-xs font-semibold truncate">Isaias Admin</span>
-                                <span className="text-[9px] text-brand uppercase font-bold tracking-wider">Pro</span>
-                            </div>
-                        )}
-                    </div>
-                </div>
             </>
         );
     };

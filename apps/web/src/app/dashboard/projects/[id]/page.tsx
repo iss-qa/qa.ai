@@ -1,16 +1,19 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Play, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, Download, Upload, ScanSearch, Eye, Wand2, MoreVertical, Clapperboard } from 'lucide-react';
+import { ArrowLeft, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, Upload, ScanSearch, Eye, Wand2, MoreVertical, Clapperboard } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { pickWorkspaceDirectory, testYamlFileName, writeYamlToWorkspace, writeYaml } from '@/lib/workspace';
 import { useDeviceStore } from '@/store/deviceStore';
 import { type DevicePreviewHandle, type RecordedInteraction } from '@/components/DevicePreview';
-import type { Project, ScanResults, TestStep, TestCase } from './project-types';
-import { extractAppIdFromYaml, parseMaestroYamlToSteps, extractElementName } from './project-utils';
-import { ImportYamlModal } from './_components/ImportYamlModal';
+import type { Project, ScanResults, TestStep, TestCase, TestFolder } from './project-types';
+import { extractAppIdFromYaml, parseMaestroYamlToSteps, extractElementName, buildTestTree } from './project-utils';
+import { ImportTestsModal } from './_components/ImportTestsModal';
+import { ProjectTestsList } from './_components/ProjectTestsList';
+import { MoveTestModal } from './_components/MoveTestModal';
+import { useProjectTestImport } from './useProjectTestImport';
 import { ScannerModal } from './_components/ScannerModal';
 import { MaestroStudioModal } from './_components/MaestroStudioModal';
 import { SaveAsTestModal } from './_components/SaveAsTestModal';
@@ -28,16 +31,13 @@ export default function ProjectDetailPage() {
     const projectRef = useRef<Project | null>(null);
     useEffect(() => { projectRef.current = project; }, [project]);
     const [tests, setTests] = useState<TestCase[]>([]);
+    const [folders, setFolders] = useState<TestFolder[]>([]);
     const [loading, setLoading] = useState(true);
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [formData, setFormData] = useState({ name: '', description: '', platform: 'android', status: 'Ativo', workspace_path: '' });
     const [saving, setSaving] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState(false);
     const { connectedDevice } = useDeviceStore();
-    const [showImportModal, setShowImportModal] = useState(false);
-    const [importDragActive, setImportDragActive] = useState(false);
-    const [importStatus, setImportStatus] = useState<{ type: 'idle' | 'error' | 'success'; message: string }>({ type: 'idle', message: '' });
-    const [importing, setImporting] = useState(false);
     const [deletingTestId, setDeletingTestId] = useState<string | null>(null);
 
     // Maestro Studio webview
@@ -787,154 +787,6 @@ export default function ProjectDetailPage() {
         }
     };
 
-    // Import .yaml file
-    const handleImportFile = async (file: File) => {
-        setImporting(true);
-        setImportStatus({ type: 'idle', message: '' });
-
-        try {
-            const rawContent = await file.text();
-
-            // Strip comment lines (lines starting with #) before parsing
-            // This avoids comment blocks like "### ---" being treated as YAML separators
-            const content = rawContent
-                .split('\n')
-                .filter(line => !line.trimStart().startsWith('#'))
-                .join('\n');
-
-            // Validate: must have appId and --- separator
-            if (!content.includes('---')) {
-                setImportStatus({ type: 'error', message: 'Arquivo invalido: falta o separador "---" entre appId e comandos.' });
-                return;
-            }
-
-            const parts = content.split('---', 2);
-            if (!parts[0].includes('appId')) {
-                setImportStatus({ type: 'error', message: 'Arquivo invalido: "appId" nao encontrado no cabecalho.' });
-                return;
-            }
-
-            // Parse commands into steps
-            const commandSection = parts[1].trim();
-            const lines = commandSection.split('\n');
-            const steps: TestStep[] = [];
-            let stepNum = 0;
-
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i].trim();
-                if (!line || line.startsWith('#')) continue;
-
-                if (line.startsWith('- ')) {
-                    stepNum++;
-                    const cmdContent = line.substring(2).trim();
-
-                    // Parse command type
-                    let action = '', target = '', value = '';
-                    if (cmdContent === 'launchApp') { action = 'launchApp'; target = 'Abre o aplicativo'; }
-                    else if (cmdContent === 'clearState') { action = 'clearState'; target = 'Limpa estado do app'; }
-                    else if (cmdContent === 'waitForAnimationToEnd') { action = 'waitForAnimationToEnd'; target = 'Aguarda transicao'; }
-                    else if (cmdContent === 'hideKeyboard') { action = 'hideKeyboard'; target = 'Esconde teclado'; }
-                    else if (cmdContent === 'back') { action = 'back'; target = 'Volta'; }
-                    else if (cmdContent === 'scroll') { action = 'scroll'; target = 'Rola a tela'; }
-                    else if (cmdContent.startsWith('tapOn:')) {
-                        action = 'tapOn';
-                        target = cmdContent.replace('tapOn:', '').trim().replace(/^"|"$/g, '');
-                    }
-                    else if (cmdContent.startsWith('inputText:')) {
-                        action = 'inputText';
-                        value = cmdContent.replace('inputText:', '').trim().replace(/^"|"$/g, '');
-                        target = `Digita: ${value}`;
-                    }
-                    else if (cmdContent.startsWith('assertVisible:')) {
-                        action = 'assertVisible';
-                        target = cmdContent.replace('assertVisible:', '').trim().replace(/^"|"$/g, '');
-                    }
-                    else if (cmdContent.startsWith('extendedWaitUntil:')) {
-                        action = 'extendedWaitUntil';
-                        // Read next lines for visible/timeout
-                        const nextLines: string[] = [];
-                        while (i + 1 < lines.length && lines[i + 1].match(/^\s+/)) {
-                            i++;
-                            nextLines.push(lines[i].trim());
-                        }
-                        const visMatch = nextLines.find(l => l.startsWith('visible:'));
-                        const tmMatch = nextLines.find(l => l.startsWith('timeout:'));
-                        target = visMatch ? visMatch.replace('visible:', '').trim().replace(/^"|"$/g, '') : '';
-                        value = tmMatch ? tmMatch.replace('timeout:', '').trim() : '5000';
-                    }
-                    else {
-                        action = cmdContent.split(':')[0] || cmdContent;
-                        target = cmdContent;
-                    }
-
-                    steps.push({
-                        id: String(stepNum),
-                        num: stepNum,
-                        action,
-                        target,
-                        value,
-                        engine: 'maestro',
-                        maestro_command: line,
-                    });
-                }
-            }
-
-            if (steps.length === 0) {
-                setImportStatus({ type: 'error', message: 'Nenhum comando Maestro encontrado no arquivo.' });
-                return;
-            }
-
-            // Save to Supabase — upsert by name so re-importing the same YAML
-            // refreshes the existing row instead of creating a duplicate entry.
-            const testName = file.name.replace('.yaml', '').replace('.yml', '').replace(/_/g, ' ');
-            const importedAppId = extractAppIdFromYaml(rawContent);
-            const baseRow: Record<string, unknown> = {
-                name: testName,
-                description: `Importado de ${file.name} (${steps.length} passos)`,
-                steps,
-                tags: ['maestro', 'imported'],
-                project_id: projectId,
-                is_active: true,
-                app_id: importedAppId,
-                raw_yaml: rawContent,
-            };
-            const { data: existingImport, error: lookupErr } = await supabase
-                .from('test_cases')
-                .select('id')
-                .eq('project_id', projectId)
-                .eq('name', testName)
-                .order('created_at', { ascending: false })
-                .limit(1);
-            if (lookupErr) throw lookupErr;
-
-            if (existingImport && existingImport.length > 0) {
-                const { error } = await supabase
-                    .from('test_cases')
-                    .update(baseRow)
-                    .eq('id', existingImport[0].id);
-                if (error) throw error;
-                setImportStatus({ type: 'success', message: `"${testName}" atualizado com ${steps.length} passos!` });
-            } else {
-                const { error } = await supabase
-                    .from('test_cases')
-                    .insert({ ...baseRow, version: 1 });
-                if (error) throw error;
-                setImportStatus({ type: 'success', message: `"${testName}" importado com ${steps.length} passos!` });
-            }
-            // Refresh tests list
-            fetchProject();
-
-            // Close modal after 2s
-            setTimeout(() => { setShowImportModal(false); setImportStatus({ type: 'idle', message: '' }); }, 2000);
-
-        } catch (err: unknown) {
-            console.error('Import failed:', err);
-            setImportStatus({ type: 'error', message: `Erro ao importar: ${err instanceof Error ? err.message : String(err)}` });
-        } finally {
-            setImporting(false);
-        }
-    };
-
     const fetchProject = async () => {
         try {
             const { data: proj, error } = await supabase
@@ -961,6 +813,14 @@ export default function ProjectDetailPage() {
                 .order('created_at', { ascending: false });
 
             setTests(testData || []);
+
+            // Pastas de testes do projeto (migration 018). Best-effort: se a
+            // migration ainda não foi aplicada, segue com lista vazia.
+            const { data: folderData, error: foldersErr } = await supabase
+                .from('test_folders')
+                .select('id, project_id, path')
+                .eq('project_id', projectId);
+            if (!foldersErr) setFolders((folderData || []) as TestFolder[]);
         } catch (error) {
             console.error('Error fetching project:', error);
             // Fallback mock data
@@ -975,6 +835,15 @@ export default function ProjectDetailPage() {
             setLoading(false);
         }
     };
+
+    // Importação (arquivos/ZIP), pastas e mover testes — extraído para um hook
+    // dedicado (mantém page.tsx dentro do limite de 1.500 linhas).
+    const {
+        showImportModal, importTargetFolder, importInitialMode, importStatus, importing,
+        handleImportFiles, handleImportZip, handleCreateFolder, handleDeleteFolder,
+        openImportInto, openCreateFolder, closeImportModal,
+        moveTest, setMoveTest, moving, moveStatus, setMoveStatus, confirmMoveTest,
+    } = useProjectTestImport({ projectId, projectRef, refresh: fetchProject });
 
     useEffect(() => {
         fetchProject();
@@ -1194,10 +1063,10 @@ export default function ProjectDetailPage() {
                                         </button>
                                     )}
                                     <button
-                                        onClick={() => { setShowMoreMenu(false); setShowImportModal(true); }}
+                                        onClick={() => { setShowMoreMenu(false); openImportInto(''); }}
                                         className="w-full text-left px-3 py-2 text-xs font-medium text-amber-300 hover:bg-accent flex items-center gap-2"
                                     >
-                                        <Upload className="w-3.5 h-3.5" /> Importar YAML
+                                        <Upload className="w-3.5 h-3.5" /> Importar Testes
                                     </button>
                                 </div>
                             )}
@@ -1208,6 +1077,13 @@ export default function ProjectDetailPage() {
                         </span>
                     </div>
                     <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => openImportInto('')}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 border-emerald-500/40 text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 hover:border-emerald-500/60"
+                            title="Importar testes: ZIP, arquivos ou criar pasta"
+                        >
+                            <Upload className="w-3.5 h-3.5" /> Importar Testes
+                        </button>
                         <button
                             onClick={openMaestroStudio}
                             className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 border-violet-500/40 text-violet-300 bg-violet-500/10 hover:bg-violet-500/20 hover:border-violet-500/60"
@@ -1225,61 +1101,18 @@ export default function ProjectDetailPage() {
                     </div>
                 </div>
 
-                {tests.length === 0 ? (
-                    <div className="py-12 text-center text-muted-foreground">
-                        <FlaskConical className="w-8 h-8 mx-auto mb-3 opacity-50" />
-                        <p className="text-sm font-medium">Nenhum teste neste projeto</p>
-                        <p className="text-xs mt-1 opacity-70">Crie testes no editor e vincule a este projeto</p>
-                    </div>
-                ) : (
-                    <div className="divide-y divide-border">
-                        {tests.map((test) => (
-                            <Link
-                                key={test.id}
-                                href={`/dashboard/tests/editor?projectId=${projectId}&testId=${test.id}`}
-                                className="px-4 py-3 flex items-center justify-between hover:bg-accent transition-colors cursor-pointer block"
-                            >
-                                <div>
-                                    <p className="text-sm font-bold text-foreground">{test.name}</p>
-                                    <p className="text-xs text-muted-foreground mt-0.5">
-                                        {Array.isArray(test.steps) ? `${test.steps.length} passos` : ''} • {test.last_run_at ? `Ultima exec: ${new Date(test.last_run_at).toLocaleDateString('pt-BR')}` : 'Nunca executado'}
-                                    </p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${test.status === 'passed' ? 'bg-green-500/20 text-green-400' : test.status === 'failed' ? 'bg-red-500/20 text-red-400' : 'bg-slate-500/20 text-muted-foreground'}`}>
-                                        {test.status === 'passed' ? 'Sucesso' : test.status === 'failed' ? 'Falha' : 'Pendente'}
-                                    </span>
-                                    <button
-                                        onClick={(e) => handleDeleteTest(e, test.id)}
-                                        className="p-2 hover:bg-red-500/10 text-muted-foreground hover:text-red-400 rounded-lg transition-colors border border-transparent hover:border-red-500/20"
-                                        title="Excluir teste"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                        onClick={(e) => handleExportYaml(e, test)}
-                                        className="p-2 hover:bg-foreground/10 text-muted-foreground hover:text-amber-400 rounded-lg transition-colors border border-transparent hover:border-border"
-                                        title="Exportar YAML"
-                                    >
-                                        <Download className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                        onClick={(e) => openTestInMaestroStudio(e, test)}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 rounded-lg transition-colors border border-violet-500/20"
-                                        title="Abrir no Maestro Studio (edita o YAML com preview do device)"
-                                    >
-                                        <Wand2 className="w-3.5 h-3.5" />
-                                        <span className="text-[11px] font-bold">Studio</span>
-                                    </button>
-                                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-brand/10 hover:bg-brand/20 text-brand rounded-lg transition-colors border border-brand/20" title="Abrir no editor de passos">
-                                        <Play className="w-3.5 h-3.5 fill-current" />
-                                        <span className="text-[11px] font-bold">Editor</span>
-                                    </div>
-                                </div>
-                            </Link>
-                        ))}
-                    </div>
-                )}
+                <ProjectTestsList
+                    projectId={projectId}
+                    tree={buildTestTree(tests, folders)}
+                    totalCount={tests.length}
+                    onDeleteTest={handleDeleteTest}
+                    onExportYaml={handleExportYaml}
+                    onOpenStudio={openTestInMaestroStudio}
+                    onMoveTest={(t) => { setMoveStatus({ type: 'idle', message: '' }); setMoveTest(t); }}
+                    onImportIntoFolder={openImportInto}
+                    onCreateSubfolder={openCreateFolder}
+                    onDeleteFolder={handleDeleteFolder}
+                />
             </div>
 
             {/* Delete Confirmation */}
@@ -1312,16 +1145,29 @@ export default function ProjectDetailPage() {
                 </div>
             )}
 
-            {/* Import YAML Modal */}
+            {/* Import Tests Modal — ZIP / Arquivos / Criar pasta */}
             {showImportModal && (
-                <ImportYamlModal
-                    importDragActive={importDragActive}
-                    setImportDragActive={setImportDragActive}
+                <ImportTestsModal
+                    defaultFolder={importTargetFolder}
+                    initialMode={importInitialMode}
                     importStatus={importStatus}
-                    setImportStatus={setImportStatus}
                     importing={importing}
-                    onClose={() => { setShowImportModal(false); setImportStatus({ type: 'idle', message: '' }); }}
-                    handleImportFile={handleImportFile}
+                    onClose={closeImportModal}
+                    onImportFiles={handleImportFiles}
+                    onImportZip={handleImportZip}
+                    onCreateFolder={handleCreateFolder}
+                />
+            )}
+
+            {/* Mover teste entre pastas */}
+            {moveTest && (
+                <MoveTestModal
+                    test={moveTest}
+                    tree={buildTestTree(tests, folders)}
+                    moving={moving}
+                    status={moveStatus}
+                    onClose={() => { setMoveTest(null); setMoveStatus({ type: 'idle', message: '' }); }}
+                    onConfirm={confirmMoveTest}
                 />
             )}
 

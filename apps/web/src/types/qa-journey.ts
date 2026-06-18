@@ -6,6 +6,8 @@ export type CasePriority = 'low' | 'medium' | 'high' | 'critical';
 export type CaseRunStatus = 'pass' | 'fail' | 'skipped' | 'not_run';
 export type SyncSource = 'google_sheets' | 'jira' | 'manual';
 export type SyncStatus = 'running' | 'success' | 'error';
+// Modo de escrita do caso (migration 017).
+export type CaseWritingMode = 'traditional' | 'gherkin';
 
 export interface QAJourney {
     id: string;
@@ -48,6 +50,11 @@ export interface QAJourneyCase {
     subflow_id: string;
     external_id: string | null;
     title: string;
+    // Modo de escrita (migration 017). 'gherkin' usa o campo `gherkin`; os
+    // campos description/steps_summary/expected_result ficam vazios.
+    writing_mode?: CaseWritingMode;
+    description?: string | null;
+    gherkin?: string | null;
     steps_summary: string | null;
     expected_result: string | null;
     priority: CasePriority;
