@@ -44,9 +44,10 @@
 .git
 .gitignore
 
-# Maestro Studio binario (~50MB) - extraido em runtime no daemon
+# Maestro CLI binario (~50MB) - extraido em runtime no daemon
 Maestro
-apps/web/public/maestro-studio
+# NOTE: apps/web/public/maestro-studio NAO entra aqui de proposito — o frontend
+# patchado do Studio precisa estar na imagem do web (senao /maestro-studio/ 404).
 
 # Test fixtures / dados gerados localmente
 data

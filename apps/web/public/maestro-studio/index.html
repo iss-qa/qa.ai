@@ -1,0 +1,1364 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/maestro-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Maestro Studio</title>
+
+    <!-- localStorage sanitizer: fix stale values from previous buggy sessions -->
+    <script>
+      (function() {
+        try {
+          // Fix: maestro-workspace-path was accidentally stored as JSON object {path:...}
+          // by old stub that returned {path:'/tmp/qamind-workspace'} instead of a string.
+          var WS_KEY = 'maestro-workspace-path';
+          var raw = localStorage.getItem(WS_KEY);
+          if (raw) {
+            try {
+              var val = JSON.parse(raw);
+              // If parsed value is an object (not a string), extract path or clear it
+              if (val && typeof val === 'object' && !Array.isArray(val)) {
+                var fixedPath = val.path || val.workspacePath || '';
+                if (fixedPath) {
+                  localStorage.setItem(WS_KEY, JSON.stringify(fixedPath));
+                } else {
+                  localStorage.removeItem(WS_KEY);
+                }
+              }
+            } catch (e) {}
+          }
+
+          // Fix: maestro-open-tabs — if stored as non-array, clear it
+          var TABS_KEY = 'maestro-open-tabs';
+          var rawTabs = localStorage.getItem(TABS_KEY);
+          if (rawTabs) {
+            try {
+              var tabs = JSON.parse(rawTabs);
+              if (!Array.isArray(tabs)) localStorage.removeItem(TABS_KEY);
+            } catch (e) { localStorage.removeItem(TABS_KEY); }
+          }
+
+          // Fix: maestro-expanded-folders — must be an array
+          var FOLDERS_KEY = 'maestro-expanded-folders';
+          var rawFolders = localStorage.getItem(FOLDERS_KEY);
+          if (rawFolders) {
+            try {
+              var folders = JSON.parse(rawFolders);
+              if (!Array.isArray(folders)) localStorage.removeItem(FOLDERS_KEY);
+            } catch (e) { localStorage.removeItem(FOLDERS_KEY); }
+          }
+        } catch (e) {}
+      })();
+    </script>
+
+    <!-- Cache buster: force invalidation of any stale service workers / caches -->
+    <script>
+      (function() {
+        try {
+          // Unregister any service workers that might be serving cached responses
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              regs.forEach(function(r) { r.unregister(); });
+            }).catch(function() {});
+          }
+          // Clear Cache API entries (if any)
+          if (typeof caches !== 'undefined' && caches.keys) {
+            caches.keys().then(function(names) {
+              names.forEach(function(n) { caches.delete(n); });
+            }).catch(function() {});
+          }
+        } catch (e) {}
+      })();
+    </script>
+
+    <!-- Polyfills: app was built for Electron — provide Node.js/Electron globals for browser -->
+    <script>
+      // ── process ──────────────────────────────────────────────────────────
+      window.process = window.process || {};
+      Object.assign(window.process, {
+        type: 'browser',     // NOT 'renderer' → skips Electron IPC paths
+        platform: 'darwin',
+        arch: 'arm64',
+        versions: {},
+        // SNAP=truthy → electron-store uses simple writeFileSync instead of write-file-atomic
+        env: { SNAP: 'snap' },
+        version: '',
+        cwd: function() { return '/tmp'; },
+        nextTick: function(fn) { Promise.resolve().then(fn); },
+        pid: 1,
+        ppid: 0,
+        title: 'maestro-studio',
+        argv: [],
+        execArgv: [],
+        exit: function() {},
+        getuid: undefined,
+        getgid: undefined,
+      });
+
+      // ── global ───────────────────────────────────────────────────────────
+      window.global = window.global || window;
+
+      // ── React.createElement patch: catch object-as-child at the source ──────
+      // Runs BEFORE React loads to wrap createElement and find the exact culprit.
+      (function() {
+        // We wrap createElement after React loads by hooking module define
+        var _origDefine = Object.getOwnPropertyDescriptor(window, '__REACT_DEVTOOLS_GLOBAL_HOOK__');
+        // Hook any future assignment of React internals
+        function patchReact(R) {
+          if (!R || !R.createElement || R.createElement.__patched) return;
+          var orig = R.createElement;
+          R.createElement = function(type, props) {
+            var children = Array.prototype.slice.call(arguments, 2);
+            for (var i = 0; i < children.length; i++) {
+              var child = children[i];
+              if (child !== null && child !== undefined && typeof child === 'object' && !Array.isArray(child) && typeof child.$$typeof === 'undefined') {
+                var typeName = typeof type === 'string' ? type : (type && (type.displayName || type.name)) || 'unknown';
+                console.warn('[createElement-DEBUG] OBJECT CHILD detected!');
+                console.warn('[createElement-DEBUG] Component/element type:', typeName);
+                console.warn('[createElement-DEBUG] Object keys:', Object.keys(child));
+                console.warn('[createElement-DEBUG] Object value:', JSON.stringify(child).substring(0, 300));
+                console.warn('[createElement-DEBUG] Stack:', new Error('trace').stack.split('\n').slice(2, 8).join(' | '));
+              }
+            }
+            return orig.apply(this, arguments);
+          };
+          R.createElement.__patched = true;
+        }
+        // Try to patch after scripts load
+        window.addEventListener('load', function() {
+          setTimeout(function() {
+            if (window.React) patchReact(window.React);
+            // Also check any module-level React instances
+            Object.keys(window).forEach(function(k) {
+              try {
+                var v = window[k];
+                if (v && v.createElement && v.Component && !v.createElement.__patched) patchReact(v);
+              } catch (e) {}
+            });
+          }, 100);
+        });
+      })();
+      // ── React #31 debugger: extract EXACT object keys from error URL ──────────
+      (function() {
+        var origErr = console.error.bind(console);
+        console.error = function() {
+          try {
+            var args = Array.prototype.slice.call(arguments);
+            var first = args[0];
+            var errObj = first instanceof Error ? first : (first && typeof first === 'object' && first.message ? first : null);
+            var msg = errObj ? errObj.message : (typeof first === 'string' ? first : '');
+            if (msg && (msg.indexOf('#31') !== -1 || msg.indexOf('Objects are not valid') !== -1)) {
+              // Extract full URL with args
+              var urlMatch = msg.match(/https?:\/\/[^\s]+invariant=31[^\s]*/);
+              if (urlMatch) {
+                var fullUrl = urlMatch[0];
+                var argsMatch = fullUrl.match(/args\[\]=([^&\s"'`]+)/g) || [];
+                var decoded = argsMatch.map(function(a) {
+                  try { return decodeURIComponent(a.replace('args[]=','')); } catch(e) { return a; }
+                });
+                console.warn('[REACT31] FULL ERROR URL: ' + fullUrl);
+                console.warn('[REACT31] DECODED ARGS: ' + JSON.stringify(decoded));
+                console.warn('[REACT31] STACK (top 5):', (errObj && errObj.stack || new Error('').stack).split('\n').slice(1,6).join(' | '));
+              }
+            }
+          } catch (e) {}
+          return origErr.apply(console, arguments);
+        };
+        // Also catch via window.onerror
+        var prevOnError = window.onerror;
+        window.onerror = function(msg, src, line, col, err) {
+          if (err && err.message && err.message.indexOf('#31') !== -1) {
+            var urlMatch = err.message.match(/https?:\/\/[^\s]+invariant=31[^\s]*/);
+            if (urlMatch) {
+              var decoded = (urlMatch[0].match(/args\[\]=([^&\s"'`]+)/g)||[]).map(function(a) {
+                try { return decodeURIComponent(a.replace('args[]=','')); } catch(e) { return a; }
+              });
+              console.warn('[REACT31-ONERROR] DECODED: ' + JSON.stringify(decoded));
+            }
+          }
+          if (prevOnError) return prevOnError.apply(this, arguments);
+        };
+      })();
+
+      // ── Maestro Cloud fetch interceptor ──────────────────────────────────
+      // The app calls https://api.copilot.mobile.dev/v2/maestro-studio/* for auth.
+      // We intercept those calls and return fake data so the UI renders fully offline.
+      (function() {
+        var mockUser = {
+          id: 'qamind-local-user',
+          email: 'local@qamind.dev',
+          firstName: 'QAMind',
+          lastName: 'User',
+        };
+        var mockOrg = {
+          id: 'qamind-local-org',
+          name: 'QAMind Local',
+          orgStatus: 'ACTIVE',
+          metadata: {
+            pricing_plan: 'enterprise',
+            trial_expires_on: null,
+          },
+          plan: 'enterprise',
+          type: 'organization',
+        };
+        var mockResponses = {
+          '/maestro-studio/user':   mockUser,
+          '/maestro-studio/org':    mockOrg,
+          '/maestro-studio/orgs':   [mockOrg],
+          '/maestro-studio/apps':   [],
+          '/maestro-studio/projects': [],
+          '/maestro-studio/metadata': {},
+        };
+
+        var origFetch = window.fetch;
+        window.fetch = function(input, init) {
+          var url = typeof input === 'string' ? input : (input && input.url) || '';
+
+          // Intercept Maestro Cloud API calls
+          if (url.indexOf('api.copilot.mobile.dev') !== -1 || url.indexOf('api.mobile.dev') !== -1) {
+            // Extract just the path (strip query string) and match EXACTLY at end
+            // so /maestro-studio/org doesn't accidentally match /maestro-studio/orgs
+            var pathOnly = url.split('?')[0];
+            var matched = null;
+            var matchedKey = null;
+            for (var path in mockResponses) {
+              // Must end with the exact path (or path + /something)
+              if (pathOnly === path || pathOnly.endsWith(path) && !pathOnly.endsWith(path + 's')) {
+                // Prefer longer matches
+                if (matchedKey === null || path.length > matchedKey.length) {
+                  matched = mockResponses[path];
+                  matchedKey = path;
+                }
+              }
+            }
+            // Also try exact suffix match for any path
+            if (matchedKey === null) {
+              for (var path2 in mockResponses) {
+                var idx = pathOnly.lastIndexOf(path2);
+                if (idx !== -1 && idx + path2.length === pathOnly.length) {
+                  matched = mockResponses[path2];
+                  matchedKey = path2;
+                  break;
+                }
+              }
+            }
+            var responseBody = matched !== null ? JSON.stringify(matched) : '{}';
+            return Promise.resolve(new Response(responseBody, {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }));
+          }
+          return origFetch.apply(this, arguments);
+        };
+      })();
+
+      // ── require ──────────────────────────────────────────────────────────
+      if (typeof require === 'undefined') {
+        var _fsStore = {};
+
+        var _fsStub = {
+          existsSync: function() { return false; },
+          mkdirSync: function() {},
+          statSync: function() { return { isFile: function() { return false; }, isDirectory: function() { return true; } }; },
+          readFileSync: function(p) { return _fsStore[p] !== undefined ? _fsStore[p] : '{}'; },
+          writeFileSync: function(p, d) { _fsStore[p] = typeof d === 'string' ? d : String(d); },
+          writeFile: function(p, d, o, cb) { _fsStore[p] = d; (typeof o === 'function' ? o : cb)(null); },
+          open: function(p, f, m, cb) { (typeof m === 'function' ? m : cb)(null, 1); },
+          close: function(fd, cb) { if (cb) cb(null); },
+          write: function(fd, buf, off, len, pos, cb) { if (cb) cb(null, len, buf); },
+          rename: function(a, b, cb) { _fsStore[b] = _fsStore[a]; if (cb) cb(null); },
+          renameSync: function(a, b) { _fsStore[b] = _fsStore[a]; },
+          unlink: function(p, cb) { delete _fsStore[p]; if (cb) cb(null); },
+          unlinkSync: function(p) { delete _fsStore[p]; },
+          watch: function() { return { close: function() {} }; },
+          createWriteStream: function() { return { write: function() {}, end: function() {}, on: function() {} }; },
+        };
+
+        // Coerce to string — Electron's path module handles non-string inputs loosely
+        var _str = function(p) { return typeof p === 'string' ? p : (p == null ? '' : String(p)); };
+        var _pathStub = {
+          sep: '/',
+          delimiter: ':',
+          join: function() {
+            var parts = Array.from(arguments).map(_str).filter(Boolean);
+            return parts.join('/').replace(/\/+/g, '/');
+          },
+          resolve: function() {
+            var parts = Array.from(arguments).map(_str).filter(Boolean);
+            var joined = parts.join('/').replace(/\/+/g, '/');
+            return joined.startsWith('/') ? joined : '/' + joined;
+          },
+          dirname: function(p) {
+            var s = _str(p);
+            var idx = s.lastIndexOf('/');
+            return idx <= 0 ? '/' : s.substring(0, idx);
+          },
+          basename: function(p, ext) {
+            var s = _str(p);
+            var b = s.substring(s.lastIndexOf('/') + 1);
+            return ext && b.endsWith(_str(ext)) ? b.slice(0, -_str(ext).length) : b;
+          },
+          extname: function(p) {
+            var s = _str(p);
+            var m = s.match(/(\.[^./]+)$/);
+            return m ? m[1] : '';
+          },
+          normalize: function(p) { return _str(p).replace(/\/+/g, '/'); },
+          isAbsolute: function(p) { return _str(p).startsWith('/'); },
+          relative: function(a, b) { return _str(b); },
+          parse: function(p) {
+            var s = _str(p);
+            var base = s.substring(s.lastIndexOf('/') + 1);
+            var dir = s.substring(0, s.lastIndexOf('/')) || '/';
+            var extMatch = base.match(/(\.[^./]+)$/);
+            var ext = extMatch ? extMatch[1] : '';
+            var name = ext ? base.slice(0, -ext.length) : base;
+            return { root: '/', dir: dir, base: base, ext: ext, name: name };
+          },
+          format: function(o) {
+            o = o || {};
+            return (_str(o.dir) || '/') + '/' + _str(o.base);
+          },
+        };
+
+        window.require = function(mod) {
+          // process: key fix — qf = require('process'); qf.env.SNAP crashes if env is missing
+          if (mod === 'process') return window.process;
+
+          if (mod === 'electron' || mod === 'electron/renderer') {
+            // Per-channel IPC invoke responses — app is built for Electron IPC
+            var _ipcInvokeHandlers = {
+              // Editor / App Settings (truthy objects → app renders past spinners)
+              // Key name MUST be `autosaveEnabled` (matches bundle's Oyt default) — camelCase
+              // variants like `autoSave` are ignored and autosave stays off.
+              'get-editor-settings':       { autosaveEnabled: true, singleQuote: false },
+              'set-editor-settings':       true,
+              'set-autosave-enabled':      true,
+              'get-allow-prerelease':      false,
+              'set-allow-prerelease':      true,
+              'get-web-browser-enabled':   true,
+              'set-web-browser-enabled':   true,
+
+              // Server status (needs a truthy object with a status field)
+              'get-server-status':         { status: 'running', port: 8001 },
+              'start-server':              true,
+              'stop-server':               true,
+              'build-server':              true,
+              'restart-server':            true,
+
+              // Android SDK — empty string so validation doesn't crash
+              'get-android-sdk-path':      '',
+              'set-android-sdk-path':      true,
+              'validate-android-sdk':      { valid: false, message: 'skipped in browser' },
+
+              // Workspace / Files — real filesystem via daemon
+              'get-recent-workspaces':     [],
+
+              // Native folder picker → returns selected path string.
+              // Also announces the pick to the parent window so the QAMind
+              // project page can persist it on the project row (per-project
+              // workspace, instead of a single global localStorage value).
+              'create-workspace': function() {
+                return fetch('http://localhost:8001/api/maestro-studio/pick-directory')
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    var path = (d && d.path) ? d.path : null;
+                    if (path) {
+                      try { window.parent.postMessage({ type: 'qamind:workspace-picked', path: path }, '*'); } catch (e) {}
+                    }
+                    return path;
+                  })
+                  .catch(function() { return null; });
+              },
+              'open-workspace-invoke': function() {
+                return fetch('http://localhost:8001/api/maestro-studio/pick-directory')
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    var path = (d && d.path) ? d.path : null;
+                    if (path) {
+                      try { window.parent.postMessage({ type: 'qamind:workspace-picked', path: path }, '*'); } catch (e) {}
+                    }
+                    return path;
+                  })
+                  .catch(function() { return null; });
+              },
+
+              // File CRUD → real filesystem calls via daemon
+              'create-file': function(args) {
+                var a = (args && args[0]) || args || {};
+                return fetch('http://localhost:8001/api/maestro-studio/file/create', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: a.path || '', content: a.content || '' })
+                }).then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    // Refresh tree so the new file appears immediately under its folder.
+                    if (d && d.success && window.__qamindIpc) window.__qamindIpc.refreshWorkspace();
+                    return d;
+                  })
+                  .catch(function() { return { success: false }; });
+              },
+              'save-file': function(args) {
+                var a = (args && args[0]) || args || {};
+                return fetch('http://localhost:8001/api/maestro-studio/file/save', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: a.path || '', content: a.content || '' })
+                }).then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    // Announce the save so the parent QAMind project page can
+                    // re-sync test_cases.steps[] from the new YAML.
+                    if (d && d.success) {
+                      try {
+                        window.parent.postMessage({
+                          type: 'qamind:file-saved',
+                          path: a.path || '',
+                          content: a.content || '',
+                        }, '*');
+                      } catch (e) {}
+                    }
+                    return d;
+                  })
+                  .catch(function() { return { success: false }; });
+              },
+              'read-file': function(args) {
+                var path = (args && args[0]) || '';
+                return fetch('http://localhost:8001/api/maestro-studio/file/read?path=' + encodeURIComponent(path))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) { return d.content || ''; })
+                  .catch(function() { return ''; });
+              },
+              'load-file-content': function(args) {
+                var path = (args && args[0]) || '';
+                return fetch('http://localhost:8001/api/maestro-studio/file/read?path=' + encodeURIComponent(path))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) { return d.content || ''; })
+                  .catch(function() { return ''; });
+              },
+              'get-directory-contents': function(args) {
+                var path = (args && args[0]) || '';
+                return fetch('http://localhost:8001/api/maestro-studio/file/list?path=' + encodeURIComponent(path))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) { return d.tree ? [d.tree] : []; })
+                  .catch(function() { return []; });
+              },
+              'create-directory': function(args) {
+                var a = (args && args[0]) || args || {};
+                return fetch('http://localhost:8001/api/maestro-studio/file/create', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: (a.path||'') + '/.gitkeep', content: '' })
+                }).then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    if (d && d.success && window.__qamindIpc) window.__qamindIpc.refreshWorkspace();
+                    return d;
+                  })
+                  .catch(function() { return { success: false }; });
+              },
+              'delete-file-or-directory': function(args) {
+                var path = (args && (args.path || args[0])) || '';
+                return fetch('http://localhost:8001/api/maestro-studio/file/delete', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: path })
+                }).then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    if (d && d.success && window.__qamindIpc) window.__qamindIpc.refreshWorkspace();
+                    return d;
+                  })
+                  .catch(function() { return { success: false }; });
+              },
+              'rename-file-or-directory': function(args) {
+                var a = (args && args[0]) || args || {};
+                return fetch('http://localhost:8001/api/maestro-studio/file/rename', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ oldPath: a.oldPath || a.path || '', newPath: a.newPath || a.newName || '' })
+                }).then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    if (d && d.success && window.__qamindIpc) {
+                      window.__qamindIpc.refreshWorkspace();
+                    }
+                    return d;
+                  })
+                  .catch(function() { return { success: false }; });
+              },
+              'duplicate-file': function(args) {
+                // Bundle calls duplicate-file({sourcePath, destPath}) or ({path, newPath}).
+                // Implement as read+create so drag-with-Alt or "Duplicate" menu works.
+                var a = (args && args[0]) || args || {};
+                var src = a.sourcePath || a.source || a.path || a.oldPath || '';
+                var dst = a.destPath || a.newPath || a.target || '';
+                if (!src || !dst) return Promise.resolve({ success: false, error: 'missing path' });
+                return fetch('http://localhost:8001/api/maestro-studio/file/read?path=' + encodeURIComponent(src))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    return fetch('http://localhost:8001/api/maestro-studio/file/create', {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ path: dst, content: d.content || '' })
+                    }).then(function(r) { return r.json(); });
+                  })
+                  .catch(function(e) { return { success: false, error: String(e) }; });
+              },
+              'move': function(args) {
+                // Single-item drag-drop. Bundle sends {sourcePath, targetPath} or
+                // similar variations. Reuse move-files via single-item list.
+                var a = (args && args[0]) || args || {};
+                var src = a.sourcePath || a.source || a.oldPath || a.path || '';
+                var dst = a.targetPath || a.destPath || a.newPath || '';
+                if (src && a.targetDir && !dst) {
+                  var name = String(src).split('/').pop();
+                  dst = (a.targetDir.replace(/\/$/, '')) + '/' + name;
+                }
+                if (!src || !dst) {
+                  console.warn('[ipc] move: missing src/dst', a);
+                  return Promise.resolve({ success: false, error: 'missing path' });
+                }
+                return fetch('http://localhost:8001/api/maestro-studio/file/rename', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ oldPath: src, newPath: dst })
+                }).then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    if (d && d.success && window.__qamindIpc) {
+                      window.__qamindIpc.refreshWorkspace();
+                    }
+                    return d;
+                  })
+                  .catch(function(e) { return { success: false, error: String(e) }; });
+              },
+              'move-files': function(args) {
+                // Bundle invokes move-files with various shapes depending on whether the
+                // user drag-drops one or many items. Normalize to a list of rename ops.
+                var a = (args && args[0]) || args || {};
+                var ops = [];
+                if (Array.isArray(a)) {
+                  ops = a;
+                } else if (Array.isArray(a.files)) {
+                  // {files: [{oldPath, newPath}], targetDir?}
+                  ops = a.files;
+                } else if (Array.isArray(a.sources) && a.targetDir) {
+                  // {sources: [...], targetDir}
+                  ops = a.sources.map(function(p) {
+                    var name = String(p).split('/').pop();
+                    return { oldPath: p, newPath: (a.targetDir.replace(/\/$/, '')) + '/' + name };
+                  });
+                } else if (a.oldPath && a.newPath) {
+                  ops = [{ oldPath: a.oldPath, newPath: a.newPath }];
+                } else if (a.sourcePath && a.destPath) {
+                  ops = [{ oldPath: a.sourcePath, newPath: a.destPath }];
+                } else if (a.path && a.newPath) {
+                  ops = [{ oldPath: a.path, newPath: a.newPath }];
+                } else if (a.path && a.targetDir) {
+                  var name = String(a.path).split('/').pop();
+                  ops = [{ oldPath: a.path, newPath: (a.targetDir.replace(/\/$/, '')) + '/' + name }];
+                }
+                if (!ops.length) {
+                  console.warn('[ipc] move-files: unrecognized args shape', a);
+                  return Promise.resolve({ success: false, error: 'unrecognized args' });
+                }
+                return Promise.all(ops.map(function(op) {
+                  return fetch('http://localhost:8001/api/maestro-studio/file/rename', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ oldPath: op.oldPath, newPath: op.newPath })
+                  }).then(function(r) { return r.json(); })
+                    .catch(function(e) { return { success: false, error: String(e) }; });
+                })).then(function(results) {
+                  var allOk = results.every(function(r) { return r && r.success; });
+                  if (allOk && window.__qamindIpc) {
+                    window.__qamindIpc.refreshWorkspace();
+                  }
+                  return { success: allOk, results: results };
+                });
+              },
+              'directory-contents':        [],
+              'open-file':                 null,
+              'pick-app-file':             null,
+              'show-in-file-manager':      true,
+              'setup-file-watcher':        true,
+
+              // Window / App control
+              'window-minimize':           true,
+              'window-maximize':           true,
+              'window-close':              true,
+              'get-window-fullscreen-state': false,
+              'open-external':             true,
+              'open-about':                true,
+              'close-about-window':        true,
+              'show-message-box':          { response: 0 },
+              'app-control':               true,
+              'sync-user-context':         true,
+              'get-app-version':           '0.0.0',
+
+              // Updates
+              'check-update':              { hasUpdate: false },
+              'start-download':            true,
+              'quit-and-install':          true,
+
+              // OAuth — return fake token starting with "rb_" to bypass sign-in screen
+              'oauth-get-cached-token':    'rb_qamind_local_dev_token',
+              'oauth-validate-token':      true,
+              'oauth-sign-in':             { success: true, token: 'rb_qamind_local_dev_token' },
+              'oauth-logout':              true,
+              'oauth-switch-org':          true,
+            };
+            // Channel listener registry — Electron's ipcRenderer.on/once/removeListener
+            // The Electron main process pushes file-system-data and directory-contents
+            // events that the renderer listens for. In the browser we dispatch them
+            // from within our send() handler after fetching from the daemon.
+            var _ipcListeners = {};
+            var _ipcOnceListeners = {};
+            var _ipcDispatch = function(channel) {
+              var args = Array.prototype.slice.call(arguments, 1);
+              var fakeEvent = { sender: { id: 1 }, senderId: 1 };
+              var fire = function(list) {
+                if (!list) return;
+                list.slice().forEach(function(fn) {
+                  try { fn.apply(null, [fakeEvent].concat(args)); }
+                  catch (e) { console.error('[ipc] listener error on ' + channel, e); }
+                });
+              };
+              fire(_ipcListeners[channel]);
+              var onceList = _ipcOnceListeners[channel];
+              if (onceList && onceList.length) {
+                _ipcOnceListeners[channel] = [];
+                fire(onceList);
+              }
+            };
+
+            // ── Electron send() handlers: fire-and-forget IPC that pushes data back
+            // via dispatcher. These mirror what the Electron main process does when
+            // the renderer asks to set up a file watcher or list a directory.
+            var _ipcSendHandlers = {
+              'setup-file-watcher': function(args) {
+                var path = args && args[0];
+                if (!path) return;
+                fetch('http://localhost:8001/api/maestro-studio/file/list?path=' + encodeURIComponent(path))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    // Electron's native behaviour: file-system-data payload is the workspace's
+                    // IMMEDIATE children (flat list), not the wrapping root. Dispatching the
+                    // wrapped root causes the bundle to compute new-file paths as
+                    // `<workspace>/<workspace-basename>/...`, creating a nested duplicate dir.
+                    var children = (d && d.tree && d.tree.children) ? d.tree.children : [];
+                    _ipcDispatch('file-system-data', children);
+                  })
+                  .catch(function(e) {
+                    console.error('[ipc] setup-file-watcher failed', e);
+                    _ipcDispatch('file-system-data', []);
+                  });
+              },
+              'get-directory-contents': function(args) {
+                var path = args && args[0];
+                if (!path) return;
+                fetch('http://localhost:8001/api/maestro-studio/file/list?path=' + encodeURIComponent(path))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    var children = (d && d.tree && d.tree.children) ? d.tree.children : [];
+                    // Listener shape: (event, path, children)
+                    _ipcDispatch('directory-contents', path, children);
+                  })
+                  .catch(function(e) {
+                    console.error('[ipc] get-directory-contents failed', e);
+                    _ipcDispatch('directory-contents', path, []);
+                  });
+              },
+              'load-file-content': function(args) {
+                var path = args && args[0];
+                if (!path) return;
+                fetch('http://localhost:8001/api/maestro-studio/file/read?path=' + encodeURIComponent(path))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    var content = (d && typeof d.content === 'string') ? d.content : '';
+                    // Listener payload shape: { path, content }
+                    _ipcDispatch('file-content-loaded', { path: path, content: content });
+                  })
+                  .catch(function(e) {
+                    console.error('[ipc] load-file-content failed', e);
+                    _ipcDispatch('file-content-loaded', { path: path, content: '' });
+                  });
+              },
+              // The editor calls ipcRenderer.send('save-file', {path, content}) on autosave
+              // (fire-and-forget). Without this handler, edits never persisted to disk —
+              // VS Code open on the same file would show the old template.
+              // Also announces the save to the parent so test_cases.steps[]
+              // stay in sync with the YAML on disk.
+              'save-file': function(args) {
+                var a = (args && args[0]) || {};
+                if (!a.path) return;
+                fetch('http://localhost:8001/api/maestro-studio/file/save', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: a.path, content: a.content || '' })
+                }).then(function() {
+                  try {
+                    window.parent.postMessage({
+                      type: 'qamind:file-saved',
+                      path: a.path,
+                      content: a.content || '',
+                    }, '*');
+                  } catch (e) {}
+                }).catch(function(e) { console.error('[ipc] save-file send failed', e); });
+              },
+            };
+
+            // Expose dispatcher + workspace refresh so the QAMind "New file in
+            // folder" FAB can refresh the tree without reloading the iframe.
+            window.__qamindIpc = {
+              dispatch: _ipcDispatch,
+              refreshWorkspace: function(path) {
+                if (!path) {
+                  try { path = JSON.parse(localStorage.getItem('maestro-workspace-path') || 'null'); } catch (e) {}
+                }
+                if (!path) return;
+                fetch('http://localhost:8001/api/maestro-studio/file/list?path=' + encodeURIComponent(path))
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) {
+                    var children = (d && d.tree && d.tree.children) ? d.tree.children : [];
+                    _ipcDispatch('file-system-data', children);
+                    _ipcDispatch('directory-contents', path, children);
+                  });
+              },
+            };
+
+            return {
+              ipcRenderer: {
+                send: function(channel) {
+                  var extra = Array.prototype.slice.call(arguments, 1);
+                  var handler = _ipcSendHandlers[channel];
+                  if (handler) {
+                    try { handler(extra); } catch (e) { console.error('[ipc] send handler error', channel, e); }
+                  }
+                },
+                sendSync: function() { return null; },
+                invoke: function(channel) {
+                  // Collect extra args passed after the channel name
+                  var extraArgs = Array.prototype.slice.call(arguments, 1);
+                  if (Object.prototype.hasOwnProperty.call(_ipcInvokeHandlers, channel)) {
+                    var handler = _ipcInvokeHandlers[channel];
+                    // Support function handlers (e.g. file picker, real file ops)
+                    if (typeof handler === 'function') {
+                      try { return Promise.resolve(handler(extraArgs)); }
+                      catch (e) { return Promise.resolve(null); }
+                    }
+                    return Promise.resolve(handler);
+                  }
+                  // SAFE default: null
+                  return Promise.resolve(null);
+                },
+                on: function(channel, listener) {
+                  if (!_ipcListeners[channel]) _ipcListeners[channel] = [];
+                  _ipcListeners[channel].push(listener);
+                },
+                once: function(channel, listener) {
+                  if (!_ipcOnceListeners[channel]) _ipcOnceListeners[channel] = [];
+                  _ipcOnceListeners[channel].push(listener);
+                },
+                removeListener: function(channel, listener) {
+                  var list = _ipcListeners[channel];
+                  if (!list) return;
+                  var idx = list.indexOf(listener);
+                  if (idx !== -1) list.splice(idx, 1);
+                },
+              },
+              // ipcMain must be truthy: electron-store calls I0e() which does UQ && Z3 && I0e()
+              ipcMain: {
+                on: function() {}, once: function() {}, handle: function() {},
+                handleOnce: function() {}, removeHandler: function() {}, removeAllListeners: function() {},
+              },
+              nativeTheme: { shouldUseDarkColors: true },
+              app: {
+                getVersion: function() { return '0.0.0'; },
+                getPath: function() { return '/tmp'; },
+                getName: function() { return 'maestro-studio'; },
+                getAppPath: function() { return '/tmp'; },
+              },
+              shell: {
+                openExternal: function() {},
+                openPath: function() { return Promise.resolve(''); },
+              },
+              clipboard: { writeText: function() {}, readText: function() { return ''; } },
+              contextBridge: { exposeInMainWorld: function() {} },
+              crashReporter: { start: function() {} },
+            };
+          }
+
+          if (mod === 'fs' || mod === 'graceful-fs' || mod === 'original-fs') return _fsStub;
+          if (mod === 'path' || mod === 'path/posix') return _pathStub;
+
+          if (mod === 'os') {
+            return {
+              homedir: function() { return '/tmp'; },
+              tmpdir: function() { return '/tmp'; },
+              platform: function() { return 'darwin'; },
+              arch: function() { return 'arm64'; },
+              type: function() { return 'Darwin'; },
+              release: function() { return '0.0.0'; },
+              userInfo: function() { return { uid: 1000, gid: 1000, username: 'user', homedir: '/tmp', shell: '/bin/sh' }; },
+              EOL: '\n',
+              cpus: function() { return []; },
+              totalmem: function() { return 8 * 1024 * 1024 * 1024; },
+              freemem: function() { return 4 * 1024 * 1024 * 1024; },
+            };
+          }
+
+          if (mod === 'util') {
+            return {
+              promisify: function(fn) { return fn; },
+              inspect: function(v) { return String(v); },
+              inherits: function() {},
+              deprecate: function(fn) { return fn; },
+              format: function() { return Array.from(arguments).join(' '); },
+            };
+          }
+
+          if (mod === 'crypto') {
+            return {
+              randomBytes: function(n) { var b = new Uint8Array(n); crypto.getRandomValues(b); return b; },
+              createCipheriv: function() { return { update: function(d) { return d; }, final: function() { return ''; } }; },
+              createDecipheriv: function() { return { update: function(d) { return d; }, final: function() { return ''; } }; },
+              pbkdf2Sync: function(p, s, i, kl) { return new Uint8Array(kl); },
+            };
+          }
+
+          if (mod === 'events') {
+            return {
+              EventEmitter: function() { this._events = {}; },
+            };
+          }
+
+          // ajv runtime stubs (these appear in template literals as code strings, but stub anyway)
+          if (mod.startsWith('ajv') || mod.startsWith('@emotion')) {
+            return { default: function() {} };
+          }
+
+          return {};
+        };
+      }
+    </script>
+
+    <!-- QAMind flowStatus SSE consumer: auto-scroll editor to active line +
+         tab status dot. Wraps EventSource so we don't fight the bundle's own
+         SSE listener — the bundle still gets every event untouched. -->
+    <script>
+      (function() {
+        const OrigES = window.EventSource;
+        if (!OrigES || OrigES.__qamindWrapped) return;
+
+        let lastActiveLine = null;
+        let lastTabKey = null;
+
+        function findMonacoEditor() {
+          if (!window.monaco || !window.monaco.editor) return null;
+          const eds = window.monaco.editor.getEditors ? window.monaco.editor.getEditors() : [];
+          for (const ed of eds) {
+            try {
+              if (ed.getModel && ed.getModel() && ed.getDomNode && ed.getDomNode().offsetParent) return ed;
+            } catch (e) {}
+          }
+          return eds[0] || null;
+        }
+
+        function autoScroll(line) {
+          if (!line || line === lastActiveLine) return;
+          lastActiveLine = line;
+          const ed = findMonacoEditor();
+          if (!ed) return;
+          try { ed.revealLineInCenterIfOutsideViewport(line, 1); } catch (e) {}
+        }
+
+        function updateTabDot(filepath, flowStatus) {
+          if (!filepath || (flowStatus !== 'COMPLETED' && flowStatus !== 'FAILED')) return;
+          const key = filepath + '|' + flowStatus;
+          if (key === lastTabKey) return;
+          lastTabKey = key;
+
+          const filename = filepath.split('/').pop();
+          if (!filename) return;
+
+          const candidates = document.querySelectorAll(
+            '[role="tab"], button[class*="tab" i], [class*="EditorTab"], div[class*="tab" i]'
+          );
+          const matches = [];
+          candidates.forEach(el => {
+            const txt = (el.textContent || '').trim();
+            if (txt && txt.indexOf(filename) !== -1) matches.push(el);
+          });
+          if (matches.length === 0) return;
+          matches.sort((a, b) => (a.textContent || '').length - (b.textContent || '').length);
+          const tab = matches[0];
+
+          const color = flowStatus === 'COMPLETED' ? '#22c55e' : '#ef4444';
+          let dot = tab.querySelector('.qamind-tab-status-dot');
+          if (!dot) {
+            dot = document.createElement('span');
+            dot.className = 'qamind-tab-status-dot';
+            dot.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;flex-shrink:0;box-shadow:0 0 6px currentColor;';
+            tab.insertBefore(dot, tab.firstChild);
+          }
+          dot.style.background = color;
+          dot.style.color = color;
+          dot.title = flowStatus === 'COMPLETED' ? 'Last run: PASS' : 'Last run: FAIL';
+        }
+
+        // ── Status banner ─────────────────────────────────────────────────
+        // Overlay shown on top of the device-screen area while a flow is
+        // running. The bundle's generic "Let's get you back on track" popup
+        // hides the real error from the SSE — this surfaces it so the user
+        // can diagnose Run Test failures without opening the daemon log.
+        let banner = null;
+        let bannerHideTimer = null;
+
+        function ensureBanner() {
+          if (banner) return banner;
+          banner = document.createElement('div');
+          banner.id = 'qm-flow-banner';
+          // Bottom-center, above the bundle's footer (Run Test / Run All Tests
+          // controls). RUNNING is a slim single-line pill; FAILED expands
+          // upward to fit the stack trace + copy button.
+          banner.style.cssText = 'position:fixed;bottom:72px;left:50%;transform:translateX(-50%);z-index:99996;min-width:320px;max-width:min(640px, 80vw);padding:10px 14px;border-radius:10px;font-family:system-ui,sans-serif;font-size:12px;line-height:1.45;color:#fff;background:#1c1f24;border:1px solid #3a3f47;box-shadow:0 8px 32px rgba(0,0,0,0.6);transition:opacity .25s, transform .25s;opacity:0;pointer-events:none;';
+          banner.innerHTML =
+            '<div style="display:flex;align-items:center;gap:10px;">' +
+              '<div id="qm-fb-head" style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;flex-shrink:0;"></div>' +
+              '<div id="qm-fb-step" style="color:#cbd5e1;font-family:ui-monospace,monospace;font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>' +
+              '<button id="qm-fb-close" title="Fechar" style="display:none;background:transparent;border:0;color:#9aa0a6;cursor:pointer;font-size:16px;line-height:1;padding:0 2px;flex-shrink:0;">×</button>' +
+            '</div>' +
+            '<div id="qm-fb-err-wrap" style="display:none;margin-top:10px;">' +
+              '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;">' +
+                '<span style="color:#fca5a5;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Erro do Maestro</span>' +
+                '<button id="qm-fb-copy" style="padding:4px 10px;background:#5b8def;color:#fff;border:0;border-radius:4px;cursor:pointer;font-size:11px;font-weight:500;display:inline-flex;align-items:center;gap:4px;">📋 Copiar</button>' +
+              '</div>' +
+              '<pre id="qm-fb-err" style="margin:0;padding:10px;background:#0f1115;border:1px solid #3a3f47;border-radius:6px;color:#fca5a5;font-family:ui-monospace,monospace;font-size:11px;line-height:1.4;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto;"></pre>' +
+            '</div>';
+          document.body.appendChild(banner);
+
+          const closeBtn = banner.querySelector('#qm-fb-close');
+          closeBtn.onclick = () => { banner.style.opacity = '0'; banner.style.pointerEvents = 'none'; };
+
+          const copyBtn = banner.querySelector('#qm-fb-copy');
+          copyBtn.onclick = async () => {
+            const text = banner.querySelector('#qm-fb-err').textContent || '';
+            try {
+              await navigator.clipboard.writeText(text);
+              copyBtn.textContent = '✓ Copiado';
+              copyBtn.style.background = '#22c55e';
+              setTimeout(() => {
+                copyBtn.textContent = '📋 Copiar';
+                copyBtn.style.background = '#5b8def';
+              }, 1500);
+            } catch (e) {
+              // Clipboard API may be blocked in iframe — fall back to selection.
+              const r = document.createRange();
+              r.selectNodeContents(banner.querySelector('#qm-fb-err'));
+              const sel = window.getSelection();
+              sel.removeAllRanges();
+              sel.addRange(r);
+              copyBtn.textContent = 'Selecionado · Cmd+C';
+              setTimeout(() => { copyBtn.textContent = '📋 Copiar'; }, 2000);
+            }
+          };
+          return banner;
+        }
+
+        function paintBanner(state) {
+          const el = ensureBanner();
+          const head = el.querySelector('#qm-fb-head');
+          const stepEl = el.querySelector('#qm-fb-step');
+          const errWrap = el.querySelector('#qm-fb-err-wrap');
+          const errEl = el.querySelector('#qm-fb-err');
+          const closeBtn = el.querySelector('#qm-fb-close');
+
+          const dotColor =
+            state.status === 'FAILED' ? '#ef4444' :
+            state.status === 'COMPLETED' ? '#22c55e' :
+            '#fbbf24';
+          const label =
+            state.status === 'FAILED' ? 'Teste falhou' :
+            state.status === 'COMPLETED' ? 'Teste concluído' :
+            state.spinner ? 'Iniciando teste…' : 'Executando…';
+
+          head.innerHTML =
+            '<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + dotColor + ';box-shadow:0 0 10px ' + dotColor + ';' + (state.status === 'RUNNING' ? 'animation:qmpulse 1.2s ease-in-out infinite;' : '') + '"></span>' +
+            '<span>' + label + (state.stepIdx >= 0 && state.totalSteps ? ' · passo ' + (state.stepIdx + 1) + '/' + state.totalSteps : '') + '</span>';
+          stepEl.textContent = state.stepText || '';
+          if (state.error) {
+            errWrap.style.display = 'block';
+            errEl.textContent = state.error;
+          } else {
+            errWrap.style.display = 'none';
+            errEl.textContent = '';
+          }
+          el.style.opacity = '1';
+
+          if (bannerHideTimer) { clearTimeout(bannerHideTimer); bannerHideTimer = null; }
+
+          if (state.status === 'COMPLETED') {
+            // Auto-hide success; allow click-to-dismiss too.
+            closeBtn.style.display = 'inline-block';
+            el.style.pointerEvents = 'auto';
+            bannerHideTimer = setTimeout(() => { if (banner) { banner.style.opacity = '0'; banner.style.pointerEvents = 'none'; } }, 5000);
+          } else if (state.status === 'FAILED') {
+            // Keep visible until user dismisses.
+            closeBtn.style.display = 'inline-block';
+            el.style.pointerEvents = 'auto';
+          } else {
+            // RUNNING — non-interactive, no close button.
+            closeBtn.style.display = 'none';
+            el.style.pointerEvents = 'none';
+          }
+        }
+
+        // Inject keyframes once
+        if (!document.getElementById('qm-pulse-kf')) {
+          const st = document.createElement('style');
+          st.id = 'qm-pulse-kf';
+          st.textContent = '@keyframes qmpulse{0%,100%{transform:scale(1);opacity:1;}50%{transform:scale(1.25);opacity:.6;}}';
+          document.head.appendChild(st);
+        }
+
+        // Track which filepaths have already had a `flow-started` posted so
+        // we don't emit one on every SSE heartbeat (only on the first event
+        // that carries a usable filepath).
+        const announcedStartFor = new Set();
+
+        // Auto-scroll the bundle's bottom progress list to keep the running
+        // step in view. The bundle renders each step as a row containing
+        // strings like "Tap on id: ...", "Assert that ... is visible",
+        // "Input text ...". We locate the Nth such row that matches the
+        // current `commandStatuses` index and `scrollIntoView()` it.
+        let lastScrolledIdx = -1;
+        function scrollBundleProgressTo(idx, totalSteps) {
+          if (idx < 0 || idx === lastScrolledIdx) return;
+          // Heuristic: bundle progress rows always contain a leading check/x
+          // glyph + a description starting with one of these verbs.
+          const allRows = document.querySelectorAll('div, li, tr');
+          const rows = [];
+          for (const el of allRows) {
+            // Skip if it has interactive descendants — these are typically
+            // wrapper containers, not the row itself.
+            const txt = (el.textContent || '').trim();
+            if (!txt) continue;
+            if (txt.length > 200) continue; // too long to be a single step row
+            // Match plain-text step rows from `commandStatuses[i].description`
+            if (/^(Tap on|Assert that|Input text|Launch app|Press key|Scroll|Back|Wait|Hide keyboard|Swipe|Take screenshot|Run flow|Run script)/i.test(txt)
+                && el.children.length <= 4 /* avoid nesting */) {
+              rows.push(el);
+            }
+          }
+          // De-dup parents whose first child is also a match (keep the leaf).
+          const leaves = rows.filter(r => !rows.some(o => o !== r && r.contains(o)));
+          if (idx < leaves.length) {
+            try {
+              leaves[idx].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+              lastScrolledIdx = idx;
+            } catch (e) {}
+          }
+        }
+
+        function handleSse(data) {
+          if (!data) return;
+          const cs = data.commandStatuses || [];
+          const lines = data.qamindStartLines || [];
+          let idx = -1;
+          for (let i = 0; i < cs.length; i++) {
+            if (cs[i] && cs[i].status === 'FAILED') { idx = i; break; }
+          }
+          if (idx === -1) {
+            for (let i = cs.length - 1; i >= 0; i--) {
+              if (cs[i] && cs[i].status === 'RUNNING') { idx = i; break; }
+            }
+          }
+          if (idx >= 0 && idx < lines.length) autoScroll(lines[idx]);
+          updateTabDot(data.filepath, data.flowStatus);
+
+          // First RUNNING event with a usable filepath → announce start to parent.
+          if (data.flowStatus === 'RUNNING' && data.filepath && !announcedStartFor.has(data.filepath)) {
+            announcedStartFor.add(data.filepath);
+            try {
+              window.parent.postMessage({
+                type: 'qamind:flow-started',
+                filepath: data.filepath,
+              }, '*');
+            } catch (e) {}
+          }
+
+          // Keep the bundle's progress list focused on the running step.
+          if (idx >= 0) scrollBundleProgressTo(idx, cs.length);
+          // Reset cursor when flow ends so the next run starts fresh
+          if (data.flowStatus === 'COMPLETED' || data.flowStatus === 'FAILED') {
+            lastScrolledIdx = -1;
+            announcedStartFor.delete(data.filepath || '');
+            // Tell the parent window (QAMind project page) that a flow finished
+            // so it can update the test_cases row's last_run_at + status. The
+            // bundle can't write to Supabase directly (no creds), so the parent
+            // matches by filepath basename within the current project.
+            try {
+              window.parent.postMessage({
+                type: 'qamind:flow-finished',
+                filepath: data.filepath || '',
+                flowStatus: data.flowStatus,
+                error: data.error || '',
+                stepCount: (data.commandStatuses || []).length,
+              }, '*');
+            } catch (e) {}
+          }
+
+          // Live banner — shows phase + real error
+          const activeCs = idx >= 0 ? cs[idx] : null;
+          const stepText = activeCs ? (activeCs.description || activeCs.command || '') : (data.output || '');
+          paintBanner({
+            status: data.flowStatus || 'RUNNING',
+            spinner: data.flowStatus === 'RUNNING' && cs.length === 0,
+            stepIdx: idx,
+            totalSteps: cs.length || (lines && lines.length) || 0,
+            stepText: stepText,
+            error: data.error || '',
+          });
+        }
+
+        function WrappedES(url, opts) {
+          const es = new OrigES(url, opts);
+          if (typeof url === 'string' && url.indexOf('/flowStatus/sse') !== -1) {
+            es.addEventListener('message', (e) => {
+              try { handleSse(JSON.parse(e.data)); } catch (err) {}
+            });
+          }
+          return es;
+        }
+        WrappedES.prototype = OrigES.prototype;
+        ['CONNECTING', 'OPEN', 'CLOSED'].forEach(k => { WrappedES[k] = OrigES[k]; });
+        Object.defineProperty(WrappedES, '__qamindWrapped', { value: true });
+        window.EventSource = WrappedES;
+      })();
+    </script>
+
+    <!-- QAMind: "New file in folder" FAB. The bundled file tree only exposes
+         a single root-level "+" button. This adds a floating button that lets
+         the user pick any folder (from the cached workspace list) and creates
+         a file inside it via the same create-file IPC. -->
+    <script>
+      (function() {
+        const DAEMON = 'http://localhost:8001';
+        let workspaceTree = null;
+
+        async function refreshTree() {
+          try {
+            const wsRaw = localStorage.getItem('maestro-workspace-path');
+            if (!wsRaw) return;
+            const ws = JSON.parse(wsRaw);
+            if (!ws) return;
+            const r = await fetch(DAEMON + '/api/maestro-studio/file/list?path=' + encodeURIComponent(ws));
+            const d = await r.json();
+            workspaceTree = d.tree || null;
+          } catch (e) {}
+        }
+
+        function listFolders() {
+          const out = [];
+          function walk(node, depth) {
+            if (!node || node.type !== 'directory') return;
+            out.push({ path: node.path, label: '  '.repeat(depth) + (node.name || node.path.split('/').pop() || '/') });
+            (node.children || []).forEach(c => walk(c, depth + 1));
+          }
+          walk(workspaceTree, 0);
+          return out;
+        }
+
+        function openDialog() {
+          refreshTree();
+          const folders = listFolders();
+          if (!folders.length) {
+            alert('Selecione um workspace primeiro.');
+            return;
+          }
+
+          const backdrop = document.createElement('div');
+          backdrop.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:99998;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;';
+
+          const card = document.createElement('div');
+          card.style.cssText = 'background:#1c1f24;color:#e8eaed;border:1px solid #2e3236;border-radius:8px;padding:18px 20px;min-width:380px;max-width:560px;box-shadow:0 12px 40px rgba(0,0,0,0.6);';
+          card.innerHTML =
+            '<div style="font-size:14px;font-weight:600;margin-bottom:12px;">Novo arquivo de teste</div>' +
+            '<label style="display:block;font-size:11px;color:#9aa0a6;margin-bottom:4px;">Pasta</label>' +
+            '<select id="qm-nf-dir" style="width:100%;padding:7px 9px;background:#15171a;color:#e8eaed;border:1px solid #2e3236;border-radius:4px;font-family:ui-monospace,monospace;font-size:12px;margin-bottom:12px;"></select>' +
+            '<label style="display:block;font-size:11px;color:#9aa0a6;margin-bottom:4px;">Nome do arquivo</label>' +
+            '<input id="qm-nf-name" type="text" placeholder="login.yaml" style="width:100%;padding:7px 9px;background:#15171a;color:#e8eaed;border:1px solid #2e3236;border-radius:4px;font-family:ui-monospace,monospace;font-size:12px;margin-bottom:16px;">' +
+            '<div style="display:flex;justify-content:flex-end;gap:8px;">' +
+              '<button id="qm-nf-cancel" style="padding:7px 14px;background:transparent;color:#e8eaed;border:1px solid #2e3236;border-radius:4px;cursor:pointer;font-size:12px;">Cancelar</button>' +
+              '<button id="qm-nf-ok" style="padding:7px 14px;background:#5b8def;color:#fff;border:0;border-radius:4px;cursor:pointer;font-size:12px;font-weight:500;">Criar</button>' +
+            '</div>';
+          backdrop.appendChild(card);
+          document.body.appendChild(backdrop);
+
+          const sel = card.querySelector('#qm-nf-dir');
+          folders.forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f.path;
+            opt.textContent = f.label;
+            sel.appendChild(opt);
+          });
+
+          const close = () => backdrop.remove();
+          card.querySelector('#qm-nf-cancel').onclick = close;
+          backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+
+          const nameInput = card.querySelector('#qm-nf-name');
+          nameInput.focus();
+
+          const create = async () => {
+            const dir = sel.value;
+            let name = (nameInput.value || '').trim();
+            if (!name) return nameInput.focus();
+            if (!/\.(ya?ml)$/i.test(name)) name += '.yaml';
+            const fullPath = dir.replace(/\/$/, '') + '/' + name;
+            try {
+              const r = await fetch(DAEMON + '/api/maestro-studio/file/create', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: fullPath, content: 'appId: br.com.foxbit.foxbitandroid\n---\n- launchApp:\n    clearState: true\n' })
+              });
+              const d = await r.json();
+              if (!d.success) { alert('Erro: ' + (d.error || 'desconhecido')); return; }
+              close();
+              if (window.__qamindIpc && window.__qamindIpc.refreshWorkspace) {
+                window.__qamindIpc.refreshWorkspace();
+              }
+            } catch (e) {
+              alert('Falha ao criar: ' + e);
+            }
+          };
+          card.querySelector('#qm-nf-ok').onclick = create;
+          nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') create(); });
+        }
+
+        function mountFab() {
+          if (document.getElementById('qm-newfile-fab')) return;
+          const fab = document.createElement('button');
+          fab.id = 'qm-newfile-fab';
+          fab.title = 'Novo arquivo em pasta';
+          fab.textContent = '+ Arquivo em pasta';
+          fab.style.cssText = 'position:fixed;bottom:18px;right:18px;padding:9px 14px;background:#5b8def;color:#fff;border:0;border-radius:20px;cursor:pointer;font-family:system-ui,sans-serif;font-size:12px;font-weight:500;box-shadow:0 4px 16px rgba(0,0,0,0.4);z-index:99997;';
+          fab.onmouseenter = () => { fab.style.background = '#6f9bf2'; };
+          fab.onmouseleave = () => { fab.style.background = '#5b8def'; };
+          fab.onclick = openDialog;
+          document.body.appendChild(fab);
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', mountFab);
+        } else {
+          mountFab();
+        }
+        // Re-mount if the React app remounts the body
+        new MutationObserver(mountFab).observe(document.documentElement, { childList: true, subtree: false });
+      })();
+    </script>
+
+    <!-- QAMind: parent-window bridge. Lets the QAMind project page read which
+         file is open in the editor (postMessage 'qamind:get-active-file') and
+         persist that as a test_case row without copy-pasting. -->
+    <script>
+      (function() {
+        const DAEMON = 'http://localhost:8001';
+
+        async function getActiveFile() {
+          try {
+            const activePath = JSON.parse(localStorage.getItem('maestro-active-tab') || 'null');
+            if (!activePath || typeof activePath !== 'string') return null;
+            const r = await fetch(DAEMON + '/api/maestro-studio/file/read?path=' + encodeURIComponent(activePath));
+            const d = await r.json();
+            return { path: activePath, name: activePath.split('/').pop(), content: d.content || '' };
+          } catch (e) {
+            return null;
+          }
+        }
+
+        window.addEventListener('message', async (e) => {
+          const msg = e.data;
+          if (!msg || typeof msg !== 'object') return;
+          if (msg.type === 'qamind:get-active-file') {
+            const file = await getActiveFile();
+            (e.source || window.parent).postMessage(
+              { type: 'qamind:active-file', requestId: msg.requestId, file },
+              e.origin || '*'
+            );
+          }
+        });
+
+        // Announce ready so parent knows the bridge is live
+        try {
+          window.parent.postMessage({ type: 'qamind:bridge-ready' }, '*');
+        } catch (e) {}
+      })();
+    </script>
+
+    <script type="module" crossorigin src="./assets/index-UODQPoio.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/vendor-Bf6NDVRq.js">
+    <link rel="modulepreload" crossorigin href="./assets/ui-BTdxILdH.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-WLtyZKa4.css">
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- ───────────────────────────────────────────────────────────────────
+         QAMind real-time preview patch.
+
+         The bundle gates the device-screen <img> repaint on the `elements`
+         array changing (compiled: `!isEqual(u.elements.filter(bounds), ...)`),
+         so a screenshot-only change never repaints. During a flow run the
+         daemon pauses the uiautomator dump (elements stay constant), so the
+         preview FREEZES and only catches up when the run ends — even though
+         the daemon delivers fresh frames in real time the whole time
+         (verified end-to-end with Playwright instrumentation).
+
+         This script opens its OWN EventSource to the deviceScreen SSE and
+         writes each fresh frame straight to the preview <img>.src, bypassing
+         React's gated state. It is purely additive: the bundle's own SSE keeps
+         driving element highlights / the inspector; we only force the image to
+         stay current. Re-queries the <img> every frame so it survives React
+         remounts, and reconnects if the stream drops.
+         ─────────────────────────────────────────────────────────────────── -->
+    <script>
+      (function () {
+        if (window.__qamindLivePreview) return;
+        window.__qamindLivePreview = true;
+        window.__qamindRecv = 0;
+        window.__qamindPainted = 0;
+
+        function findImg() {
+          var img = document.querySelector('img[alt="screenshot"]');
+          if (img) return img;
+          // Fallback: the largest <img> on screen is the device preview.
+          var best = null, area = 0;
+          document.querySelectorAll("img").forEach(function (el) {
+            var a = el.clientWidth * el.clientHeight;
+            if (a > area) { area = a; best = el; }
+          });
+          return best;
+        }
+
+        function paint(b64) {
+          if (!b64) return;
+          var img = findImg();
+          if (img) { img.src = "data:image/jpeg;base64," + b64; window.__qamindPainted++; }
+        }
+
+        // Hook the bundle's OWN deviceScreen EventSource (reuses its correct
+        // instanceId and reliable frame stream) and paint each frame straight
+        // to the <img>, bypassing React's elements-gated repaint. This classic
+        // body script runs before the deferred module bundle, so our wrapper is
+        // in place when the bundle calls `new EventSource(...)`.
+        var Orig = window.EventSource;
+        if (!Orig) return;
+        function Wrapped(url, opts) {
+          var es = new Orig(url, opts);
+          try {
+            if (String(url).indexOf("deviceScreen") !== -1) {
+              es.addEventListener("message", function (e) {
+                window.__qamindRecv++;
+                try { var d = JSON.parse(e.data); paint(d && d.screenshot); } catch (err) {}
+              });
+            }
+          } catch (err) {}
+          return es;
+        }
+        Wrapped.prototype = Orig.prototype;
+        ["CONNECTING", "OPEN", "CLOSED"].forEach(function (k) { try { Wrapped[k] = Orig[k]; } catch (e) {} });
+        window.EventSource = Wrapped;
+      })();
+    </script>
+  </body>
+</html>

@@ -93,8 +93,10 @@ flows/**/Gravado*.yaml
 flows/**/*Recorder*.yaml
 flows/**/*Gracvado*.yaml
 
-# Maestro Studio frontend extraido do .asar em runtime (~50MB, regenerado)
-apps/web/public/maestro-studio/
+# Maestro Studio frontend (extraido do .asar + patchado para localhost:8001/mss).
+# VERSIONADO de proposito: e um artefato pre-buildado sem step de build neste
+# repo, e precisa ir junto na imagem Docker do web — senao /maestro-studio/
+# da 404 em producao (so existiria na maquina de quem extraiu localmente).
 
 # Maestro CLI clonado para referencia (~100MB) — fica local, nao em git
 Maestro/

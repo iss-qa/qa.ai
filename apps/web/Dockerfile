@@ -54,9 +54,9 @@ COPY packages/shared ./packages/shared
 
 RUN pnpm --filter web build
 
-# Garante que apps/web/public exista mesmo quando o unico conteudo
-# (maestro-studio/) esta git/docker-ignored — o estagio runner faz COPY desse
-# diretorio e o build falha com "not found" se ele nao existir.
+# Rede de seguranca: garante que apps/web/public exista para o COPY do runner
+# nao falhar. O conteudo real (maestro-studio/ patchado) agora e versionado e
+# entra via "COPY apps/web ./apps/web" acima — ver .gitignore/.dockerignore.
 RUN mkdir -p apps/web/public
 
 # ----- Stage 3: runner (imagem final, minima) -----

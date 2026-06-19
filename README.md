@@ -258,6 +258,21 @@ Veja o guia passo-a-passo em [docs/DEPLOY.md](docs/DEPLOY.md). Resumo:
 
 O `apps/daemon` (Python, controle de Android) **não vai para a VPS** — continua local. Só `apps/web` + `apps/api` rodam em produção.
 
+### Maestro Studio em produção (`qamind.issqa.com.br`)
+
+O Maestro Studio **funciona em produção**, mas exige que o **daemon esteja rodando na mesma máquina do navegador**. O frontend do Studio é servido pelo web (em `/maestro-studio/`), porém todas as chamadas de dispositivo/arquivo apontam para `http://localhost:8001` (o daemon local). Funciona mesmo a página sendo HTTPS porque o navegador trata `http://localhost` como *secure context* (sem bloqueio de mixed-content), e o CORS do daemon já libera `https://qamind.issqa.com.br` ([apps/daemon/main.py](apps/daemon/main.py)).
+
+**Para usar o Studio em produção:**
+
+1. Clone este repositório na sua máquina.
+2. Rode `./start.sh` (sobe o daemon na porta `8001`).
+3. Conecte um dispositivo Android via USB (`adb devices` deve listá-lo).
+4. Abra `https://qamind.issqa.com.br`, entre no projeto e clique em abrir o **Maestro Studio**.
+
+> Se aparecer **404** ("This page could not be found") ao abrir o Studio em produção, é sinal de que o bundle `apps/web/public/maestro-studio/` não chegou na imagem do web. Esse diretório é **versionado de propósito** (ver `.gitignore`/`.dockerignore`) — confirme que o último deploy incluiu esses arquivos.
+
+> **Limitação atual:** o endpoint do daemon é fixo (`localhost:8001`) dentro do bundle do Studio, então ele só fala com um daemon na **mesma máquina**. Acessar um daemon remoto (túnel/ngrok ou *device farm* da empresa) exige um patch no bundle — ver [docs/maestro-studio-device-farm.md](docs/maestro-studio-device-farm.md).
+
 ### Migrations Supabase
 
 Todos os arquivos `.sql` ficam em [supabase/migrations/](supabase/migrations/) com prefixo numérico de ordem. Aplicar no **SQL Editor** em ordem crescente:
