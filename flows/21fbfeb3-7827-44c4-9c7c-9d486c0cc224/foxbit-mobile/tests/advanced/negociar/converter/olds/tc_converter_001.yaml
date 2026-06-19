@@ -1,0 +1,29 @@
+# Gherkin: test-cases/advanced-flows/negociar/converter.feature
+# Scenario: TC_Converter_001 - Validate default labels and zero balances
+
+### ---
+#  Id: MB-1
+#  Name: Verify successful login
+#  Description: Login with valid credentials and assert correct success message
+### ---
+
+
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "_precondition_converter.yaml"
+- assertVisible: ${output.CONVERTER.textHeaderConverter}
+- assertVisible: ${output.CONVERTER.textVocePaga}
+- assertVisible: ${output.CONVERTER.textVoceRecebe}
+- assertVisible: ${output.CONVERTER.comboVocePaga}
+- assertVisible: ${output.CONVERTER.comboVoceRecebe}
+#- assertVisible:
+    text: ".*Saldo R$ 0,00.*"
+#- assertVisible:
+    text: ".*Saldo 0,00000000 BTC.*"
+#- assertVisible:
+    text: ".*R$ 0.*"
+#- assertVisible:
+    text: ".*0 BTC.*"
+- assertVisible:
+    text: "Converter tudo"
+    enabled: false

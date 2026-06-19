@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
     CheckCircle2, ChevronRight, Circle, Clock, FileCode2, FileSpreadsheet,
-    GitBranch, MinusCircle, MoreHorizontal, Plus, XCircle,
+    GitBranch, MinusCircle, MoreHorizontal, Plus, Trash2, XCircle,
 } from 'lucide-react';
 import type { CaseRunStatus, QAJourneyCase } from '@/types/qa-journey';
 import { formatRelativeTime, type SubflowTreeNode } from './helpers';
@@ -15,6 +15,7 @@ export interface SubflowBlockCallbacks {
     onAddChild: (parentSubflowId: string) => void;
     onAddDocument: (subflowId: string) => void;
     onImportCases: (subflowId: string) => void;    // importar casos de planilha
+    onRemoveCase: (case_: QAJourneyCase) => void;   // remover caso da jornada (com confirmação no pai)
 }
 
 // Bloco de um subfluxo: cabeçalho + casos + subfluxos filhos (recursivo).
@@ -72,6 +73,7 @@ export function SubflowBlock({
                             key={c.id}
                             case_={c}
                             onClick={() => cb.onOpenCase(c.id)}
+                            onRemove={() => cb.onRemoveCase(c)}
                         />
                     ))}
                     <button
@@ -139,35 +141,48 @@ export function SubflowBlock({
     );
 }
 
-function CaseRow({ case_, onClick }: { case_: QAJourneyCase; onClick: () => void }) {
+function CaseRow({ case_, onClick, onRemove }: { case_: QAJourneyCase; onClick: () => void; onRemove: () => void }) {
     const ran = case_.last_run_status && case_.last_run_status !== 'not_run';
     const when = formatRelativeTime(case_.last_run_at);
     const runLabel = RUN_LABEL[case_.last_run_status ?? 'not_run'];
     const isAuto = Boolean(case_.test_case_id);   // automatizado = caso com Maestro vinculado
+    // Wrapper relativo: o botão principal abre o detalhe; a lixeira (absoluta,
+    // visível no hover) remove o caso — botões irmãos, nunca aninhados.
     return (
-        <button
-            type="button"
-            onClick={onClick}
-            className="w-full text-left bg-background border border-border rounded-lg px-2.5 py-2 flex flex-col gap-1 hover:border-brand/40 transition-colors"
-        >
-            <div className="flex items-center gap-2">
-                <RunStatusIcon status={case_.last_run_status} />
-                <span className="text-xs text-foreground truncate flex-1">{case_.title}</span>
-                <span className={`text-[8px] font-bold uppercase rounded px-1 py-0.5 ${isAuto ? 'bg-green-500/15 text-green-500' : 'bg-blue-500/15 text-blue-400'}`}>
-                    {isAuto ? 'Auto' : 'Manual'}
-                </span>
-            </div>
-            {ran && (
-                <div className="flex items-center gap-2 pl-[22px] text-[10px]">
-                    <span className={`font-semibold ${runLabel.color}`}>{runLabel.text}</span>
-                    {when && (
-                        <span className="inline-flex items-center gap-0.5 text-muted-foreground">
-                            <Clock className="w-2.5 h-2.5" /> {when}
-                        </span>
-                    )}
+        <div className="group relative">
+            <button
+                type="button"
+                onClick={onClick}
+                className="w-full text-left bg-background border border-border rounded-lg pl-2.5 pr-8 py-2 flex flex-col gap-1 hover:border-brand/40 transition-colors"
+            >
+                <div className="flex items-center gap-2">
+                    <RunStatusIcon status={case_.last_run_status} />
+                    <span className="text-xs text-foreground truncate flex-1">{case_.title}</span>
+                    <span className={`text-[8px] font-bold uppercase rounded px-1 py-0.5 ${isAuto ? 'bg-green-500/15 text-green-500' : 'bg-blue-500/15 text-blue-400'}`}>
+                        {isAuto ? 'Auto' : 'Manual'}
+                    </span>
                 </div>
-            )}
-        </button>
+                {ran && (
+                    <div className="flex items-center gap-2 pl-[22px] text-[10px]">
+                        <span className={`font-semibold ${runLabel.color}`}>{runLabel.text}</span>
+                        {when && (
+                            <span className="inline-flex items-center gap-0.5 text-muted-foreground">
+                                <Clock className="w-2.5 h-2.5" /> {when}
+                            </span>
+                        )}
+                    </div>
+                )}
+            </button>
+            <button
+                type="button"
+                onClick={onRemove}
+                title="Remover caso da jornada"
+                aria-label="Remover caso da jornada"
+                className="absolute top-1.5 right-1.5 p-1 rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-danger hover:bg-danger/10 transition-all"
+            >
+                <Trash2 className="w-3.5 h-3.5" />
+            </button>
+        </div>
     );
 }
 

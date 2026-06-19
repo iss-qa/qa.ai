@@ -1,0 +1,41 @@
+appId: br.com.foxbit.foxbitandroid
+tags:
+  - stage
+---
+#- launchApp:
+#    clearState: true
+- runFlow: "../../../common/setup.yaml"
+- runScript: "../../../common/env.js"
+- runScript: "../../../pages/inicio.js"
+- runScript: "../../../pages/converter.js"
+
+- assertVisible:
+    id: bt_home_qa_negotiate
+- tapOn:
+    id: bt_home_qa_negotiate
+- assertVisible:
+    id: home_trade_type_sheet_convert
+- tapOn:
+    id: home_trade_type_sheet_convert
+- assertVisible:
+    id: bt_convert_input_info
+# Toca exatamente no "0" do R$ 0 para focar o input e abrir o teclado
+- tapOn:
+    point: "16%,25%"
+- assertVisible: "2"
+- longPressOn: "2"
+- assertVisible:
+    id: bt_convert_input_continue
+- doubleTapOn:
+    id: bt_convert_input_continue
+    delay: 100
+
+- assertVisible: Revise sua conversão
+- assertVisible:
+    id: card_convert_review_pay
+- assertVisible:
+    id: card_convert_review_receive
+- assertVisible:
+    id: bt_convert_review_confirm
+- tapOn:
+    point: "49%,92%"

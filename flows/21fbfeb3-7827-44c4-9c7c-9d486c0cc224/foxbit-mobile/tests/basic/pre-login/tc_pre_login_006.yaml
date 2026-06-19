@@ -1,0 +1,23 @@
+### ---
+#  Id: PRE-LOGIN-6
+#  Name: Validate BRL Tab
+#  Description: Validate coin list in BRL tab
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/login.js"
+- waitForAnimationToEnd:
+    timeout: 10000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_pre_login_inicial"
+- tapOn: 
+    id: ${output.LOGIN.abaBRL}
+- waitForAnimationToEnd:
+    timeout: 2000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_aba_brl"
+
+- assertVisible:
+    text: ".*Bitcoin.*"
+- runFlow: "../../common/scroll_coins.yaml"
+

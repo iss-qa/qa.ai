@@ -1,0 +1,16 @@
+# Gherkin: test-cases/advanced-flows/negociar/converter.feature - Scenario: TC_Converter_005 - Swap pay and receive currencies
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "_precondition_converter.yaml"
+- tapOn:
+    point: "540, 790"
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*Você paga.*"
+- assertVisible:
+    text: ".*Você recebe.*"
+- assertVisible:
+    text: ".*BTC.*"
+- assertVisible:
+    text: ".*BRL.*"

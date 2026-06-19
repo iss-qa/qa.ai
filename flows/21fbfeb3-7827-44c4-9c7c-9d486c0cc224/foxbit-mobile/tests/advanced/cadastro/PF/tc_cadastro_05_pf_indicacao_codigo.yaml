@@ -1,0 +1,197 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow:
+    when:
+      true: ${SKIP_LAUNCH != 'true'}
+    commands:
+      - clearState
+- runFlow: "../../../common/setup.yaml"
+- runScript: "../../../common/env.js"
+- runScript: "../../../pages/login.js"
+- runScript: "../../../pages/cadastro.js"
+
+- runScript:
+    file: "../../../common/generate_email.js"
+    env:
+      EMAIL_PREFIX: "automacao_pf_codigo"
+
+- waitForAnimationToEnd:
+    timeout: 10000
+
+# INICIO DO CADASTRO
+- tapOn:
+    id: ${output.LOGIN.botaoCriarConta}
+   
+- assertVisible:
+    text: ".*Crie sua conta..*"   
+
+- tapOn: "E-mail"
+- inputText: ${output.TEMP_EMAIL}
+
+- tapOn: "Crie uma senha"
+- inputText: ${output.TEMP_PASSWORD}
+- hideKeyboard
+
+# # Expandir e testar o input de código de indicação
+- tapOn: "Tenho um código de indicação"
+
+- assertVisible: "Tenho um código de indicação"
+- tapOn:
+    id: ${output.LOGIN.codigoIndicacao}
+- inputText: "F4JKA3AKCCRTAB"
+- hideKeyboard
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/conta_codigo_redigitado"
+
+- tapOn: "Ao criar a sua conta na Foxbit.*"
+- tapOn: "Continuar"
+
+- runFlow: "../../../advanced/cadastro/verify_email.yaml"
+
+- runScript:
+    file: "../../../common/wait.js"
+    env:
+      MS: 10000
+
+- assertVisible:
+    text: ".*Complete o cadastro..*"
+- assertVisible:
+    text: ".*Pessoas individuais Pessoa física.*"
+- assertVisible:
+    text: ".*Empresas Pessoa jurídica.*"
+- assertVisible:
+    text: ".*Continuar.*"
+
+- tapOn: "Pessoas individuais Pessoa física"
+- tapOn: "Continuar"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/dados_pessoais"
+- runScript: "../../../common/generate_user_data.js"
+
+# TELA DE INFORMACOES PESSOAIS
+- assertVisible:
+    text: ".*Informações pessoais.*"
+- tapOn: "Nome completo"
+- inputText: ${output.USER_NAME}
+- hideKeyboard
+
+- waitForAnimationToEnd:
+    timeout: 10000
+
+- tapOn: "CPF"
+- inputText: ${output.USER_CPF}
+- hideKeyboard
+
+- tapOn: "Dia"
+- inputText: "01"
+
+- tapOn: "Mês"
+- inputText: "09"
+
+- tapOn: "Ano"
+- inputText: "1995"
+- hideKeyboard
+
+- assertVisible:
+    text: ".*Continuar.*"
+- tapOn: "Continuar"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/dados_endereco"
+
+# TELA DE ENDERECO
+- assertVisible:
+    text: ".*Complete o cadastro..*"
+- assertVisible:
+    text: "Endereço"
+    index: 0
+
+- tapOn: "País de residência"
+- assertVisible:
+    text: ".*Brasil.*"
+- tapOn: "Brasil"
+
+- assertVisible:
+    text: "CEP"
+    index: 0
+
+- tapOn: "CEP"
+- inputText: "42739100"
+- hideKeyboard
+
+# Preenchimento automático de endereço
+# - tapOn: "Cidade"
+# - eraseText: 50
+# - inputText: "Lauro de Freitas"
+# - hideKeyboard
+
+# - tapOn: "Estado"
+# - tapOn: "Bahia"
+
+# - scroll
+
+# - tapOn: "Bairro"
+# - eraseText: 50
+# - inputText: "Itinga"
+# - hideKeyboard
+
+# - tapOn: "Endereço"
+# - eraseText: 50
+# - inputText: "Rua Cacule"
+# - hideKeyboard
+
+- tapOn: "Número"
+- inputText: "123"
+- hideKeyboard
+
+- tapOn: "Complemento"
+- inputText: "Apto 123"
+- hideKeyboard
+
+- tapOn:
+    text: "Como conheceu a Foxbit?"
+    index: 1
+- assertVisible:
+    text: ".*Google.*"
+- tapOn: "Google"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/conta_endereco_codigo"
+
+- assertVisible:
+    text: "Declaro para fins de comprovação de residência, sob as penas da Lei (art. 2º da Lei 7.115/83), que resido no endereço acima."
+    index: 0
+
+- tapOn:
+    text: "Declaro para fins de comprovação de residência, sob as penas da Lei (art. 2º da Lei 7.115/83), que resido no endereço acima."
+    index: 1
+
+- assertVisible:
+    text: ".*Todos os dados prestados serão validados. Inclua informações completas e verdadeiras..*"
+- tapOn: "Concluir"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/conta_concluir_codigo"
+
+# CONTA CRIADA JA DENTRO DA PLATAFORMA
+- assertVisible:
+    text: ".*Muito bem, sua conta foi criada com sucesso!.*"
+- assertVisible:
+    text: ".*Entrar na plataforma.*"
+- tapOn: "Entrar na plataforma"
+
+# Aguarda até 5 segundos caso o modal demore
+- runScript:
+    file: "../../../common/wait.js"
+    env:
+      MS: 5000
+
+# Se aparecer o botão "Close" (X da propaganta), ele clica nele
+- runFlow:
+    when:
+      visible: "Close"
+    commands:
+      - tapOn: "Close"
+
+- assertVisible:
+    text: "Início"
+    index: 1
+- assertVisible:
+    text: ".*Carteira.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/conta_inicio_codigo"

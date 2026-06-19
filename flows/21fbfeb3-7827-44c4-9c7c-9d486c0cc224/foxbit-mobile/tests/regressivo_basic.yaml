@@ -1,0 +1,31 @@
+appId: br.com.foxbit.foxbitandroid
+name: Regressivo Basic
+---
+# Realizar o login inicialmente
+- runFlow: "basic/login/tc_login_001.yaml"
+
+# Executar as demais suítes. O estado de login será mantido e reaproveitado
+- runFlow:
+    file: "basic/inicio/inicio.yaml"
+    env:
+      SKIP_LAUNCH: "true"
+      
+- runFlow:
+    file: "basic/markets/markets.yaml"
+    env:
+      SKIP_LAUNCH: "true"
+      
+- runFlow:
+    file: "basic/menu/menu.yaml"
+    env:
+      SKIP_LAUNCH: "true"
+      
+- runFlow:
+    file: "basic/wallet/wallet.yaml"
+    env:
+      SKIP_LAUNCH: "true"
+      
+- runFlow:
+    file: "basic/account/account.yaml"
+    env:
+      SKIP_LAUNCH: "true"

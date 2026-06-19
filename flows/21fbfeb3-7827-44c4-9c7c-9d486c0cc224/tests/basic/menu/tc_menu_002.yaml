@@ -1,0 +1,175 @@
+### ---
+#  Id: MENU-2
+#  Name: Menu navigation
+#  Description: Acessa cada item do menu e retorna pela seta
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/menu.js"
+- runScript: "../../pages/inicio.js"
+
+# Clicar na opcao MENU
+- tapOn:
+    id: ${output.MENU.tabMenu}
+
+- swipe:
+    direction: DOWN
+    waitToSettleTimeoutMs: 5000    
+# 1. Depositar
+- tapOn:
+    id: ${output.MENU.shortcutDepositar}
+- assertVisible: "Escolha uma moeda"
+- assertVisible: "Depositar"
+- tapOn:
+    id: ${output.MENU.buttonBack}
+- hideKeyboard
+
+# 2. Sacar
+- tapOn:
+    id: ${output.MENU.shortcutSacar}
+- assertVisible: "Escolha uma moeda"
+- assertVisible: "Sacar"
+- tapOn:
+    id: ${output.MENU.buttonBack}
+- hideKeyboard
+
+# 3. Livro de ofertas
+- tapOn:
+    id: ${output.MENU.shortcutLivroOfertas}
+# Tratar modal de cookies se aparecer
+- runFlow:
+    when:
+      visible: "Utilizamos cookies"
+    commands:
+      - tapOn: "Aceitar todos"
+
+# Scroll para ver o restante
+- runFlow: "../../helpers/menu_scroll_baixo_cima.yaml"
+
+- assertVisible: "Livro de Ofertas"
+- assertVisible: "Últimos trades"
+- tapOn:
+    id: ${output.MENU.buttonBack}
+- hideKeyboard
+
+# 4. Comprar
+- tapOn:
+    id: ${output.MENU.shortcutComprar}
+- assertVisible: "Escolha um mercado"
+- assertVisible: "Comprar"
+- tapOn:
+    id: ${output.MENU.buttonBack}
+- hideKeyboard
+
+# 5. Vender
+- tapOn:
+    id: ${output.MENU.shortcutVender}
+- assertVisible: "Escolha um mercado"
+- assertVisible: "Vender"
+- tapOn:
+    id: ${output.MENU.buttonBack}
+- hideKeyboard
+
+# 6. Histórico
+- tapOn:
+    id: ${output.MENU.shortcutHistorico}
+- assertVisible: "Meu Histórico"
+- assertVisible: "Transações"
+- assertVisible: "Ordens"
+- tapOn:
+    id: ${output.MENU.buttonBack}
+- hideKeyboard
+
+# 7. Compra Recorrente
+- tapOn:
+    id: ${output.MENU.shortcutCompraRecorrente}
+# Tratar modal de cookies se aparecer
+- runFlow:
+    when:
+      visible: "Utilizamos cookies"
+    commands:
+      - tapOn: "Aceitar todos"
+- assertVisible: "Compra Recorrente"
+- assertVisible: "Saldo aproximado da conta"
+- assertVisible: "Ver compras recorrentes ativas"
+- assertVisible: "Selecione uma moeda"
+- tapOn:
+    id: ${output.MENU.buttonBack}
+- hideKeyboard
+
+# 8. Carteiras inteligentes
+- tapOn:
+    id: ${output.MENU.shortcutCarteirasInteligentes}
+
+- tapOn:
+    point: "7%,7%"
+- hideKeyboard
+
+# - tapOn: // PENDENTE inserir ID
+#     id: ${output.MENU.buttonBack}
+
+# 9. Foxbit Earn
+- tapOn:
+    id: ${output.MENU.shortcutFoxbitEarn}
+- assertVisible: "Foxbit Earn"
+- assertVisible: "Meus Earns"
+- assertVisible: "Investimentos"
+- tapOn: 
+   id: ${output.MENU.buttonBack}
+- hideKeyboard
+
+- runFlow: "../../helpers/menu_scroll_baixo_cima.yaml"
+- tapOn:
+    id: ${output.MENU.shortcutCryptoAssets}
+# Tratar modal de cookies se aparecer
+- runFlow:
+    when:
+      visible: "Utilizamos cookies"
+    commands:
+      - tapOn: "Aceitar todos"
+- assertVisible: "Crypto Assets"
+- assertVisible: "Uma nova oportunidade para diversificar seu portfólio"
+- assertVisible: "Tokens"
+- tapOn:
+    id: ${output.MENU.buttonBack}
+- hideKeyboard    
+
+# # 11. Analista Cripto
+# - tapOn:
+#     id: ${output.MENU.shortcutAnalistaCripto}
+# - assertVisible: "Agora você tem um analista cripto que te acompanha em todo trade"
+# - tapOn:
+#     id: "com.android.chrome:id/close_button"
+# - hideKeyboard
+
+# 12. Foxbit VIP
+- tapOn:
+    id: ${output.MENU.shortcutFoxbitVIP}
+- assertVisible: "Foxbit VIP"
+- assertVisible:
+    id: "card_vip_current_level"
+- tapOn:
+    id: ${output.MENU.buttonBack}
+- hideKeyboard
+
+# 13. Indique amigos
+- tapOn:
+    id: ${output.MENU.shortcutIndiqueAmigos}
+# Tratar modal de cookies se aparecer
+- runFlow:
+    when:
+      visible: "Utilizamos cookies"
+    commands:
+      - tapOn: "Aceitar todos"
+- assertVisible: "Indique amigos"
+- assertVisible: "Geral"
+- assertVisible: "Ganhos"
+- tapOn:
+    id: ${output.MENU.buttonBack}
+- hideKeyboard
+
+# Retornar à home
+- tapOn:
+    id: ${output.INICIO.botaoInicio}

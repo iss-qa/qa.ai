@@ -1,0 +1,10 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "TC_Converter_000.yaml"
+- runFlow: "TC_Converter_001.yaml"
+- runFlow: "TC_Converter_002.yaml"
+- runFlow: "TC_Converter_003.yaml"
+- runFlow: "TC_Converter_004.yaml"
+- runFlow: "TC_Converter_005.yaml"
+- runFlow: "TC_Converter_006.yaml"
+- runFlow: "TC_Converter_007.yaml"

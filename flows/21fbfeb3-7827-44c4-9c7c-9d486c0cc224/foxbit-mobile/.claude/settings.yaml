@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.js$\")",
+      "Bash(pip install:*)",
+      "Bash(adb devices:*)",
+      "Bash(pip3 install:*)",
+      "Bash(python3 -c \"from PIL import Image; print\\('Pillow OK'\\)\")",
+      "Bash(chmod +x /Users/isaiassilva/development/projects/foxbit/foxbit-mobile/scripts/find_coordinates.sh)",
+      "Bash(bash scripts/find_coordinates.sh)",
+      "Bash(brew upgrade:*)",
+      "Bash(curl -Ls \"https://get.maestro.mobile.dev\")",
+      "Bash(bash)",
+      "Bash(brew uninstall:*)",
+      "Read(//Users/isaiassilva/.maestro/tests/2026-04-13_180312/**)",
+      "Bash(python3 scripts/map_elements.py --file /tmp/test_hierarchy.json --compare --name home)",
+      "Bash(chmod +x /Users/isaiassilva/development/projects/foxbit/foxbit-mobile/scripts/map_elements.py)",
+      "Bash(python3 scripts/map_elements.py --file /tmp/test_hierarchy.json)",
+      "Bash(xargs -I {} sh -c 'echo \"=== {} ===\" && head -30 {}')",
+      "Bash(grep -E \"\\\\.\\(py|sh|js\\)$\")",
+      "Bash(python3 -m py_compile scripts/maestro_wrapper.py)"
+    ]
+  }
+}

@@ -1,0 +1,137 @@
+# COM O USUÁRIO LOGADO - EXECUTE -> maestro test -e SKIP_LAUNCH=true tc_markets_001.yaml
+appId: br.com.foxbit.foxbitandroid
+---
+# Carregamento de Ambiente e Page Objects
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/markets.js"
+
+# 1. FASE DE DESCOBERTA: VALIDAÇÃO DA EXISTÊNCIA DOS FILTROS
+- assertVisible: 
+    id: ${output.MARKETS.tabMercados}
+- tapOn:
+    id: ${output.MARKETS.tabMercados}
+- assertVisible: 
+    id: ${output.MARKETS.campoBusca}
+
+# Valida filtros iniciais
+- assertVisible:
+    id: ${output.MARKETS.filtroPopulares}
+    index: 0
+- assertVisible:
+    id: ${output.MARKETS.filtroMaioresAltas}
+    index: 1
+- assertVisible:
+    id: ${output.MARKETS.filtroMaioresBaixas}
+    index: 2
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_filtros_iniciais_existentes"
+
+# Revela e valida filtros ocultos pegando ID do index2 (Maiores baixas) e arrastando para a esquerda
+- swipe:
+    from:
+      id: ${output.MARKETS.filtroMaioresBaixas}
+      index: 2
+    direction: LEFT
+
+- assertVisible:
+    id: ${output.MARKETS.filtroMaiorPreco}
+    index: 1
+- assertVisible:
+    id: ${output.MARKETS.filtroMenorPreco}
+    index: 2
+- assertVisible:
+    id: ${output.MARKETS.filtroAlfabetico}
+    index: 3
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_filtros_ocultos_existentes"
+
+- swipe:
+    from:
+      id: ${output.MARKETS.filtroMaioresBaixas}
+      index: 1
+    direction: RIGHT
+
+# 2. FASE DE TESTE: EXECUÇÃO E VALIDAÇÃO DE CONTEÚDO
+# 2.1 Populares
+- tapOn:
+    id: ${output.MARKETS.filtroPopulares}
+    index: 0
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    id: ${output.MARKETS.moedaListFirst}
+    index: 0
+- assertVisible:
+    id: ${output.MARKETS.moedaListSecond}
+    index: 1
+- assertVisible:
+    id: ${output.MARKETS.moedaListThird}
+    index: 2
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_aba_populares_ok"
+
+# 2.2 Maiores Altas
+- tapOn:
+    id: ${output.MARKETS.filtroMaioresAltas}
+    index: 1
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/04_aba_altas_brl_ok"
+
+# 2.3 Maiores Baixas
+- tapOn:
+    id: ${output.MARKETS.filtroMaioresBaixas}
+    index: 2
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/05_aba_baixas_brl_ok"
+
+- swipe:
+    from:
+      id: ${output.MARKETS.filtroMaioresBaixas}
+      index: 2
+    direction: LEFT
+
+# 2.5 Maior Preço
+- tapOn:
+    id: ${output.MARKETS.filtroMaiorPreco}
+    index: 1
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/06_aba_maior_preco_brl_ok"
+
+# 2.6 Menor Preço
+- tapOn:
+    id: ${output.MARKETS.filtroMenorPreco}
+    index: 2
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/07_aba_menor_preco_brl_ok"
+
+- swipe:
+    from:
+      id: ${output.MARKETS.filtroAlfabetico}
+      index: 0
+    direction: RIGHT
+
+- tapOn:
+    id: ${output.MARKETS.filtroPopulares}
+    index: 0
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Validação Ordem Alfabética (A, B...)
+- assertVisible:
+    text: ".*A.*"
+- assertVisible:
+    text: ".*B.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/10_alfabetico_final_layerzero"
+
+# Realizar swipe nos filtros para voltar ao início (Esquerda para Direita)
+#- runFlow: "../../helpers/filtros_home_scroll_esquerda.yaml"

@@ -1,0 +1,47 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- swipe:
+    direction: DOWN
+    waitToSettleTimeoutMs: 5000
+- swipe:
+    start: 800, 100
+    end: 800, 100
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+- swipe:
+    direction: DOWN
+    waitToSettleTimeoutMs: 5000
+- swipe:
+    direction: DOWN
+    waitToSettleTimeoutMs: 5000
+- swipe:
+    direction: DOWN
+    waitToSettleTimeoutMs: 5000
+- swipe:
+    start: 800, 100
+    end: 800, 100
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+- swipe:
+    direction: DOWN
+    waitToSettleTimeoutMs: 5000
+- swipe:
+    direction: DOWN
+    waitToSettleTimeoutMs: 5000
+- swipe:
+    direction: DOWN
+    waitToSettleTimeoutMs: 5000
+- swipe:
+    start: 800, 100
+    end: 800, 100
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+- swipe:
+    direction: DOWN
+    waitToSettleTimeoutMs: 5000
+- swipe:
+    direction: DOWN
+    waitToSettleTimeoutMs: 5000

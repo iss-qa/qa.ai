@@ -1,0 +1,59 @@
+Running on dcc71c7d
+{
+  "attributes" : { },
+  "children" : [ {
+    "attributes" : {
+      "ignoreBoundsFiltering" : "false"
+    },
+    "children" : [ {
+      "attributes" : {
+        "text" : "",
+        "accessibilityText" : "",
+        "hintText" : "",
+        "ignoreBoundsFiltering" : "false",
+        "resource-id" : "com.miui.aod:id/aod_mode_layout_horizontal",
+        "clickable" : "false",
+        "bounds" : "[0,0][1220,2712]",
+        "enabled" : "true",
+        "focused" : "false",
+        "checked" : "false",
+        "scrollable" : "false",
+        "selected" : "false",
+        "class" : "android.widget.FrameLayout"
+      },
+      "children" : [ {
+        "attributes" : {
+          "text" : "",
+          "accessibilityText" : "",
+          "hintText" : "",
+          "ignoreBoundsFiltering" : "false",
+          "resource-id" : "com.miui.aod:id/notification_animation_view",
+          "clickable" : "false",
+          "bounds" : "[0,0][1220,2712]",
+          "enabled" : "true",
+          "focused" : "false",
+          "checked" : "false",
+          "scrollable" : "false",
+          "selected" : "false",
+          "class" : "android.view.View"
+        },
+        "children" : [ ],
+        "clickable" : false,
+        "enabled" : true,
+        "focused" : false,
+        "checked" : false,
+        "selected" : false
+      } ],
+      "clickable" : false,
+      "enabled" : true,
+      "focused" : false,
+      "checked" : false,
+      "selected" : false
+    } ],
+    "clickable" : false,
+    "enabled" : false,
+    "focused" : false,
+    "checked" : false,
+    "selected" : false
+  } ]
+}

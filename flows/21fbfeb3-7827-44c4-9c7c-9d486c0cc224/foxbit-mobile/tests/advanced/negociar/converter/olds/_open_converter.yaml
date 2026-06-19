@@ -1,0 +1,9 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- tapOn: ${output.INICIO.actionNegociar}
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn: "Converter"
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible: ${output.CONVERTER.textHeaderConverter}

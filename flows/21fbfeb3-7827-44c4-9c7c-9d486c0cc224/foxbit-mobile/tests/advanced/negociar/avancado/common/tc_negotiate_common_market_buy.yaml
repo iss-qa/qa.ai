@@ -1,0 +1,37 @@
+######################################################################################################
+# DESCRIÇÃO: Realiza os testes de compra com ordem do tipo mercado
+######################################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+- runFlow:
+   file: ../unit_test/buy/ut_buy_market.yaml
+- back
+- runFlow:
+    when:
+      visible: "Escolha um mercado:"
+    commands:
+        - assertVisible: "Buscar"
+        - tapOn: "Buscar"
+        - inputText: "htr"
+        - hideKeyboard
+        - assertVisible:
+           id: "tile_market_listing_market"
+        - tapOn:
+           id: "tile_market_listing_market"
+- runFlow:
+   file: ../unit_test/buy/ut_buy_market_activating_slippage.yaml
+- runFlow:
+    when:
+      visible: "Escolha um mercado:"
+    commands:
+        - eraseText
+        - hideKeyboard
+        - assertVisible:
+           id: "tile_market_listing_market"
+           index: 0
+        - tapOn:
+           id: "tile_market_listing_market"
+           index: 0
+- runFlow:
+   file: ../unit_test/buy/ut_buy_market_with_significant_price_deviation.yaml

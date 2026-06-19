@@ -1,0 +1,9 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: tc_pre_login_001.yaml
+- runFlow: tc_pre_login_002.yaml
+- runFlow: tc_pre_login_003.yaml
+- runFlow: tc_pre_login_004.yaml
+- runFlow: tc_pre_login_005.yaml
+- runFlow: tc_pre_login_006.yaml
+- runFlow: tc_pre_login_007.yaml

@@ -1,0 +1,19 @@
+# Gherkin: test-cases/advanced-flows/negociar/converter.feature - Scenario: TC_Converter_002 - Open pay currency selector and search results
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "_precondition_converter.yaml"
+- tapOn: ${output.CONVERTER.comboVocePaga}
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    text: ".*Você paga.*"
+- assertVisible:
+    text: ".*Buscar.*"
+- tapOn: "Buscar"
+- inputText: "BTC"
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BTC.*"
+- tapOn:
+    point: "70, 190"

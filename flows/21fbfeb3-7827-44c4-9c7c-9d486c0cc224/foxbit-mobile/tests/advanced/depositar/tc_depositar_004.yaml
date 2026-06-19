@@ -1,0 +1,106 @@
+### ---
+#  Id: Depositar-004
+#  Name: Depósito em Espécie
+#  Description: Validar fluxo de depósito em BRL em espécie, conferindo dados bancários e orientações
+#  Gherkin: test-cases/advanced/depositar/depositar.feature
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/common.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/comprar.js"
+
+###############################################
+# VALIDAR DEPOSITO EM ESPECIE
+- assertVisible:
+    id: ${output.INICIO.botaoDepositar}
+- tapOn:
+    id: ${output.INICIO.botaoDepositar}
+- waitForAnimationToEnd:
+    timeout: 3000
+# Screenshot - Tela de busca de moeda
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_busca_moeda"
+- assertVisible: Buscar
+- tapOn: Buscar
+- inputText: "BRL"
+- assertVisible:
+    id: ${output.COMMON.tileMoedaListagem}
+- tapOn:
+    id: ${output.COMMON.tileMoedaListagem}
+# Screenshot - Tela de informar valor
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_informar_valor"
+- assertVisible: "1"
+- assertVisible: "0"
+# DEPOSITAR 10 REAIS
+- tapOn: "1"
+- tapOn: "0"
+- tapOn: "0"
+- tapOn: "0"
+- assertVisible:
+    id: ${output.COMMON.botaoContinuarValor}
+- tapOn:
+    id: ${output.COMMON.botaoContinuarValor}
+
+# Validar Opcoes
+# Screenshot - Tela de selecionar método de depósito
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_selecionar_metodo"
+- assertVisible: Selecione uma opção
+# Validar o Deposito EM ESPÉCIE
+- assertVisible:
+    id: ${output.COMMON.cardMetodoEspecie}
+- tapOn:
+    id: ${output.COMMON.cardMetodoEspecie}
+# Screenshot - Tela de detalhes depósito em espécie
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/04_detalhes_deposito_especie"
+- assertVisible:
+    text: ".*Banco DO BRASIL.*"
+- assertVisible:
+    text: ".*10.*"
+- assertVisible:
+    id: ${output.COMMON.tileBanco}
+- assertVisible:
+    id: ${output.COMMON.tileAgencia}
+- assertVisible:
+    id: ${output.COMMON.tileConta}
+- assertVisible: |-
+    Tipo:
+    Conta Corrente
+- assertVisible:
+    id: ${output.COMMON.tileTitular}
+- assertVisible:
+    id: ${output.COMMON.tileCpfCnpj}
+- assertVisible: |-
+    Método:
+    MANUAL
+- assertVisible:
+    id: ${output.COMMON.botaoAcordeon}
+- tapOn:
+    id: ${output.COMMON.botaoAcordeon}
+# Screenshot - Orientações depósito em espécie
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/05_orientacoes_deposito_especie"
+- assertVisible: |-
+    Antes de depositar leia atentamente
+    Antes de depositar leia atentamente
+    • O valor máximo permitido é de R$ 500,00 por dia.
+
+    • A aprovação ocorrerá em até 3 dias úteis.
+
+    • O valor do depósito deve possuir o mesmo valor informado nessa solicitação.
+- assertVisible:
+    id: ${output.COMMON.botaoAcao}
+- tapOn:
+    id: ${output.COMMON.botaoAcao}
+# TODO - implementar posteriormente o anexo do doc.
+# Screenshot - Tela de anexo de comprovante
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/06_anexo_comprovante"
+- assertVisible: Tirar foto
+- assertVisible: Escolher foto na galeria
+- assertVisible: Procurar arquivos
+- tapOn: Voltar
+- tapOn: Voltar
+- tapOn: Voltar
+- tapOn: Voltar
+- tapOn: Voltar
+- tapOn: Voltar

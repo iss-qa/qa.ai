@@ -1,0 +1,38 @@
+######################################################################################################
+# DESCRIÇÃO: Realiza uma compra do tipo MERCADO
+######################################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+- assertVisible: "Comprar Bitcoin (BTCBRL)"
+- assertVisible: "Mercado"
+- tapOn: "Mercado"
+- assertVisible: "Limite"
+- assertVisible: "Stop Market"
+- tapOn: "Mercado"
+- assertVisible: "QUANTO DESEJA COMPRAR?"
+- assertVisible: "0"
+- assertVisible: "1"
+- tapOn: "1"
+- tapOn: "2"
+- tapOn: "3"
+- tapOn: "4"
+- assertVisible: "1234"
+- assertVisible: "Botão Apagar"
+- tapOn: "Botão Apagar"
+- tapOn: "Botão Apagar"
+- tapOn: "Botão Apagar"
+- tapOn: "Botão Apagar"
+- tapOn: "1"
+- tapOn: "0"
+- assertVisible: "10"
+- assertVisible: "Continuar"
+- tapOn: "Continuar"
+- assertVisible: "Par:\nBTCBRL"
+- assertVisible: "Tipo de ordem:\nMercado"
+- scrollUntilVisible:
+    element: "Confirmar compra"
+    speed: 80
+- tapOn: "Confirmar compra"
+- assertVisible: "Ordem enviada com sucesso"
+- back

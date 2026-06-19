@@ -843,9 +843,13 @@ class InteractionRecorder:
         return result
 
     async def _emit_provisional_hide_keyboard(self):
-        """Grava `- hideKeyboard` logo após o inputText (sem mexer no IME do
-        device). Provisório: _retract_provisional_hide remove se o próximo
-        tap for outro campo de texto."""
+        """Grava `- hideKeyboard` logo após o inputText E fecha o IME no device.
+
+        Fechar o teclado de fato evita que o usuário toque na tela para
+        dispensá-lo — esse toque viraria um tapOn espúrio que ele teria de
+        apagar à mão. Continua provisório: se o próximo tap for outro campo de
+        texto, _retract_provisional_hide remove o passo (e o tap no campo
+        reabre o teclado naturalmente, então os passos finais não mudam)."""
         step = {
             "action": "hideKeyboard",
             "elementId": "",
@@ -856,6 +860,12 @@ class InteractionRecorder:
         self.recorded_steps.append(step)
         self._provisional_hide_idx = idx
         await self._broadcast({**step, "step_index": idx})
+
+        # Fecha o teclado no device (BACK só é enviado com o IME visível).
+        try:
+            await self._hide_keyboard_if_shown()
+        except Exception as e:
+            logger.warning(f"[hideKeyboard] fechar IME no device falhou: {e}")
 
     async def _retract_provisional_hide(self):
         """Sequência de inputs continua (próximo tap é outro campo): remove o

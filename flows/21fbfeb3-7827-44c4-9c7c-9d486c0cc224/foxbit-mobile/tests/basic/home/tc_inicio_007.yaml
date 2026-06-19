@@ -1,0 +1,39 @@
+### ---
+#  Id: INICIO-7
+#  Name: Carteiras Inteligentes
+#  Description: Validar a navegação e o conteúdo da tela de Carteiras Inteligentes
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/login.js"
+
+# Localizar card de recomendação (Carteiras Inteligentes)
+- scrollUntilVisible:
+    element:
+        id: ${output.INICIO.botaoCarteirasInteligentes}
+    direction: DOWN
+
+# Clicar no card
+- tapOn:
+    id: ${output.INICIO.botaoCarteirasInteligentes}
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Validar título ou conteúdo da tela
+- assertVisible:
+    text: ".*Carteiras inteligentes.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/tc_inicio_007_carteiras_inteligentes"
+
+# Voltar para a home
+# - tapOn:
+#     id: ${output.LOGIN.botaoVoltar}
+- tapOn: "Voltar"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Validar retorno à Home
+- assertVisible:
+    id: ${output.INICIO.botaoCarteirasInteligentes}

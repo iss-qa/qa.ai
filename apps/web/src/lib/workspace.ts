@@ -111,17 +111,42 @@ export async function writeYamlToSupabase(
     prefix: string,
     fileName: string,
     content: string,
+    contentType = 'text/yaml',
 ): Promise<WorkspaceWriteResult> {
     const path = `${prefix}/${fileName}`;
     try {
         const { error } = await storageClient().storage
             .from(WORKSPACE_BUCKET)
-            .upload(path, new Blob([content], { type: 'text/yaml' }), { upsert: true, contentType: 'text/yaml' });
+            .upload(path, new Blob([content], { type: contentType }), { upsert: true, contentType });
         if (error) return { success: false, error: error.message };
         return { success: true, path: `supabase:${WORKSPACE_BUCKET}/${path}` };
     } catch (e) {
         return { success: false, error: e instanceof Error ? e.message : String(e) };
     }
+}
+
+// Tipo MIME a partir da extensão — preserva scripts (.js/.ts) corretamente.
+function contentTypeFor(relPath: string): string {
+    const ext = relPath.split('.').pop()?.toLowerCase();
+    if (ext === 'js') return 'application/javascript';
+    if (ext === 'ts') return 'application/typescript';
+    if (ext === 'json') return 'application/json';
+    return 'text/yaml';
+}
+
+/**
+ * Grava um arquivo no workspace preservando o caminho relativo EXATO (com
+ * extensão original). Diferente de writeYaml, NÃO força `.yaml` — usado no
+ * import para espelhar scripts (pages/*.js, common/*.yaml) tal como vieram, de
+ * modo que runFlow/runScript resolvam na execução.
+ */
+export async function writeFile(
+    ref: WorkspaceRef,
+    relPath: string,
+    content: string,
+): Promise<WorkspaceWriteResult> {
+    if (ref.type === 'supabase') return writeYamlToSupabase(ref.prefix, relPath, content, contentTypeFor(relPath));
+    return writeYamlToWorkspace(ref.path, relPath, content);
 }
 
 /**

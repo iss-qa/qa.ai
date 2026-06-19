@@ -1,0 +1,10 @@
+######################################################################################################
+# DESCRIÇÃO: Realiza os testes de compra com ordem do tipo stop market
+######################################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+- runFlow:
+   file: ../unit_test/buy/ut_buy_stop_market.yaml
+- runFlow:
+   file: ../unit_test/buy/ut_buy_stop_market_with_price_lower_than_average.yaml

@@ -1,0 +1,57 @@
+# COM O USUÁRIO LOGADO - EXECUTE -> maestro test -e SKIP_LAUNCH=true tc_markets_002.yaml
+appId: br.com.foxbit.foxbitandroid
+---
+# Carregamento de Ambiente e Page Objects
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/markets.js"
+
+# 1. ACESSO À ABA MERCADOS
+- assertVisible:
+    id: ${output.MARKETS.tabMercados}
+- tapOn:
+    id: ${output.MARKETS.tabMercados}
+
+# 2. BUSCA POR MOEDA
+- assertVisible:
+    id: ${output.MARKETS.campoBusca}
+- tapOn:
+    id: ${output.MARKETS.campoBusca}
+- inputText: "Ethereum"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Valida resultado da busca
+- assertVisible:
+    text: ".*ETH.*" # Regex mais flexível para capturar Ethereum ou ETH/BRL
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_busca_ethereum_resultado"
+
+# Limpa a busca para prosseguir com filtros
+- eraseText: 8 # "Ethereum" tem 8 caracteres
+
+# 3. FILTROS AVANÇADOS (Todas, Com saldo, Cripto, Stablecoin)
+- tapOn:
+    id: ${output.MARKETS.btnAbrirFiltro}
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Seleciona Opções do Filtro
+- tapOn: ${output.MARKETS.categoriaTodas}
+- tapOn: ${output.MARKETS.categoriaCripto}
+- tapOn: ${output.MARKETS.categoriaStablecoin}
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_filtros_avancados_selecionados"
+
+# Aplica Filtro
+# - tapOn:
+#     id: ${output.MARKETS.btnAplicarFiltro}
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Validação do Filtro Aplicado (Mock / Presença de resultados)
+- assertVisible:
+    id: ${output.MARKETS.moedaListFirst}
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_lista_filtrada_resultado"

@@ -1,0 +1,31 @@
+######################################################################################################
+# DESCRIÇÃO: Tenta realizar uma compra do tipo Limite com o preço abaixo do aceitavel
+######################################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+- assertVisible: "Comprar Bitcoin (BTCBRL)"
+- assertVisible: "Limite"
+- assertVisible: "QUANTO DESEJA COMPRAR?"
+- assertVisible: "0"
+- assertVisible: "1"
+- tapOn: "1"
+- tapOn: "0"
+- assertVisible: "10"
+- assertVisible: "Próximo"
+- tapOn: "Próximo"
+- assertVisible: "R$\nQUAL O PREÇO DE COMPRA?\n0"
+- assertVisible: "0"
+- tapOn: "1"
+- tapOn: "0"
+- tapOn: "0"
+- assertVisible: "R$\nQUAL O PREÇO DE COMPRA?\n100"
+- assertVisible: "Continuar"
+- tapOn: "Continuar"
+- assertNotVisible: "Par:\nBTCBRL"
+- back
+- tapOn: "Botão Apagar"
+- tapOn: "Botão Apagar"
+- tapOn: "10"
+- tapOn: "Botão Apagar"
+- tapOn: "Botão Apagar"

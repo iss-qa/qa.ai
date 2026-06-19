@@ -1,0 +1,62 @@
+### ---
+#  Id: WALLET-1
+#  Name: Validar entrada no fluxo de verificação
+#  Description: Valida status unverified e transição para tela de verificação
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/wallet.js"
+- runScript: "../../pages/inicio.js"
+
+# 1. Navegar para a aba Carteira
+- tapOn:
+    id: ${output.INICIO.botaoCarteira}
+
+# 2. Validar o status "Não Verificada"
+- assertVisible:
+    id: ${output.WALLET.textoDescricaoContaNaoVerificada}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/wallet_nao_verificada"
+
+# 3. Clicar em "Completar cadastro"
+- tapOn:
+    id: ${output.WALLET.botaoCompletarCadastro}
+
+# 4. Validar tela "Verificação da conta"
+- assertVisible:
+    id: ${output.WALLET.labelVerifiqueSuaConta}
+
+- assertVisible:
+    id: ${output.WALLET.mensagemProximasTelas}
+
+# 5. Tocar para iniciar verificação
+- tapOn:
+    id: ${output.WALLET.botaoToqueParaIniciarVerificacao}
+
+# 6. Validar entrada na tela do MetaMap
+- assertVisible:
+    text: ${output.WALLET.labelIdentidadeFoxbit}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/wallet_metamap_inicio"
+# 10. Clicar em "X" no alto da tela para sair
+- tapOn:
+    id: ${output.WALLET.botaoFecharMetamap}
+
+# 11. Validar tela "Você tem certeza de que quer sair?"
+- assertVisible:
+    text: ${output.WALLET.labelTemCertezaSair}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/wallet_saida_metamap_confirmacao"
+
+# 12. Clicar em "Sair" e validar retorno
+- tapOn:
+    text: ${output.WALLET.botaoSair}
+
+# 13. Validar retorno à tela de "Verificação da conta"
+- assertVisible:
+    id: ${output.WALLET.labelVerifiqueSuaConta}
+- assertVisible:
+    id: ${output.WALLET.botaoToqueParaIniciarVerificacao}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/wallet_retorno_pos_cancelamento"
+# - tapOn: 
+#    id: ${output.MENU.buttonBack}
+- tapOn: "Voltar"

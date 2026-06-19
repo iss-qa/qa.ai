@@ -1,0 +1,49 @@
+### ---
+#  Id: LOGIN-2
+#  Name: Invalid credentials
+#  Description: Attempt login with invalid email and password and validate error
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/login.js"
+- waitForAnimationToEnd:
+    timeout: 10000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_tela_inicial"
+- assertVisible: 
+    id: ${output.INICIO.botaoLogin}
+- tapOn: 
+    id: ${output.INICIO.botaoLogin}
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_tela_login"
+
+- tapOn: 
+    id: ${output.LOGIN.campoEmail}
+- inputText: "email.invalido@foxbit.com.br"
+- hideKeyboard
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_email_invalido"
+
+- tapOn: 
+    id: ${output.LOGIN.campoSenha}
+- inputText: "senha_invalida"
+- hideKeyboard
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/04_senha_preenchida"
+
+- tapOn:
+    id: ${output.LOGIN.botaoContinuar}
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/05_apos_submit_invalido"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/06_erro_login"
+
+- assertVisible: 
+    text: ${output.LOGIN.msgErroLogin}
+
+- assertVisible: 
+    text: ${output.LOGIN.msgCredenciaisInvalidas}
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/07_falha_login_confirmada"
+

@@ -1,0 +1,15 @@
+# COM O USUÁRIO LOGADO - EXECUTE -> maestro test -e SKIP_LAUNCH=true account.yaml
+appId: br.com.foxbit.foxbitandroid
+---
+# Execução Sequencial de Testes de Conta (Account)
+- runScript: "../../pages/accounts.js"
+- runScript: "../../pages/inicio.js"
+
+# 1. Valida elementos da tela de conta e scroll - SCENARIO 1
+- runFlow: "tc_account_001.yaml"
+
+# 2. Valida Meus Dados - SCENARIO 2
+- runFlow: "tc_account_002.yaml"
+
+# 3. Valida outros itens da seção Geral - SCENARIO 3
+- runFlow: "tc_account_003.yaml"

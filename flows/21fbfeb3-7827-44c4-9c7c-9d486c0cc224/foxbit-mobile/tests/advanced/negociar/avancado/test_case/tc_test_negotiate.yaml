@@ -1,0 +1,9 @@
+appId: br.com.foxbit.foxbitandroid
+---
+# Compra
+- runFlow:
+    file: tc_negotiate_quick_actions.yaml
+- runFlow:
+    file: tc_negotiate_market.yaml
+- runFlow:
+    file: tc_negotiate_menu.yaml

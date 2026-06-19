@@ -1,0 +1,12 @@
+######################################################################################################
+# DESCRIÇÃO: Realiza os testes de compra com ordem do tipo limite
+######################################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+- runFlow:
+   file: ../unit_test/buy/ut_buy_limit.yaml
+- runFlow:
+   file: ../unit_test/buy/ut_buy_limit_executing_market_order.yaml
+- runFlow:
+   file: ../unit_test/buy/ut_buy_limit_with_price_lower_than_acceptable.yaml

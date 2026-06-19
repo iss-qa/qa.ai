@@ -1,0 +1,49 @@
+######################################################################################################
+# DESCRIÇÃO: Tenta realizar uma compra do tipo Stop Markert com o preço abaixo do aceitavel
+######################################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+- assertVisible: "Comprar Bitcoin (BTCBRL)"
+- assertVisible: "Stop Market"
+- assertVisible: "QUANTO DESEJA COMPRAR?"
+- assertVisible: "0"
+- assertVisible: "1"
+- tapOn: "1"
+- tapOn: "0"
+- assertVisible: "10"
+- assertVisible: "Botão Apagar"
+- tapOn: "Botão Apagar"
+- assertVisible: "1"
+- tapOn: "0"
+- assertVisible: "10"
+- runFlow:
+    when:
+      notVisible: "Próximo"
+    commands:
+      - assertVisible: "Continuar"
+      - tapOn: "Continuar"
+- runFlow:
+    when:
+      visible: "Próximo"
+    commands:
+      - tapOn: "Próximo"
+- assertVisible: "R$\nQUAL O PREÇO DE COMPRA?\n0"
+- assertVisible: "0"
+- tapOn: "1"
+- tapOn: "0"
+- tapOn: "0"
+- assertVisible: "Continuar"
+- tapOn: "Continuar"
+- assertVisible: "Par:\nBTCBRL"
+- assertVisible: "Tipo de ordem:\nStop Market"
+- scrollUntilVisible:
+    element: "Confirmar compra"
+    speed: 80
+- tapOn: "Confirmar compra"
+- assertVisible: "Ordem enviada com sucesso"
+- back
+- assertVisible:
+    id: "back_button_app_bar"
+- tapOn:
+    id: "back_button_app_bar"

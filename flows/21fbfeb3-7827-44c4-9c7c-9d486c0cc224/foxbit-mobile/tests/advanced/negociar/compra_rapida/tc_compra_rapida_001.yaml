@@ -1,0 +1,29 @@
+### ---
+#  Id: Compra Rápida-1
+#  Name:
+#  Description:
+#  Gherkin: test-cases/advanced/negociar/compra-rapida.feature
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../../common/setup.yaml"
+- runScript: "../../../common/env.js"
+- runScript: "../../../pages/common.js"
+- runScript: "../../../pages/inicio.js"
+- runScript: "../../../pages/comprar.js"
+
+# Clicar em Negociar > Compra Rapida
+- assertVisible:
+    id: ${output.INICIO.botaoNegociarCompraRapida}
+
+- tapOn:
+    id: ${output.INICIO.botaoNegociarCompraRapida}
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible: Buscar
+- tapOn: Buscar
+- inputText: "ETH"
+- assertVisible:
+    id: tile_market_listing_market
+- tapOn:
+    id: tile_market_listing_market

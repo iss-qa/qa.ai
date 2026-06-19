@@ -1,0 +1,81 @@
+### ---
+#  Id: Depositar-002
+#  Name: Depósito via PIX
+#  Description: Validar fluxo de depósito em BRL via PIX, conferindo chave PIX e dados bancários
+#  Gherkin: test-cases/advanced/depositar/depositar.feature
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/common.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/comprar.js"
+
+###############################################
+# VALIDAR DEPOSITO DE PIX
+- assertVisible:
+    id: ${output.INICIO.botaoDepositar}
+- tapOn:
+    id: ${output.INICIO.botaoDepositar}
+- waitForAnimationToEnd:
+    timeout: 3000
+# Screenshot - Tela de busca de moeda
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_busca_moeda"
+- assertVisible: Buscar
+- tapOn: Buscar
+- inputText: "BRL"
+- assertVisible:
+    id: ${output.COMMON.tileMoedaListagem}
+- tapOn:
+    id: ${output.COMMON.tileMoedaListagem}
+# Screenshot - Tela de informar valor
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_informar_valor"
+- assertVisible: "1"
+- assertVisible: "0"
+# DEPOSITAR 10 REAIS
+- tapOn: "1"
+- tapOn: "0"
+- tapOn: "0"
+- tapOn: "0"
+- assertVisible:
+    id: ${output.COMMON.botaoContinuarValor}
+- tapOn:
+    id: ${output.COMMON.botaoContinuarValor}
+
+# Validar Opcoes
+# Screenshot - Tela de selecionar método de depósito
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_selecionar_metodo"
+- assertVisible: Selecione uma opção
+# Validar o PIX
+- assertVisible:
+    id: ${output.COMMON.cardMetodoPix}
+- tapOn:
+    id: ${output.COMMON.cardMetodoPix}
+# Screenshot - Tela de detalhes PIX
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/04_detalhes_pix"
+- assertVisible: Depósito em Real (BRL)
+- assertVisible:
+    id: ${output.COMMON.tileValorPix}
+- assertVisible:
+    text: ".*10,00.*"
+- assertVisible: |-
+    Chave Pix:
+    Chave Pix:
+    pix@foxbit.com.br
+- assertVisible: |-
+    Dados bancários para confirmação
+    Confirme os dados:
+    Foxbit Serviços Digitais SA
+    CNPJ: 21.246.584/0001-50
+    Instituição: 125 - Banco Genial S.A
+    Agência: 0001 Conta Corrente: 3042-2
+- tapOn:
+    id: ${output.COMMON.botaoAcordeonPix}
+# Screenshot - Após expandir acordeon PIX
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/05_acordeon_pix"
+- tapOn: Voltar
+- tapOn: Voltar
+- tapOn: Voltar
+- tapOn: Voltar
+- tapOn: Voltar

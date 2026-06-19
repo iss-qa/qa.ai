@@ -1,0 +1,26 @@
+# Gherkin: test-cases/advanced-flows/negociar/converter.feature - Scenario: TC_Converter_006 - Validate amount input behaviors
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "_precondition_converter.yaml"
+- tapOn: "R$ 0"
+- inputText: "1"
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*1.*"
+
+- eraseText: 1
+- inputText: "9999999"
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*999.*"
+
+- eraseText: 7
+- waitForAnimationToEnd:
+    timeout: 1000
+- assertVisible:
+    text: ".*R$ 0.*"
+- assertVisible:
+    text: "Converter tudo"
+    enabled: false

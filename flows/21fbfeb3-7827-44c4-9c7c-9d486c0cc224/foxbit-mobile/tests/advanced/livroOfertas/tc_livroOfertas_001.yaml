@@ -1,0 +1,66 @@
+### ---
+#  Id: LivroOfertas-001
+#  Name: Livro de Ofertas - Validar BTC
+#  Description: Validar tela do Livro de Ofertas para BTCBRL, conferindo gráfico, livro de ofertas e últimos trades
+#  Gherkin: test-cases/advanced/livroOfertas/livroOfertas.feature
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/common.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/comprar.js"
+
+# Livro de Ofertas
+- assertVisible:
+    id: ${output.INICIO.botaoLivroOfertas}
+- tapOn:
+    id: ${output.INICIO.botaoLivroOfertas}
+- waitForAnimationToEnd:
+    timeout: 3000
+# Screenshot - Tela do Livro de Ofertas BTC
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_livro_ofertas_btc"
+- assertVisible: Livro de Ofertas
+- assertVisible: Gráfico para BTCBRL, 6 horas
+- assertVisible:
+    id: ${output.COMMON.botaoTrocarMoeda}
+- swipe:
+    from:
+      text: Comprar
+    direction: UP
+# Screenshot - Livro de ofertas após scroll
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_livro_ofertas_scroll"
+- assertVisible:
+    text: Livro de ofertas
+    index: 1
+- assertVisible: Últimos trades
+- tapOn: Últimos trades
+# Screenshot - Aba Últimos trades
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_ultimos_trades"
+- assertVisible: Preço (R$)
+- assertVisible: Quantia (BTC)
+- assertVisible: Data
+- tapOn:
+    text: Livro de ofertas
+    index: 1
+- waitForAnimationToEnd:
+    timeout: 3000
+# Screenshot - Aba Livro de ofertas detalhado
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/04_livro_ofertas_detalhado"
+- assertVisible: |-
+    Alternar livro de ofertas e trades
+    Livro de ofertas
+    Valor (BRL)
+    Quantia (BTC)
+    Total
+    Aba livro de ofertas
+
+# Scroll para ver o restante
+- runFlow: "../../helpers/menu_scroll_baixo_cima.yaml"
+
+- tapOn: Voltar
+- waitForAnimationToEnd:
+    timeout: 3000
+# Screenshot - Retorno à tela inicial
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/05_retorno_tela_inicial"

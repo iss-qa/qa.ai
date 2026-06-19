@@ -1,0 +1,93 @@
+######################################################################################################
+# DESCRIÇÃO: Realiza os testes de venda com ordem do tipo mercado
+######################################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+- runFlow:
+   file: ../unit_test/sell/ut_sell_market.yaml
+- back
+- runFlow:
+    when:
+      visible: "Escolha um mercado:"
+    commands:
+        - assertVisible: "Todos"
+        - tapOn: "Todos"
+        - assertVisible: "Buscar"
+        - tapOn: "Buscar"
+        - inputText: "htr"
+        - hideKeyboard
+        - assertVisible:
+            id: "bt_select_market_tile"
+        - tapOn:
+           id: "bt_select_market_tile"
+- runFlow:
+    when:
+      visible: "Carteira"
+    commands:
+        - assertVisible: "Buscar"
+        - tapOn: "Buscar"
+        - inputText: "htr"
+        - hideKeyboard
+        - runFlow:
+            when:
+              visible:
+                 id: "filter_coin_tile_wallet"
+                 index: 0
+            commands:
+                - tapOn:
+                    id: "filter_coin_tile_wallet"
+                    index: 0
+        - runFlow:
+            when:
+              visible:
+                 id: "bt_select_market_tile"
+                 index: 0
+            commands:
+                - tapOn:
+                    id: "bt_select_market_tile"
+                    index: 0
+        - assertVisible: "Vender"
+        - tapOn: "Vender"
+- runFlow:
+   file: ../unit_test/sell/ut_sell_market_activating_slippage.yaml
+- runFlow:
+    when:
+      visible: "Escolha um mercado:"
+    commands:
+        - eraseText
+        - hideKeyboard
+        - assertVisible:
+           id: "bt_select_market_tile"
+           index: 0
+        - tapOn:
+           id: "bt_select_market_tile"
+           index: 0
+- runFlow:
+    when:
+      visible: "Carteira"
+    commands:
+        - assertVisible: "htr"
+        - tapOn: "htr"
+        - eraseText
+        - hideKeyboard
+        - runFlow:
+            when:
+              visible:
+                 id: "filter_coin_tile_wallet"
+                 index: 0
+            commands:
+                - tapOn:
+                    id: "filter_coin_tile_wallet"
+                    index: 0
+        - runFlow:
+            when:
+              visible:
+                 id: "bt_select_market_tile"
+                 index: 0
+            commands:
+                - tapOn:
+                    id: "bt_select_market_tile"
+                    index: 0
+        - assertVisible: "Vender"
+        - tapOn: "Vender"

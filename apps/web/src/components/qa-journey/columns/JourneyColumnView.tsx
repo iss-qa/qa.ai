@@ -15,7 +15,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
-    createCase, createSubflow, reorderJourneys, updateCase, updateSubflow, errorMessage, type TestCaseOption,
+    createCase, createSubflow, removeJourneyCase, reorderJourneys, updateCase, updateSubflow, errorMessage, type TestCaseOption,
 } from '@/lib/qa-journey/api';
 import type {
     QAJourney, QAJourneyCase, QAJourneyCaseDraft, QAJourneySubflow, QAJourneySubflowDraft,
@@ -26,6 +26,7 @@ import { ImportCasesModal } from '../ImportCasesModal';
 import { SubflowModal } from '../map/SubflowModal';
 import { CaseDetailModal } from '../map/CaseDetailModal';
 import { SubflowBlock, type SubflowBlockCallbacks } from './SubflowBlock';
+import { DeleteConfirmModal } from '../DeleteConfirmModal';
 import { buildSubflowTree, computeMetrics, descendantIds } from './helpers';
 
 interface JourneyColumnViewProps {
@@ -81,6 +82,8 @@ export function JourneyColumnView({
     const [importSubflowId, setImportSubflowId] = useState<string | null>(null);
     const [subflowDetailId, setSubflowDetailId] = useState<string | null>(null);
     const [caseDetailId, setCaseDetailId] = useState<string | null>(null);
+    const [removeCaseTarget, setRemoveCaseTarget] = useState<QAJourneyCase | null>(null);
+    const [removingCase, setRemovingCase] = useState(false);
 
     // Restaura preferência de recolhimento da coluna.
     useEffect(() => {
@@ -129,6 +132,21 @@ export function JourneyColumnView({
         }
     };
 
+    const removeCase = async () => {
+        if (!removeCaseTarget || removingCase) return;
+        setRemovingCase(true);
+        try {
+            await removeJourneyCase(removeCaseTarget);
+            setRemoveCaseTarget(null);
+            setCaseDetailId(null);   // fecha o detalhe se a remoção veio de lá
+            onReload();
+        } catch (e) {
+            alert('Erro ao remover caso: ' + errorMessage(e));
+        } finally {
+            setRemovingCase(false);
+        }
+    };
+
     const cb: SubflowBlockCallbacks = {
         onOpenCase: id => setCaseDetailId(id),
         onOpenSubflow: id => setSubflowDetailId(id),
@@ -139,6 +157,7 @@ export function JourneyColumnView({
             setSubflowForm({ open: true, initial: sf, defaultParentId: sf?.parent_subflow_id ?? null });
         },
         onImportCases: subflowId => setImportSubflowId(subflowId),
+        onRemoveCase: case_ => setRemoveCaseTarget(case_),
     };
 
     const importSubflow = importSubflowId ? journeySubflows.find(s => s.id === importSubflowId) || null : null;
@@ -308,9 +327,24 @@ export function JourneyColumnView({
                         onBack={() => setCaseDetailId(null)}
                         onClose={() => setCaseDetailId(null)}
                         onCaseUpdated={onCaseUpdated}
+                        onDelete={() => setRemoveCaseTarget(detailCase)}
                     />
                 )}
             </AnimatePresence>
+
+            {removeCaseTarget && (
+                <DeleteConfirmModal
+                    title="Remover caso da jornada"
+                    message={
+                        removeCaseTarget.external_id
+                            ? `"${removeCaseTarget.title}" veio de uma planilha e será arquivado (some da jornada sem reaparecer no próximo sync).${removeCaseTarget.test_case_id ? ' O teste Maestro vinculado é preservado.' : ''}`
+                            : `"${removeCaseTarget.title}" será removido do fluxo.${removeCaseTarget.test_case_id ? ' O teste Maestro vinculado é preservado.' : ''}`
+                    }
+                    confirmLabel={removingCase ? 'Removendo…' : 'Remover'}
+                    onCancel={() => { if (!removingCase) setRemoveCaseTarget(null); }}
+                    onConfirm={removeCase}
+                />
+            )}
         </div>
     );
 }

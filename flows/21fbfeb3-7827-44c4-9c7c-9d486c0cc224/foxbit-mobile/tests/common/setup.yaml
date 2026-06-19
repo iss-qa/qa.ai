@@ -1,0 +1,16 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runScript: "./env.js"
+
+- runScript: "../../scripts/stage_app.js"
+
+# Permite rodar com maestrot test solto ou omitir com -e SKIP_LAUNCH=true
+- runFlow:
+    when:
+      true: ${SKIP_LAUNCH != 'true'}
+    commands:
+      - launchApp:
+          appId: "br.com.foxbit.foxbitandroid"
+          clearState: false
+          permissions:
+            all: allow

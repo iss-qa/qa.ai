@@ -1,0 +1,63 @@
+# COM O USUÁRIO LOGADO - EXECUTE -> maestro test -e SKIP_LAUNCH=true tc_markets_004.yaml
+appId: br.com.foxbit.foxbitandroid
+---
+# Carregamento de Ambiente e Page Objects
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/markets.js"
+- runScript: "../../pages/inicio.js"
+
+# 1. ACESSO À ABA MERCADOS
+- assertVisible:
+    id: ${output.MARKETS.tabMercados}
+- tapOn:
+    id: ${output.MARKETS.tabMercados}
+
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+
+# Seleciona "Todas" e clica em Filtrar
+- tapOn: ${output.MARKETS.categoriaTodas}
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_filtro_todas_aplicado"
+
+# 3. TROCA DE COTAÇÃO PARA USDT
+- tapOn:
+    id: ${output.MARKETS.comboboxOption} # bt_market_v2_quote
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Seleciona USDT na lista de moedas da cotação
+- tapOn: "USDT"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Valida se as moedas exibidas estão no par /USDT
+- assertVisible:
+    text: ".*USDT*."
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_cotacao_usdt_validada"
+
+# 4. VOLTAR COTAÇÃO PARA BRL
+- tapOn:
+    id: ${output.MARKETS.comboboxOption} # bt_market_v2_quote
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Seleciona BRL
+- tapOn: "BRL"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Valida se as moedas exibidas voltaram para o par /BRL
+- assertVisible:
+    text: ".*BRL*."
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_cotacao_brl_validada"
+
+# Reset para a Home
+- hideKeyboard
+- tapOn:
+    id: ${output.INICIO.botaoInicio}
+- waitForAnimationToEnd:
+    timeout: 2000

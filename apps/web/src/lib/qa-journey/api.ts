@@ -470,6 +470,27 @@ export async function deleteCase(id: string): Promise<void> {
     if (error) throw error;
 }
 
+// Arquiva um caso (soft delete): some das listas (o load filtra archived_at IS
+// NULL) sem apagar o registro. Usado para casos sincronizados de planilha.
+export async function archiveCase(id: string): Promise<void> {
+    const { error } = await supabase
+        .from('qa_journey_cases')
+        .update({ archived_at: new Date().toISOString() })
+        .eq('id', id);
+    if (error) throw error;
+}
+
+// Remove um caso da jornada respeitando a origem:
+// - Caso com external_id (veio de planilha; o sync casa por external_id) →
+//   ARQUIVA. Hard delete faria o sync recriá-lo no próximo ciclo.
+// - Caso sem external_id (puramente manual) → DELETA de fato.
+// Em ambos os casos o teste Maestro vinculado (test_case_id → tabela
+// test_cases) é preservado: removemos apenas o vínculo-caso da jornada.
+export async function removeJourneyCase(case_: Pick<QAJourneyCase, 'id' | 'external_id'>): Promise<void> {
+    if (case_.external_id) await archiveCase(case_.id);
+    else await deleteCase(case_.id);
+}
+
 function sanitizeCasePayload(draft: QAJourneyCaseDraft): Record<string, unknown> {
     const payload: Record<string, unknown> = {
         subflow_id: draft.subflow_id,

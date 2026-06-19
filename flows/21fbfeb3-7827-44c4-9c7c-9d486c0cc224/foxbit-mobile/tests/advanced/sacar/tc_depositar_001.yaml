@@ -1,0 +1,88 @@
+### ---
+#  Id: Depósito
+#  Name:
+#  Description:
+#  Gherkin: test-cases/advanced/depositar.feature
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/common.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/comprar.js"
+
+# VALIDAR DEPOSITO DE PIX EXPRESS
+- assertVisible:
+    id: ${output.INICIO.botaoDepositar}
+- tapOn:
+    id: ${output.INICIO.botaoDepositar}
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible: Buscar
+- tapOn: Buscar
+- inputText: "BRL"
+- assertVisible:
+    id: tile_coin_listing_coin
+- tapOn:
+    id: tile_coin_listing_coin
+- assertVisible: "1"
+- assertVisible: "0"
+- assertVisible:
+    id: bt_inform_amount_continue
+
+# DEPOSITAR 10 REAIS
+- tapOn: "1"
+- tapOn: "0"
+- tapOn: "0"
+- tapOn: "0"
+- assertVisible:
+    id: bt_inform_amount_continue
+- tapOn:
+    id: bt_inform_amount_continue
+
+# Validar Opcoes
+- assertVisible: Selecione uma opção
+- assertVisible:
+    id: card_deposit_method_pix_express
+# Validar o PIX Express
+- tapOn:
+    id: card_deposit_method_pix_express
+- assertVisible:
+    id: bt_deposit_by_type_qr_code
+- assertVisible:
+    id: tile_deposit_by_type_pix_key
+- assertVisible:
+    id: tile_deposit_by_type_amount
+- assertVisible:
+    id: tile_deposit_by_type_bank
+- assertVisible:
+    id: tile_deposit_by_type_agency
+- assertVisible:
+    id: tile_deposit_by_type_account
+- assertVisible: |-
+    Tipo:
+    Corrente
+- assertVisible:
+    id: tile_deposit_by_type_owner
+- assertVisible:
+    id: tile_deposit_by_type_legal_id
+- assertVisible: |-
+    Método:
+    PIX
+- assertVisible:
+    id: bt_deposit_by_type_accordion
+- tapOn:
+    id: bt_deposit_by_type_accordion
+- assertVisible: |-
+    Antes de depositar leia atentamente
+    Antes de depositar leia atentamente
+    • O valor mínimo para depósito via pix é de R$ 5,00.
+
+    • Não aceitamos depósitos de terceiros, ou seja, o valor depositado deve vir de uma conta com o seu CPF/CNPJ.
+
+    • O valor do depósito não pode ultrapassar o seu limite disponível.
+- assertVisible:
+    id: bt_deposit_by_type_action
+- tapOn:
+    id: bt_deposit_by_type_action

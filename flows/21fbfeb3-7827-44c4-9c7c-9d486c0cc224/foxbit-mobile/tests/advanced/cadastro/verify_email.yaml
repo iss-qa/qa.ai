@@ -1,0 +1,105 @@
+appId: br.com.foxbit.foxbitandroid
+---
+# 1. Abre a página geral de servidores do Mailosaur
+- openLink: https://mailosaur.com/app/servers
+
+# 2. Se cair na tela de erro, volta para a lista
+- runFlow:
+    when:
+      visible: "Back to server list"
+    commands:
+      - tapOn: 
+          point: "50%,64%" # Coordenada aproximada do botão 'Back to server list'
+
+# 3. Entra na caixa IsaiasQA_BoxMail
+- extendedWaitUntil:
+    visible: "IsaiasQA_BoxMail"
+    timeout: 30000
+- tapOn:
+    point: "30%,34%"
+    
+- tapOn:
+    point: "50%,44%" # Clica na área do primeiro e-mail recebido
+
+- scroll
+
+# 6. Chuva de cliques condicional (Só clica se ainda não mudou de página)
+
+# Tentativa 1 (Y=40)
+- runFlow:
+    when:
+      notVisible: "Terminar sessão"
+    commands:
+      - tapOn:
+          point: "50%,40%"
+
+# Tentativa 2 (Y=48)
+- runFlow:
+    when:
+      notVisible: "Terminar sessão"
+    commands:
+      - tapOn:
+          point: "50%,48%"
+
+# Tentativa 3 (Y=50)
+- runFlow:
+    when:
+      notVisible: "Terminar sessão"
+    commands:
+      - tapOn:
+          point: "50%,50%"
+
+# Tentativa 4 (Y=60)
+- runFlow:
+    when:
+      notVisible: "Terminar sessão"
+    commands:
+      - tapOn:
+          point: "50%,60%"
+
+# Tentativa 5 (Y=64)
+- runFlow:
+    when:
+      notVisible: "Terminar sessão"
+    commands:
+      - tapOn:
+          point: "50%,64%"
+
+# Tentativa 6 (Y=66)
+- runFlow:
+    when:
+      notVisible: "Terminar sessão"
+    commands:
+      - tapOn:
+          point: "50%,66%"
+
+# Tentativa 7 (Y=68)
+- runFlow:
+    when:
+      notVisible: "Terminar sessão"
+    commands:
+      - tapOn:
+          point: "50%,68%"
+
+# Tentativa 8 (Y=70)
+- runFlow:
+    when:
+      notVisible: "Terminar sessão"
+    commands:
+      - tapOn:
+          point: "50%,70%"
+
+# Tentativa 9 (Y=72)
+- runFlow:
+    when:
+      notVisible: "Terminar sessão"
+    commands:
+      - tapOn:
+          point: "50%,72%"
+
+# # 7. Validação Final
+# - extendedWaitUntil:
+#     visible: "Terminar sessão"
+#     timeout: 15000
+
+# - tapOn: "Terminar sessão"

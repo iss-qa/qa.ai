@@ -1,0 +1,100 @@
+### ---
+#  Id: Depositar-001
+#  Name: Depósito via PIX Express
+#  Description: Validar fluxo de depósito em BRL via PIX Express, conferindo dados bancários e orientações
+#  Gherkin: test-cases/advanced/depositar/depositar.feature
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/common.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/comprar.js"
+
+# VALIDAR DEPOSITO DE PIX EXPRESS
+- assertVisible:
+    id: ${output.INICIO.botaoDepositar}
+- tapOn:
+    id: ${output.INICIO.botaoDepositar}
+- waitForAnimationToEnd:
+    timeout: 3000
+# Screenshot - Tela de busca de moeda
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_busca_moeda"
+- assertVisible: Buscar
+- tapOn: Buscar
+- inputText: "BRL"
+- assertVisible:
+    id: ${output.COMMON.tileMoedaListagem}
+- tapOn:
+    id: ${output.COMMON.tileMoedaListagem}
+# Screenshot - Tela de informar valor
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_informar_valor"
+- assertVisible: "1"
+- assertVisible: "0"
+- assertVisible:
+    id: ${output.COMMON.botaoContinuarValor}
+
+# DEPOSITAR 10 REAIS
+- tapOn: "1"
+- tapOn: "0"
+- tapOn: "0"
+- tapOn: "0"
+- assertVisible:
+    id: ${output.COMMON.botaoContinuarValor}
+- tapOn:
+    id: ${output.COMMON.botaoContinuarValor}
+
+# Validar Opcoes
+# Screenshot - Tela de selecionar método de depósito
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_selecionar_metodo"
+- assertVisible: Selecione uma opção
+- assertVisible:
+    id: ${output.COMMON.cardMetodoPixExpress}
+# Validar o PIX Express
+- tapOn:
+    id: ${output.COMMON.cardMetodoPixExpress}
+# Screenshot - Tela de detalhes PIX Express
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/04_detalhes_pix_express"
+- assertVisible:
+    id: ${output.COMMON.botaoQrCode}
+- assertVisible:
+    id: ${output.COMMON.tileChavePix}
+- assertVisible:
+    id: ${output.COMMON.tileValor}
+- assertVisible:
+    id: ${output.COMMON.tileBanco}
+- assertVisible:
+    id: ${output.COMMON.tileAgencia}
+- assertVisible:
+    id: ${output.COMMON.tileConta}
+- assertVisible: |-
+    Tipo:
+    Corrente
+- assertVisible:
+    id: ${output.COMMON.tileTitular}
+- assertVisible:
+    id: ${output.COMMON.tileCpfCnpj}
+- assertVisible: |-
+    Método:
+    PIX
+- assertVisible:
+    id: ${output.COMMON.botaoAcordeon}
+- tapOn:
+    id: ${output.COMMON.botaoAcordeon}
+# Screenshot - Orientações PIX Express
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/05_orientacoes_pix_express"
+- assertVisible: |-
+    Antes de depositar leia atentamente
+    Antes de depositar leia atentamente
+    • O valor mínimo para depósito via pix é de R$ 5,00.
+
+    • Não aceitamos depósitos de terceiros, ou seja, o valor depositado deve vir de uma conta com o seu CPF/CNPJ.
+
+    • O valor do depósito não pode ultrapassar o seu limite disponível.
+- assertVisible:
+    id: ${output.COMMON.botaoAcao}
+- tapOn:
+    id: ${output.COMMON.botaoAcao}
+# Screenshot - Após confirmar depósito
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/06_deposito_confirmado"

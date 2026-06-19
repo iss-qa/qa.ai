@@ -1,0 +1,19 @@
+# COM O USUÁRIO LOGADO - EXECUTE -> maestro test -e SKIP_LAUNCH=true wallet.yaml
+appId: br.com.foxbit.foxbitandroid
+---
+# Execução Sequencial de Testes de Carteira (Wallet)
+- runScript: "../../pages/wallet.js"
+- runScript: "../../pages/inicio.js"
+
+# 1. Valida entrada no fluxo de verificação pela carteira
+- runFlow: "tc_wallet_001.yaml"
+
+# Reset: Volta para o Início
+- tapOn:
+    id: ${output.INICIO.botaoInicio}
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# 2. Valida seleção de documentos e saída do MetaMap
+- runFlow: "tc_wallet_002.yaml"
+

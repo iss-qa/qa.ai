@@ -1,0 +1,92 @@
+### ---
+#  Id: MENU-1
+#  Name: Menu components
+#  Description: Valida atalhos do menu e cards de produtos
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/menu.js"
+- runScript: "../../pages/inicio.js"
+
+# Clicar na opcao MENU
+- tapOn:
+    id: ${output.INICIO.botaoMenu}
+- swipe:
+    direction: DOWN
+    waitToSettleTimeoutMs: 5000    
+# Validar atalhos principais
+- assertVisible:
+    id: ${output.MENU.shortcutDepositar}
+- assertVisible:
+    id: ${output.MENU.shortcutSacar}
+- assertVisible:
+    id: ${output.MENU.shortcutLivroOfertas}
+- assertVisible:
+    id: ${output.MENU.shortcutComprar}
+- assertVisible:
+    id: ${output.MENU.shortcutVender}
+- assertVisible:
+    id: ${output.MENU.shortcutHistorico}
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/menu_atalhos"
+
+# Validar seção de produtos
+- assertVisible:
+    id: ${output.MENU.labelProdutosPensados}
+
+# Card Compra Recorrente
+- assertVisible:
+    id: ${output.MENU.shortcutCompraRecorrente}
+- assertVisible:
+    text: ".*Agende compras automáticas de criptomoedas.*"
+
+# Card Carteiras inteligentes
+- assertVisible:
+    id: ${output.MENU.shortcutCarteirasInteligentes}
+- assertVisible:
+    text: ".*Potencialize seu patrimônio com a gestão automática das Carteiras Inteligentes.*"
+
+# Card Foxbit Earn
+- assertVisible:
+    id: ${output.MENU.shortcutFoxbitEarn}
+- assertVisible:
+    text: ".*Renda passiva com criptomoedas de forma simples e automática.*"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/menu_produtos_parte_1"
+
+# Scroll para ver o restante
+- runFlow: "../../helpers/menu_scroll_baixo_cima.yaml"
+
+# Card Crypto Assets
+- assertVisible:
+    id: ${output.MENU.shortcutCryptoAssets}
+- assertVisible:
+    text: ".*Tokenização de ativos reais como oportunidade de investimento.*"
+
+# Card Analista Cripto
+- assertVisible:
+    id: ${output.MENU.shortcutAnalistaCripto}
+- assertVisible:
+    text: ".*Análises inteligentes de criptomoedas com IA.*"
+
+# Card Foxbit VIP
+- assertVisible:
+    id: ${output.MENU.shortcutFoxbitVIP}
+- assertVisible:
+    text: ".*Confira o nível de sua conta e os limites disponíveis*"
+
+# Card Indique amigos
+- assertVisible:
+    id: ${output.MENU.shortcutIndiqueAmigos}
+- assertVisible:
+    text: ".*Realize pagamentos utilizando suas Criptomoedas em qualquer lugar.*"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/menu_produtos_parte_2"
+
+# Retornar ao início para manter o estado do app limpo
+- hideKeyboard
+- tapOn:
+    id: ${output.INICIO.botaoInicio}
+

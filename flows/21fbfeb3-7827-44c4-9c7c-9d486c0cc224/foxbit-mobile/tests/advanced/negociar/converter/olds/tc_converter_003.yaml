@@ -1,0 +1,14 @@
+# Gherkin: test-cases/advanced-flows/negociar/converter.feature - Scenario: TC_Converter_003 - Show empty state when pay search has no matches
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "_precondition_converter.yaml"
+- tapOn: ${output.CONVERTER.comboVocePaga}
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn: "Buscar"
+- inputText: "ZZZ"
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertNotVisible: "BTC"
+- tapOn:
+    point: "70, 190"

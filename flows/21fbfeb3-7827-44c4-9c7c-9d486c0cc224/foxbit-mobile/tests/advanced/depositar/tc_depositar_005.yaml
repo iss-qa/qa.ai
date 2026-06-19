@@ -1,0 +1,107 @@
+### ---
+#  Id: Depositar-005
+#  Name: Depósito via Cartão de Crédito - Dados Inválidos
+#  Description: Validar fluxo de depósito via cartão de crédito com dados fakes, conferindo processamento
+#  Gherkin: test-cases/advanced/depositar/depositar.feature
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/common.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/comprar.js"
+
+###############################################
+# VALIDAR DEPOSITO COM CARTAO DE CREDITO COM DADOS FAKES - INVALIDO. - CONTA DO LUIZ
+- assertVisible:
+    id: ${output.INICIO.botaoDepositar}
+- tapOn:
+    id: ${output.INICIO.botaoDepositar}
+- waitForAnimationToEnd:
+    timeout: 3000
+# Screenshot - Tela de busca de moeda
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_busca_moeda"
+- assertVisible: Buscar
+- tapOn: Buscar
+- inputText: "BRL"
+- assertVisible:
+    id: ${output.COMMON.tileMoedaListagem}
+- tapOn:
+    id: ${output.COMMON.tileMoedaListagem}
+# Screenshot - Tela de informar valor
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_informar_valor"
+- assertVisible: "1"
+- assertVisible: "0"
+# DEPOSITAR 10 REAIS
+- tapOn: "1"
+- tapOn: "0"
+- tapOn: "0"
+- tapOn: "0"
+- assertVisible:
+    id: ${output.COMMON.botaoContinuarValor}
+- tapOn:
+    id: ${output.COMMON.botaoContinuarValor}
+
+# Validar Opcoes
+# Screenshot - Tela de selecionar método de depósito
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_selecionar_metodo"
+- assertVisible: Selecione uma opção
+# Validar o Deposito COM CARTAO DE CREDITO
+- assertVisible:
+    id: ${output.COMMON.cardMetodoCartaoCredito}
+- tapOn:
+    id: ${output.COMMON.cardMetodoCartaoCredito}
+# Screenshot - Tela do formulário de cartão de crédito
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/04_formulario_cartao"
+- assertVisible: Cartão de crédito
+# Numero telefone aparece apenas na primeira vez se usuario nao tiver preenchido
+# - tapOn: (99) 9 1234-4568
+# - inputText: "71 996838734"
+- tapOn: 1234 5678 9012 3456
+- inputText: "5389 0301 3545 9037"
+- tapOn: Luiz Felipe Evaristo Barbosa
+- inputText: "Luiz Felipe Evaristo Barbosa"
+- tapOn: 12/28
+- inputText: "09/26"
+- assertVisible: "123"
+- tapOn: "123"
+- inputText: "791"
+# Screenshot - Formulário preenchido com dados fakes
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/05_formulario_preenchido"
+- tapOn:
+    id: ${output.COMMON.botaoOrientacoesCartao}
+# Screenshot - Orientações do cartão de crédito
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/06_orientacoes_cartao"
+- assertVisible: |-
+    Orientações
+    Orientações
+    • O valor mínimo para depósito via cartão de crédito é de R$ 5,00 e máximo é o seu limite de deposito disponível.
+
+    • Não aceitamos cartões virtuais, utilize apenas cartões físicos.
+    • Não aceitamos depósitos de terceiros, ou seja, o valor depositado deve vir de uma conta ou cartão de crédito com o seu CPF/CNPJ.
+    • O valor do depósito não pode ultrapassar o seu limite disponível.
+
+- doubleTapOn:
+    id: ${output.COMMON.botaoContinuarCartao}
+    delay: 100
+
+# Screenshot - Processando depósito
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/07_processando_deposito"
+- assertVisible: Processando depósito...
+- waitForAnimationToEnd:
+    timeout: 7000
+# Tratar modal de cookies se aparecer
+- runFlow:
+    when:
+      visible: "Utilizamos cookies"
+    commands:
+      - tapOn: "Aceitar todos"
+# Screenshot - Resultado do depósito
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/08_resultado_deposito"
+- tapOn: Voltar
+- tapOn: Voltar
+- tapOn: Voltar
+- tapOn: Voltar
+- tapOn: Voltar
+- tapOn: Voltar

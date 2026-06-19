@@ -1,0 +1,17 @@
+# Gherkin: test-cases/advanced-flows/negociar/converter.feature - Scenario: TC_Converter_004 - Open receive selector and validate filters
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "_precondition_converter.yaml"
+- tapOn: ${output.CONVERTER.comboVoceRecebe}
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    text: ".*Buscar.*"
+- assertVisible:
+    text: ".*REAL.*"
+- assertVisible:
+    text: ".*BTC.*"
+- assertVisible:
+    text: ".*ETH.*"
+- tapOn:
+    point: "70, 190"

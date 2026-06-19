@@ -1,0 +1,97 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow:
+    when:
+      true: ${SKIP_LAUNCH != 'true'}
+    commands:
+      - clearState
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+
+- runScript: "../../pages/login.js"
+- runScript: "../../pages/cadastro.js"
+
+- runScript:
+    file: "../../common/generate_email.js"
+    env:
+      EMAIL_PREFIX: "automacao_termos"
+
+- waitForAnimationToEnd:
+    timeout: 10000
+
+- tapOn:
+    id: ${output.LOGIN.botaoCriarConta}
+- assertVisible: ${output.CADASTRO.tituloEmaileSenha}
+
+- assertVisible: ${output.CADASTRO.inputEmail}
+- assertVisible: ${output.CADASTRO.inputSenha}
+
+- tapOn: ${output.CADASTRO.inputEmail}
+- inputText: ${output.TEMP_EMAIL}
+
+- tapOn: ${output.CADASTRO.inputSenha}
+- inputText: ${output.TEMP_PASSWORD}
+- hideKeyboard
+
+- swipe:
+    direction: UP
+    duration: 1000
+
+# O botão Continuar deve estar inativo inicialmente, mas Maestro não suporta asserts robustos de disable direto, 
+# então garantimos fluxo abrindo o Termo:
+- tapOn: ${output.CADASTRO.linkTermosUso}
+# Confere se foi levado à webview ou tela nativa com o título
+- extendedWaitUntil:
+    visible: ".*Termos.*|.*Terms.*"
+    timeout: 10000
+
+# Retornar (seja pelo botão de voltar nativo ou pelo X do app)
+- pressKey: Back
+
+- tapOn: ${output.CADASTRO.linkPoliticaPrivacidade}
+- extendedWaitUntil:
+    visible: ".*Privacidade.*|.*Privacy.*"
+    timeout: 10000
+- pressKey: Back
+
+# Clica no Checkbox
+- tapOn: ${output.CADASTRO.checkboxTermos}
+
+# Só agora clica em Continuar, se desabilitado o teste falhará
+- tapOn: ${output.CADASTRO.botaoContinuar}
+
+- extendedWaitUntil:
+    visible: "Verifique seu email"
+    timeout: 10000
+    
+- assertVisible:
+    text: ".*Verifique seu email.*"
+
+# Recuperar Link do E-mail e realizar ativação em background via GET request
+- runScript: "../../common/fetch_email_link_mailosaur.js"
+
+# Clica em Terminar sessão para ser direcionado à tela de login (Acesse sua conta)
+- tapOn: "Terminar sessão"
+
+# Fluxo de login na nova tela auxiliar
+- runScript: "../../pages/login.js"
+- extendedWaitUntil:
+    visible: ${output.loginAux.titulo}
+    timeout: 10000
+
+# Toca no titulo para descartar o overlay/modal do Google Passwords ("Usar a senha salva?")
+- tapOn: ${output.loginAux.titulo}
+
+- tapOn: ${output.loginAux.inputEmail}
+- eraseText: 50
+- inputText: ${output.TEMP_EMAIL}
+- hideKeyboard
+
+- tapOn: ${output.loginAux.inputSenha}
+- inputText: ${output.TEMP_PASSWORD}
+- hideKeyboard
+
+- tapOn: ${output.loginAux.botaoEntrar}
+
+- assertVisible:
+    text: ".*Início.*"

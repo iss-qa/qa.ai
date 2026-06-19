@@ -1,0 +1,10 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- swipe:
+    start: "90%, 30%"
+    end: "20%, 30%"
+    duration: 1000
+- swipe:
+    start: "90%, 30%"
+    end: "20%, 30%"
+    duration: 1000

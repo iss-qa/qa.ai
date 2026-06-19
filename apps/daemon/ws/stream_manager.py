@@ -33,8 +33,20 @@ class ScreenStreamManager:
     
     async def connect(self, udid: str, websocket: WebSocket):
         await websocket.accept()
+
+        # Handoff de uma conexão anterior para o MESMO device (navegação
+        # rápida, StrictMode em dev, reconexão antes do teardown do WS antigo):
+        # registra o WS novo IMEDIATAMENTE e cancela só as tasks do anterior,
+        # reusando o ScrcpyClient já rodando (frames fluem na hora). Sem isso, o
+        # disconnect TARDIO do WS antigo — mesma chave udid — derrubava as
+        # tasks e o client do WS novo, deixando-o aberto e SEM frames: o preview
+        # ficava preso em "Conectando ao espelhamento" e só o refresh resolvia.
+        prev = self.active_streams.get(udid)
         self.active_streams[udid] = websocket
-        
+        if prev is not None and prev is not websocket:
+            self._cancel_tasks(udid)
+            logger.info(f"[connect] {udid}: stream anterior substituído (handoff)")
+
         # Iniciar scrcpy client se ainda não existir para esse device
         if udid not in self.scrcpy_clients:
             client = ScrcpyClient(udid, max_fps=30, max_width=1080)
@@ -43,6 +55,9 @@ class ScreenStreamManager:
                 self.scrcpy_clients[udid] = client
             except Exception as e:
                 logger.error(f"Error starting ScrcpyClient for {udid}: {e}")
+                # Não deixa este udid registrado sem stream ativo.
+                if self.active_streams.get(udid) is websocket:
+                    self.active_streams.pop(udid, None)
                 await websocket.close(code=1011, reason="Failed to start scrcpy")
                 return
         
@@ -92,9 +107,28 @@ class ScreenStreamManager:
         except WebSocketDisconnect:
             pass
         finally:
-            await self.disconnect(udid)
+            await self.disconnect(udid, websocket)
 
-    async def disconnect(self, udid: str):
+    def _cancel_tasks(self, udid: str):
+        """Cancela relay + watchdog de um udid SEM parar o ScrcpyClient nem
+        mexer em active_streams — usado no handoff para um WS novo, que reusa o
+        client já rodando."""
+        t = self.relay_tasks.pop(udid, None)
+        if t is not None:
+            t.cancel()
+        w = self.watchdog_tasks.pop(udid, None)
+        if w is not None:
+            w.cancel()
+
+    async def disconnect(self, udid: str, websocket: WebSocket | None = None):
+        # Guarda por identidade: um disconnect TARDIO de uma conexão antiga não
+        # pode derrubar os recursos de uma conexão NOVA com o mesmo udid. Era a
+        # causa do preview travar em "Conectando ao espelhamento" sem o WS
+        # fechar (nenhum frame chegava porque o relay do WS novo fora cancelado).
+        if websocket is not None and self.active_streams.get(udid) is not websocket:
+            logger.info(f"[disconnect] {udid}: ignorado — stream já substituído")
+            return
+
         if udid in self.active_streams:
             self.active_streams.pop(udid)
 
@@ -148,7 +182,7 @@ class ScreenStreamManager:
             logger.error(f"Relay video error for {udid}: {e}")
             log_manager.device(f"Erro no relay de vídeo: {e}", udid=udid, level="ERROR")
         finally:
-            await self.disconnect(udid)
+            await self.disconnect(udid, websocket)
 
     async def _restart_client(self, udid: str, websocket: WebSocket) -> ScrcpyClient | None:
         """Recria o ScrcpyClient após morte do server no device.

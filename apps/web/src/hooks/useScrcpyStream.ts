@@ -2,6 +2,11 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 
 export type StreamStatus = 'idle' | 'connecting' | 'streaming' | 'error';
 
+// WS abriu mas nenhum frame decodificado nesse tempo → força reconexão.
+// Rede de segurança contra qualquer stall do daemon que não feche o socket
+// (senão o preview ficaria preso em "Conectando ao espelhamento").
+const CONNECT_TIMEOUT_MS = 6000;
+
 function isKeyframe(data: Uint8Array): boolean {
     for (let i = 0; i < data.length - 4; i++) {
         if (data[i] === 0 && data[i + 1] === 0 && data[i + 2] === 0 && data[i + 3] === 1) {
@@ -19,6 +24,7 @@ export function useScrcpyStream(udid: string | null) {
     const [deviceDimensions, setDeviceDimensions] = useState({ width: 1080, height: 2400 });
     const [streamStatus, setStreamStatus] = useState<StreamStatus>('idle');
     const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         if (!udid || !canvasRef.current) {
@@ -40,11 +46,19 @@ export function useScrcpyStream(udid: string | null) {
         let cancelled = false;
         let retryDelayMs = 800;
 
+        const clearConnectTimeout = () => {
+            if (connectTimeoutRef.current) {
+                clearTimeout(connectTimeoutRef.current);
+                connectTimeoutRef.current = null;
+            }
+        };
+
         // Estado de decodificação é POR CONEXÃO — recriado em cada connect()
         // (o scrcpy reiniciado manda SPS/PPS novos).
         const connect = () => {
             if (cancelled) return;
 
+            let streamingReached = false;
             let configBuffer: Uint8Array | null = null;
             let codecString = '';
             let waitingForKeyframe = false;
@@ -92,8 +106,20 @@ export function useScrcpyStream(udid: string | null) {
             ws.binaryType = 'arraybuffer';
             wsRef.current = ws;
 
+            // Watchdog: se o WS não chegar a 'streaming' a tempo (aberto mas sem
+            // frames), fecha o socket → onclose agenda reconexão. Evita ficar
+            // preso em "Conectando ao espelhamento" sem auto-recuperar.
+            clearConnectTimeout();
+            connectTimeoutRef.current = setTimeout(() => {
+                connectTimeoutRef.current = null;
+                if (cancelled || streamingReached) return;
+                console.warn('[Scrcpy] Sem frames após timeout — reconectando');
+                try { ws.close(); } catch { /* ignore */ }
+            }, CONNECT_TIMEOUT_MS);
+
             const scheduleReconnect = () => {
                 if (cancelled || retryRef.current) return;
+                clearConnectTimeout();
                 setStreamStatus('connecting');
                 retryRef.current = setTimeout(() => {
                     retryRef.current = null;
@@ -202,6 +228,10 @@ export function useScrcpyStream(udid: string | null) {
                         timestamp: performance.now() * 1000,
                         data: chunkData,
                     }));
+                    if (!streamingReached) {
+                        streamingReached = true;
+                        clearConnectTimeout();
+                    }
                     setStreamStatus('streaming');
                 }
             } catch (e) {
@@ -215,6 +245,7 @@ export function useScrcpyStream(udid: string | null) {
 
         return () => {
             cancelled = true;
+            clearConnectTimeout();
             if (retryRef.current) {
                 clearTimeout(retryRef.current);
                 retryRef.current = null;

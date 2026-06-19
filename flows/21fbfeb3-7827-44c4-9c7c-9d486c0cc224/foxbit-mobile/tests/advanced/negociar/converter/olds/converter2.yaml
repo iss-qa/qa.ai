@@ -1,0 +1,87 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow:
+    when:
+      true: ${SKIP_LAUNCH != 'true'}
+    commands:
+      - launchApp:
+          appId: "br.com.foxbit.foxbitandroid"
+          clearState: false
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    text: "Comprar rápida"
+- assertVisible:
+    text: "Negocie suas criptomoedas em poucos toques, de uma forma simples e imediata"
+- assertVisible:
+    text: "Converter"
+- assertVisible:
+    text: "Converta criptomoedas e reais de forma simples e rápida"
+- assertVisible:
+    text: "Avançado"
+- assertVisible:
+    text: "Defina seus próprios preços e ordens para ter mais controle nas negociações"
+
+- tapOn: "Converter"
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    text: ".*Converter.*"
+- assertVisible:
+    text: "Você paga"
+- assertVisible:
+    text: "Você recebe"
+- assertVisible:
+    text: ".*BRL.*"
+- assertVisible:
+    text: ".*BTC.*"
+#- assertVisible:
+    text: ".*Saldo R$ 0,00.*"
+#- assertVisible:
+    text: ".*Saldo 0,00000000 BTC.*"
+
+- tapOn: "BRL"
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    text: ".*Você paga.*"
+- assertVisible:
+    text: ".*Buscar.*"
+- assertVisible:
+    text: ".*BRL.*"
+- tapOn:
+    point: "70, 190"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "BTC"
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    text: ".*Buscar.*"
+- assertVisible:
+    text: ".*REAL.*"
+- assertVisible:
+    text: ".*BTC.*"
+- assertVisible:
+    text: ".*ETH.*"
+- tapOn:
+    point: "70, 190"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn:
+    point: "540, 790"
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*Você paga.*"
+- assertVisible:
+    text: ".*Você recebe.*"
+
+- tapOn:
+    point: "1100, 190"
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    text: ".*Converter.*"

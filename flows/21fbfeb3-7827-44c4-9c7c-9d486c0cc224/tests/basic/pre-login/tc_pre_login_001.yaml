@@ -1,0 +1,27 @@
+### ---
+#  Id: PRE-LOGIN-1
+#  Name: Validate main pre-login elements
+#  Description: Validate main label, create account and login buttons on pre-login screen
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/login.js"
+
+- waitForAnimationToEnd:
+    timeout: 10000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_pre_login_inicial"
+
+# Validações via REGEX em text (Diretriz Global)
+- assertVisible:
+    text: ".*Negocie criptomoedas\ \ncom segurança.*"
+- assertVisible:
+    text: ".*${output.LOGIN.labelNegocie}.*"
+- assertVisible:
+    text: ".*${output.LOGIN.botaoCriarConta}.*"
+- assertVisible:
+    text: ".*${output.LOGIN.botaoEntrar}.*"
+- assertVisible:
+    text: ".*${output.LOGIN.labelConheca}.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_elementos_principais"

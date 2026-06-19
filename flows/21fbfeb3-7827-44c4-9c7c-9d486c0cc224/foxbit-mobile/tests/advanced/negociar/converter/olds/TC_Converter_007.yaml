@@ -1,0 +1,12 @@
+# Gherkin: test-cases/advanced-flows/negociar/converter.feature - Scenario: TC_Converter_007 - Open converter info
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "_precondition_converter.yaml"
+- tapOn:
+    point: "1100, 190"
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*Converter.*"
+- tapOn:
+    point: "70, 190"

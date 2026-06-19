@@ -1,0 +1,92 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow:
+    when:
+      true: ${SKIP_LAUNCH != 'true'}
+    commands:
+      - clearState
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+
+- runScript: "../../pages/login.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/comprar.js"
+- runScript: "../../pages/markets.js"
+- runScript: "../../common/users.js"
+
+# LOGIN
+- tapOn:
+    id: "bt_welcome_login"
+
+- runScript:
+    file: "../../common/wait.js"
+    env:
+      MS: 2000
+
+- tapOn: "Digite seu e-mail"
+- inputText: ${output.USERS.ISAIAS_QA.email}
+
+- tapOn: "Digite sua senha"
+- inputText: ${output.USERS.ISAIAS_QA.senha}
+
+- hideKeyboard
+- tapOn:
+    text: ".*Entrar.*"
+    index: 1
+
+- waitForAnimationToEnd:
+    timeout: 10000
+
+# Trata prompt de biometria se aparecer
+- runFlow:
+    when:
+      visible: "Autenticar com biometria"
+    commands:
+      - tapOn: "Não"
+
+# Clique no Banner caso apareca (Opcional)
+- runFlow:
+    when:
+      visible: "Close"
+    commands:
+      - tapOn: "Close"
+
+# NAVEGACAO E MERCADO
+- waitForAnimationToEnd:
+    timeout: 10000
+- assertVisible: ${output.INICIO.tabInicio}
+
+- tapOn: ${output.INICIO.actionNegociar}
+- assertVisible:
+    text: ".*${output.COMPRAR.opcaoComprarRapida}.*"   
+
+- tapOn: "Comprar rápida\n\nComprar rápida\n\nNegocie suas criptomoedas em poucos toques, de uma forma simples e imediata."
+
+# BUSCA PELA MOEDA BTC
+- assertVisible:
+    text: ".*${output.MARKETS.search}.*"   
+
+- tapOn: ${output.MARKETS.search}
+- inputText: "BTC"
+- hideKeyboard
+
+# VALIDACAO E SELECAO DA MOEDA
+- assertVisible:
+    id: "bt_select_market_tile"
+    index: 0
+- tapOn:
+    id: "bt_select_market_tile"
+    index: 0
+
+# COMPRA
+- assertVisible: "Comprar Bitcoin (BTCBRL)"
+- tapOn: "QUANTO DESEJA COMPRAR?\n0"
+- tapOn: ${output.COMPRAR.botao100Porcento}
+#- hideKeyboard
+
+- tapOn: "Continuar"
+
+# Nao precisa comprar na DEMO
+# REVISAO E CONFIRMACAO
+- assertVisible: ${output.COMPRAR.labelRevisarOrdem}
+#- tapOn: ${output.COMPRAR.botaoConfirmarCompra}

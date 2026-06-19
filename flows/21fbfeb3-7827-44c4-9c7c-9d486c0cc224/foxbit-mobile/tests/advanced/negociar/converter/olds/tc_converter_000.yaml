@@ -1,0 +1,21 @@
+# Gherkin: test-cases/advanced-flows/negociar/converter.feature - Scenario: Open Convert from Trade actions
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "_precondition_login.yaml"
+
+- tapOn: ${output.INICIO.actionNegociar}
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    text: ".*Comprar rápida.*"
+- assertVisible:
+    text: ".*Converter.*"
+- assertVisible:
+    text: ".*Avançado.*"
+
+- tapOn: "Converter"
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible: ${output.CONVERTER.textHeaderConverter}
+- assertVisible: ${output.CONVERTER.textVocePaga}
+- assertVisible: ${output.CONVERTER.textVoceRecebe}

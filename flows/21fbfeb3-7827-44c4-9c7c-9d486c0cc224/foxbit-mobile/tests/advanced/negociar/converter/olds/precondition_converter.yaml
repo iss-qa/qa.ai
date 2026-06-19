@@ -1,0 +1,8 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "_precondition_login.yaml"
+
+- runFlow:
+    when:
+      visible: "Negociar"
+    file: "_open_converter.yaml"

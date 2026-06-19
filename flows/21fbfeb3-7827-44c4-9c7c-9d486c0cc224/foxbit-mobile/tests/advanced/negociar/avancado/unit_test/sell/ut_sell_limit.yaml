@@ -1,0 +1,42 @@
+######################################################################################################
+# DESCRIÇÃO: Realiza uma venda do tipo LIMITE
+######################################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+- assertVisible: "Vender Bitcoin (BTCBRL)"
+- assertVisible: "Mercado"
+- tapOn: "Mercado"
+- assertVisible: "Limite"
+- assertVisible: "Stop Market"
+- tapOn: "Limite"
+- assertVisible: "QUANTO DESEJA VENDER?"
+- assertVisible: "0"
+- assertVisible: "1"
+- tapOn: "1"
+- tapOn: "0"
+- assertVisible: "10"
+- assertVisible: "Próximo"
+- tapOn: "Próximo"
+- assertVisible: "R$\nQUAL O PREÇO DE VENDA?\n0"
+- assertVisible: "0"
+- assertVisible: "2"
+- tapOn: "8"
+- tapOn: "0"
+- tapOn: "0"
+- tapOn: "0"
+- tapOn: "0"
+- tapOn: "0"
+- assertVisible: "R$\nQUAL O PREÇO DE VENDA?\n800.000"
+- assertVisible: "Continuar"
+- tapOn: "Continuar"
+- assertVisible: "Par:\nBTCBRL"
+- assertVisible: "Tipo de ordem:\nLimite"
+- scrollUntilVisible:
+    element: "Confirmar venda"
+    speed: 80
+- tapOn: "Confirmar venda"
+- assertVisible: "Ordem enviada com sucesso"
+- back
+- assertVisible: "0"
+- tapOn: "0"

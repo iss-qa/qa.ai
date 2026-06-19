@@ -1,0 +1,38 @@
+######################################################################################################
+# DESCRIÇÃO: Realiza uma compra do tipo Limite Executado a Mercado
+######################################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+- assertVisible: "Comprar Bitcoin (BTCBRL)"
+- assertVisible: "Limite"
+- assertVisible: "QUANTO DESEJA COMPRAR?"
+- assertVisible: "0"
+- assertVisible: "1"
+- tapOn: "1"
+- tapOn: "0"
+- assertVisible: "10"
+- assertVisible: "Próximo"
+- tapOn: "Próximo"
+- assertVisible: "R$\nQUAL O PREÇO DE COMPRA?\n0"
+- assertVisible: "0"
+- tapOn: "7"
+- tapOn: "0"
+- tapOn: "0"
+- tapOn: "0"
+- tapOn: "0"
+- tapOn: "0"
+- assertVisible: "R$\nQUAL O PREÇO DE COMPRA?\n700.000"
+- assertVisible: "Continuar"
+- tapOn: "Continuar"
+- assertVisible: "Par:\nBTCBRL"
+- assertVisible: "Tipo de ordem:\nLimite"
+- assertVisible: "Inserindo esse valor, a sua ordem será executada a mercado"
+- scrollUntilVisible:
+    element: "Confirmar compra"
+    speed: 80
+- tapOn: "Confirmar compra"
+- assertVisible: "Ordem enviada com sucesso"
+- back
+- assertVisible: "0"
+- tapOn: "0"

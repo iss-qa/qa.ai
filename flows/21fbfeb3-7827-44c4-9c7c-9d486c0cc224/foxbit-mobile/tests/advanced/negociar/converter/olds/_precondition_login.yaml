@@ -1,0 +1,11 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runScript: "../../../pages/converter.js"
+
+- runFlow:
+    when:
+      true: ${SKIP_LAUNCH != 'true'}
+    commands:
+      - launchApp:
+          appId: "br.com.foxbit.foxbitandroid"
+          clearState: false

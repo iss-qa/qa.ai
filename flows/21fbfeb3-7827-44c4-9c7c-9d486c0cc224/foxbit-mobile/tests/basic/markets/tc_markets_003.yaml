@@ -1,0 +1,238 @@
+# COM O USUÁRIO LOGADO - EXECUTE -> maestro test -e SKIP_LAUNCH=true tc_markets_003.yaml
+appId: br.com.foxbit.foxbitandroid
+---
+# Carregamento de Ambiente e Page Objects
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/markets.js"
+- runScript: "../../pages/inicio.js"
+
+# 1. ACESSO À ABA MERCADOS
+- assertVisible:
+    id: ${output.MARKETS.tabMercados}
+- tapOn:
+    id: ${output.MARKETS.tabMercados}
+
+# 2. FLUXO DE FILTROS SEQUENCIAIS (Categorias)
+
+# 2.1 Cripto
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- tapOn: ${output.MARKETS.categoriaCripto}
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_filtro_cripto"
+
+# 2.2 Stablecoin (Desmarca Cripto, Marca Stablecoin)
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- tapOn: ${output.MARKETS.categoriaCripto}      # Desmarca
+- tapOn: ${output.MARKETS.categoriaStablecoin}  # Marca
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_filtro_stablecoin"
+
+# 2.3 Gamecoins (Desmarca Stablecoin, Marca Gamecoins)
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- tapOn: ${output.MARKETS.categoriaStablecoin} # Desmarca
+- tapOn: ${output.MARKETS.categoriaGamecoins}  # Marca
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_filtro_gamecoins"
+
+# 2.4 Metaverso (Desmarca Gamecoins, Marca Metaverso)
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- tapOn: ${output.MARKETS.categoriaGamecoins} # Desmarca
+- tapOn: ${output.MARKETS.categoriaMetaverso} # Marca
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/04_filtro_metaverso"
+
+# 2.5 DeFi (Desmarca Metaverso, Marca DeFi)
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- tapOn: ${output.MARKETS.categoriaMetaverso} # Desmarca
+- tapOn: ${output.MARKETS.categoriaDeFi}      # Marca
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/05_filtro_defi"
+
+# 2.6 Utility (Desmarca DeFi, Marca Utility)
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- tapOn: ${output.MARKETS.categoriaDeFi}    # Desmarca
+- swipe:
+    direction: UP
+- tapOn: ${output.MARKETS.categoriaUtility} # Marca
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/06_filtro_utility"
+
+# 2.7 Crypto Assets (Desmarca Utility, Marca Crypto Assets)
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- swipe:
+    direction: UP
+- tapOn: ${output.MARKETS.categoriaUtility}      # Desmarca
+- tapOn: ${output.MARKETS.categoriaCryptoAssets} # Marca
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/07_filtro_crypto_assets"
+
+# 2.8 Memecoins (Desmarca Crypto Assets, Marca Memecoins)
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- swipe:
+    direction: UP
+- tapOn: ${output.MARKETS.categoriaCryptoAssets} # Desmarca
+- tapOn: ${output.MARKETS.categoriaMemecoins}    # Marca
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/08_filtro_memecoins"
+
+# 2.9 NFT (Desmarca Memecoins, Marca NFT)
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- swipe:
+    direction: UP
+- tapOn: ${output.MARKETS.categoriaMemecoins} # Desmarca
+- tapOn: ${output.MARKETS.categoriaNFT}       # Marca
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/09_filtro_nft"
+
+# 2.10 Governança (Desmarca NFT, Marca Governança)
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- swipe:
+    direction: UP
+- tapOn: ${output.MARKETS.categoriaNFT}         # Desmarca
+- tapOn: ${output.MARKETS.categoriaGovernanca}  # Marca
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/10_filtro_governanca"
+
+# 3. FILTRO COMBINADO (NFT + DeFi + Metaverso + Stablecoin)
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- swipe:
+    direction: UP
+- tapOn: ${output.MARKETS.categoriaNFT}
+- tapOn: ${output.MARKETS.categoriaDeFi}
+- tapOn: ${output.MARKETS.categoriaMetaverso}
+- swipe:
+    direction: DOWN
+- tapOn: ${output.MARKETS.categoriaStablecoin}
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/11_filtro_combinado_final"
+
+# 4. FILTROS RÁPIDOS (Populares, Altas, Baixas, Preços, Alfabético)
+
+# 4.1 Populares
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- tapOn: "Populares"
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/12_filtro_rapido_populares"
+
+# 4.2 Maiores altas
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- tapOn: "Maiores altas"
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/13_filtro_rapido_altas"
+
+# 4.3 Maiores baixas
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- tapOn: "Maiores baixas"
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/14_filtro_rapido_baixas"
+
+# 4.4 Maior preço
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- tapOn: "Maior preço"
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/15_filtro_rapido_maior_preco"
+
+# 4.5 Menor preço
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- tapOn: "Menor preço"
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/16_filtro_rapido_menor_preco"
+
+# 4.6 Alfabético
+- tapOn:
+    id: ${output.MARKETS.iconFilter}
+- tapOn: "Alfabético"
+- tapOn: Filtrar
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/17_filtro_rapido_alfabetico"
+
+# Reset para a Home
+- hideKeyboard
+- tapOn:
+    id: ${output.INICIO.botaoInicio}
+- waitForAnimationToEnd:
+    timeout: 2000

@@ -1,0 +1,40 @@
+### ---
+#  Id: INICIO-3
+#  Name: Modal de Negociar
+#  Description: Validar a abertura e o conteúdo do modal de Negociar
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/inicio.js"
+
+# Clicar em Negociar
+- tapOn:
+    id: ${output.INICIO.botaoNegociar}
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Validar conteúdo do modal (Compra rápida e descrição)
+- assertVisible:
+    text: ".*Compra rápida.*"
+- assertVisible:
+    text: ".*Negocie suas criptomoedas em poucos toques, de uma forma simples e imediata.*"
+
+# Validar conteúdo do modal (Avançado e descrição)
+- assertVisible:
+    text: ".*Avançado.*"
+- assertVisible:
+    text: ".*Defina seus próprios preços e ordens para ter mais controle nas negociações.*"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/tc_inicio_003_negociar_modal"
+
+# Fechar o modal clicando fora ou usando back
+- tapOn:
+    point: "50%, 20%" # Toca em cima para fechar o modal (que costuma ser bottom sheet)
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Validar retorno à Home
+- assertVisible:
+    id: ${output.INICIO.botaoNegociar}

@@ -38,13 +38,15 @@ interface CaseDetailModalProps {
     onClose: () => void;
     /** Propaga o caso atualizado (registro manual de execução) ao pai. */
     onCaseUpdated?: (updated: QAJourneyCase) => void;
+    /** Solicita ao pai a remoção do caso (que pede confirmação e recarrega). */
+    onDelete?: () => void;
 }
 
 // Modal central de detalhe de um caso de teste: spec (passos + resultado
 // esperado), registro MANUAL do resultado da execução (pass/fail/...) e o
 // histórico de execuções automatizadas do teste Maestro vinculado ao
 // sub-fluxo, quando existir.
-export function CaseDetailModal({ subflow, case_, testCases, onBack, onClose, onCaseUpdated }: CaseDetailModalProps) {
+export function CaseDetailModal({ subflow, case_, testCases, onBack, onClose, onCaseUpdated, onDelete }: CaseDetailModalProps) {
     // Cópia local para refletir o registro de execução na hora, mesmo se o
     // pai não repassar onCaseUpdated.
     const [current, setCurrent] = useState<QAJourneyCase>(case_);
@@ -395,6 +397,29 @@ export function CaseDetailModal({ subflow, case_, testCases, onBack, onClose, on
                             </ul>
                         )}
                     </Section>
+
+                    {/* Zona de perigo — remover o caso da jornada. Confirmação e
+                        recarga ficam no pai (onDelete). */}
+                    {onDelete && (
+                        <div className="border-t border-danger/20 pt-4 flex flex-col gap-2">
+                            <div className="flex items-center gap-2">
+                                <Trash2 className="w-4 h-4 text-danger" />
+                                <h3 className="text-sm font-bold text-danger">Zona de perigo</h3>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground -mt-1">
+                                Remove este caso do fluxo. {isAutomated
+                                    ? 'O teste Maestro vinculado é preservado.'
+                                    : ''}
+                            </p>
+                            <button
+                                type="button"
+                                onClick={onDelete}
+                                className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border border-danger/40 text-danger hover:bg-danger/10 transition-colors"
+                            >
+                                <Trash2 className="w-3.5 h-3.5" /> Remover caso do fluxo
+                            </button>
+                        </div>
+                    )}
                 </div>
             </motion.div>
         </div>

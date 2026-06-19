@@ -1,0 +1,8 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "login/login.yaml"
+- runFlow: "inicio/inicio.yaml"
+- runFlow: "markets/markets.yaml"
+- runFlow: "menu/menu.yaml"
+- runFlow: "wallet/wallet.yaml"
+- runFlow: "account/accounts.yaml"

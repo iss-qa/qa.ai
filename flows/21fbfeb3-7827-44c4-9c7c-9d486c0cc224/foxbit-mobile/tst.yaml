@@ -1,0 +1,12 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- launchApp:
+    clearState: true
+- tapOn: "Entrar"
+- tapOn: "Entrar"
+- tapOn: "Entrar"
+- assertVisible: "Entrar"
+- tapOn:
+    id: "bt_welcome_login"
+- tapOn:
+    id: "bt_welcome_login"

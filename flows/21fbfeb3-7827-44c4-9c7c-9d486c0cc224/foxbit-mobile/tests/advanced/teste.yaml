@@ -1,0 +1,44 @@
+### ---
+#  Id: Depositar-001
+#  Name: Depósito via PIX Express
+#  Description: Validar fluxo de depósito em BRL via PIX Express, conferindo dados bancários e orientações
+#  Gherkin: test-cases/advanced/depositar/depositar.feature
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- assertVisible:
+    id: "img_welcome_logo"
+- tapOn:
+    id: "bt_welcome_login"
+- scrollUntilVisible:
+    element: "Que bom que voc\u00ea voltou!\nInsira seus dados para acessar sua conta:\nE-mail\nSenha"
+- assertVisible:
+    id: "inp_login_email"
+- tapOn:
+    id: "inp_login_email"
+- tapOn:
+    id: "inp_login_email"
+- eraseText
+- inputText: "isaiasilva@gmail.com"
+- tapOn:
+    id: "inp_login_password"
+- inputText: "ohfdssdksdfsf"
+- hideKeyboard
+
+- assertVisible:
+    id: "txt_login_welcome"
+- tapOn:
+    id: "txt_login_welcome"
+
+- assertVisible:
+    id: "bt_welcome_login"
+- tapOn:
+    id: "bt_welcome_login"
+- inputText: "sfdsfgjds"
+- eraseText
+
+
+- tapOn: "E-mail\nDigite seu e-mail"
+- inputText: "value"
+
+

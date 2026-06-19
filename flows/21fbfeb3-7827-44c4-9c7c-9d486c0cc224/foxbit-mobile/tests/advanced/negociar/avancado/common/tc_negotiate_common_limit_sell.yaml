@@ -1,0 +1,12 @@
+######################################################################################################
+# DESCRIÇÃO: Realiza os testes de venda com ordem do tipo limite
+######################################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+- runFlow:
+   file: ../unit_test/sell/ut_sell_limit.yaml
+- runFlow:
+   file: ../unit_test/sell/ut_sell_limit_executing_market_order.yaml
+- runFlow:
+   file: ../unit_test/sell/ut_sell_limit_with_price_outside_the_market_range.yaml

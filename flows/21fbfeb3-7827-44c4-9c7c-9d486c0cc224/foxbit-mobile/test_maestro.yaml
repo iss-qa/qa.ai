@@ -1,0 +1,4 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- assertVisible: ".*"
+- delay: 1000

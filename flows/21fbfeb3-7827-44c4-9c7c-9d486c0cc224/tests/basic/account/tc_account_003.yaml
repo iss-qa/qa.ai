@@ -1,0 +1,155 @@
+### ---
+#  Id: ACCOUNT-3
+#  Name: Navegação itens da seção Geral
+#  Description: Clica em cada item do Geral e valida navegação e retorno.
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/accounts.js"
+- runScript: "../../pages/inicio.js"
+
+# 1. Navegar para a aba "Conta"
+- tapOn:
+    id: ${output.INICIO.botaoConta}
+
+# 2. Validar "Verificação em duas etapas" (2FA)
+- tapOn:
+    id: ${output.ACCOUNTS.botaoVerificarDuasEtapas}
+- assertVisible: "Autenticação 2FA"
+- assertVisible:
+    id: ${output.ACCOUNTS.autenticacao2FADesativado}
+- assertVisible:
+    id: ${output.ACCOUNTS.fatorOTP}
+- assertVisible:
+    id: ${output.ACCOUNTS.botaoAtivarAuth2FA}
+# Retorna para Conta
+- tapOn:
+    id: ${output.ACCOUNTS.botaoVoltar}
+
+# 3. Validar "Histórico"
+- tapOn:
+    id: ${output.ACCOUNTS.botaoHistorico}
+- assertVisible: "Meu Histórico"
+- assertVisible: "Transações"
+- tapOn: "Ordens"
+- assertVisible: "Abertas"
+- assertVisible: "Canceladas"
+- assertVisible: "Executadas"
+# DESCOMENTAR APOS INCLUIR O ID -> Botao FILTRAR SEM ID, e Botao X para fechar tambem sem ID    
+# Validar tela de Filtros do historico
+# - tapOn:
+#     id: ${output.ACCOUNTS.botaoFiltroHistorico}
+# - assertVisible: "Filtros"
+# - assertVisible: "Buscar"
+# - assertVisible: "Todas as operações"
+# - tapOn: "Todos os ativos"
+# - assertVisible: "Real"
+# - assertVisible: "Bitcoin"
+# - assertVisible: "Ethereum"
+# - assertVisible: "Litecoin"
+# - tapOn: "Chiliz" # BOTAO FILTRAR
+# - takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_historico"
+- tapOn:
+    id: ${output.ACCOUNTS.botaoVoltar}
+
+
+
+# 4. Validar "Indique amigos"
+- tapOn:
+    id: ${output.ACCOUNTS.botaoIndiqueAmigos}
+# Tratar modal de cookies se aparecer
+- runFlow:
+    when:
+      visible: "Utilizamos cookies"
+    commands:
+      - tapOn: "Aceitar todos"
+- assertVisible: "Indique amigos"
+- assertVisible: "Geral"
+- assertVisible: "Ganhos"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_indique_amigos"
+- tapOn:
+    id: ${output.ACCOUNTS.botaoVoltar}
+
+# 5. Validar "Perfil de investimento" (Suitability)
+- tapOn:
+    id: ${output.ACCOUNTS.botaoPerfilInvestimento}
+- assertVisible: "Perfil de investimento"
+- tapOn:
+    id: ${output.ACCOUNTS.refazerTestePerfilInvestimento}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_perfil_investimento_1"    
+- tapOn:
+    id: ${output.ACCOUNTS.descricaoPerfilInvestimento}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_perfil_investimento_2"    
+- tapOn:
+    id: ${output.ACCOUNTS.botaoIniciarTeste}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_perfil_investimento_3"    
+- assertVisible:
+    id: ${output.ACCOUNTS.labelPergunta}
+- tapOn:
+    id: ${output.ACCOUNTS.resposta1}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_perfil_investimento_resposta1"    
+- tapOn:
+    id: ${output.ACCOUNTS.botaoContinuar}
+- tapOn:
+    id: ${output.ACCOUNTS.resposta2}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_perfil_investimento_resposta2"    
+- tapOn:
+    id: ${output.ACCOUNTS.botaoContinuar}
+- tapOn:
+    id: ${output.ACCOUNTS.resposta3}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_perfil_investimento_resposta3"    
+- tapOn:
+    id: ${output.ACCOUNTS.botaoContinuar}
+- tapOn:
+    id: ${output.ACCOUNTS.resposta1}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_perfil_investimento_resposta4"    
+- tapOn:
+    id: ${output.ACCOUNTS.botaoContinuar}
+- tapOn:
+    id: ${output.ACCOUNTS.resposta2}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_perfil_investimento_resposta1"    
+- tapOn:
+    id: ${output.ACCOUNTS.botaoContinuar}
+- tapOn:
+    id: ${output.ACCOUNTS.resposta3}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_perfil_investimento_resposta1"    
+- tapOn:
+    id: ${output.ACCOUNTS.botaoContinuar}
+- tapOn:
+    id: ${output.ACCOUNTS.resposta2}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_perfil_investimento_resposta1"    
+- tapOn:
+    id: ${output.ACCOUNTS.botaoContinuar}
+
+- assertVisible: "Perfil de investimento"
+- assertVisible:
+    id: "txt_suitability_result_description"
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible: "Aceitar termos"
+- tapOn:
+    id: ${output.ACCOUNTS.aceiteContratoPerfil}
+- tapOn:
+    id: ${output.ACCOUNTS.botaoConfirmar}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_perfil_investimento_resposta1"    
+
+
+# 6. Validar "Aparência" Trocar modos
+- tapOn:
+    id: ${output.ACCOUNTS.botaoAparencia}
+- assertVisible: "Aparência"    
+- tapOn:
+    id: ${output.ACCOUNTS.modoLight}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_aparencia"
+- tapOn:
+    id: ${output.ACCOUNTS.botaoVoltar}
+- tapOn:
+    id: ${output.ACCOUNTS.botaoAparencia}
+- assertVisible: "Aparência"    
+- tapOn:
+    id: ${output.ACCOUNTS.modoDark}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_aparencia"
+- tapOn:
+    id: ${output.ACCOUNTS.botaoVoltar}

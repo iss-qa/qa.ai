@@ -1,0 +1,23 @@
+### ---
+#  Id: PRE-LOGIN-7
+#  Name: Validate USDT Tab
+#  Description: Validate coin list in USDT tab
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/login.js"
+- waitForAnimationToEnd:
+    timeout: 10000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_pre_login_inicial"
+- tapOn: ${output.LOGIN.abaUSDT}
+- waitForAnimationToEnd:
+    timeout: 2000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_aba_usdt"
+- assertVisible:
+    text: ".*Bitcoin.*"
+- swipe:
+    direction: UP
+    duration: 1000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_aba_usdt_scroll"

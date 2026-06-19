@@ -15,7 +15,7 @@ import { AmbiguityDialog } from '@/components/AmbiguityDialog';
 import { SaveRecordingModal } from '@/components/SaveRecordingModal';
 import { ExecutionOverlay } from '@/components/ExecutionOverlay';
 import { supabase } from '@/lib/supabase';
-import { testYamlFileName, writeYaml, type WorkspaceRef } from '@/lib/workspace';
+import { testYamlFileName, testYamlPath, writeFile, type WorkspaceRef } from '@/lib/workspace';
 import type { TestStep, ConfidenceReport, RecorderConfigState, ExecutionErrorState } from './editor-types';
 import { MOCK_MAESTRO_STEPS, MOCK_MAESTRO_YAML, MOCK_U2_STEPS, recordedStepsToMaestroYaml, normalizeMaestroCommand } from './editor-utils';
 import { persistRunResult, saveTestCase } from './editor-persistence';
@@ -58,6 +58,11 @@ export default function TestEditorPage() {
     // hardcoded to 'br.com.foxbit.foxbitandroid' which made every test open
     // the Foxbit app regardless of project.
     const [testAppId, setTestAppId] = useState<string | null>(null);
+    // Caminho do teste no workspace (migration 019) + pasta. Usados para
+    // materializar a árvore e rodar o flow no local CORRETO (aninhado), de modo
+    // que runFlow/runScript relativos resolvam na execução.
+    const [testWorkspacePath, setTestWorkspacePath] = useState<string | null>(null);
+    const [testFolderPath, setTestFolderPath] = useState<string | null>(null);
     const [envVarsNeeded, setEnvVarsNeeded] = useState<string[]>([]);
     const [confidenceReport, setConfidenceReport] = useState<ConfidenceReport | null>(null);
     const [envVarsValues, setEnvVarsValues] = useState<Record<string, string>>({});
@@ -121,11 +126,21 @@ export default function TestEditorPage() {
         // Always reset state when switching tests so a stale appId from the
         // previous test doesn't leak into the next Executar Teste.
         setTestAppId(null);
+        setTestWorkspacePath(null);
+        setTestFolderPath(null);
         supabase.from('test_cases').select('*').eq('id', testIdParam).single()
             .then(({ data, error }) => {
                 if (error || !data) return;
                 setTestName(data.name || '');
-                setTestAppId(data.app_id || null);
+                // appId: prefere a coluna app_id; senão extrai do HEADER do YAML
+                // (`appId: ...`), pois testes importados/compostos trazem o appId
+                // no cabeçalho do flow, não num passo individual.
+                const rawYaml: string = typeof data.raw_yaml === 'string' ? data.raw_yaml : '';
+                const headerAppId = rawYaml.match(/^\s*appId\s*:\s*["']?([^"'\n\r]+?)["']?\s*$/m)?.[1]?.trim();
+                setTestAppId(data.app_id || headerAppId || null);
+                if (rawYaml.trim()) setMaestroYaml(rawYaml);
+                setTestWorkspacePath(data.workspace_path || null);
+                setTestFolderPath(data.folder_path || null);
                 const loadedSteps = ((data.steps || []) as Partial<TestStep>[]).map((s, idx) => ({
                     id: s.id || String(idx + 1),
                     action: s.action || '',
@@ -454,7 +469,10 @@ export default function TestEditorPage() {
         }
     };
 
-    const handleSaveRecording = async (testName: string, projectId: string, yamlContent?: string, workspaceRef?: WorkspaceRef | null) => {
+    const handleSaveRecording = async (testName: string, projectId: string, yamlContent?: string, workspaceRef?: WorkspaceRef | null, folderPath?: string) => {
+        // Pasta de destino escolhida no modal ('' / undefined = raiz).
+        const folder = (folderPath || '').replace(/^\/+|\/+$/g, '') || null;
+        const relYamlPath = testYamlPath(folder, testName);   // ex.: tests/basic/login.yaml
         // Generate Maestro YAML from recorded steps — appId from the config
         // modal (recordingAppId) takes precedence over the editor's loaded
         // appId (testAppId). Hardcoded foxbit removed.
@@ -524,8 +542,10 @@ export default function TestEditorPage() {
                 description: `Teste gravado com ${recordedSteps.length} passos (Maestro)`,
                 steps: stepsForDb,
                 tags: mergedTags,
-                app_id: appId || null,           // forwarded if the daemon supports it
-                raw_yaml: generatedYaml || null, // preserves the exact YAML for Studio reopen
+                app_id: appId || null,           // persistido no insert (daemon)
+                raw_yaml: generatedYaml || null, // preserva o YAML exato p/ reabrir no Studio
+                folder_path: folder,             // pasta escolhida → some na pasta certa
+                workspace_path: relYamlPath,     // caminho exato do arquivo no workspace
             };
             if (projectId && projectId !== 'default') {
                 savePayload.project_id = projectId;
@@ -543,10 +563,10 @@ export default function TestEditorPage() {
             }
 
             // Defensive Supabase sync: the daemon save endpoint may ignore
-            // unknown columns. We re-write app_id + raw_yaml directly so the
-            // editor reopen and the Studio reopen both pick up the right
-            // values regardless of the daemon's payload schema.
-            if (appId && projectId && projectId !== 'default') {
+            // unknown columns. We re-write app_id + raw_yaml + folder_path +
+            // workspace_path directly so o teste fica na pasta escolhida e o
+            // reabrir (editor/Studio) pega os valores certos.
+            if (projectId && projectId !== 'default') {
                 try {
                     const { data: rows } = await supabase
                         .from('test_cases')
@@ -557,13 +577,16 @@ export default function TestEditorPage() {
                         .limit(1);
                     const row = (rows || [])[0];
                     if (row) {
-                        await supabase.from('test_cases').update({
-                            app_id: appId,
+                        const upd: Record<string, unknown> = {
                             raw_yaml: generatedYaml || null,
-                        }).eq('id', row.id);
+                            folder_path: folder,
+                            workspace_path: relYamlPath,
+                        };
+                        if (appId) upd.app_id = appId;
+                        await supabase.from('test_cases').update(upd).eq('id', row.id);
                     }
                 } catch (e) {
-                    console.warn('Supabase app_id/raw_yaml backfill failed:', e);
+                    console.warn('Supabase backfill (folder/app_id/raw_yaml) failed:', e);
                 }
             }
         } catch (e) {
@@ -575,7 +598,9 @@ export default function TestEditorPage() {
         // Drive via api) e — no caso local — persiste o workspace escolhido no
         // projeto, para que o botão "Studio" da lista de testes abra sem erro.
         if (workspaceRef && generatedYaml) {
-            const writeRes = await writeYaml(workspaceRef, testYamlFileName(testName), generatedYaml);
+            // Grava no caminho da PASTA escolhida (ex.: tests/basic/login.yaml),
+            // não mais na raiz.
+            const writeRes = await writeFile(workspaceRef, relYamlPath, generatedYaml);
             if (!writeRes.success) {
                 console.error('Failed to write YAML to workspace:', writeRes);
                 const dest = workspaceRef.type === 'supabase' ? 'Supabase Storage' : workspaceRef.path;
@@ -980,21 +1005,32 @@ export default function TestEditorPage() {
 
                 if (cs.length > 0) {
                     setShowExecutionOverlay(false);
+                    // Guarda SEQUENCIAL: flows file-based do Maestro rodam em ordem.
+                    // O daemon às vezes reporta passos posteriores como concluídos
+                    // antes do atual terminar — nunca marcamos um passo como "passou"
+                    // se algum anterior ainda não concluiu. A "fronteira" é o passo
+                    // em andamento (ou a 1ª falha); tudo depois dela fica idle.
+                    const isDone = (st: string) => st === 'COMPLETED' || st === 'WARNED' || st === 'SKIPPED';
+                    const failedIdx = cs.findIndex(c => c.status === 'FAILED');
+                    const frontier = failedIdx !== -1
+                        ? failedIdx
+                        : cs.findIndex(c => !isDone(c.status));   // 1º não-concluído; -1 = todos concluídos
                     setSteps(prev => prev.map((s, i) => {
-                        if (i >= cs.length) return s;
-                        const next = mapStatus(cs[i].status);
+                        let next: TestStep['status'];
+                        if (frontier === -1) {
+                            // Tudo que o Maestro reportou está concluído.
+                            next = i < cs.length ? mapStatus(cs[i].status) : s.status;
+                        } else if (i < frontier) {
+                            next = mapStatus(cs[i].status);          // antes da fronteira: respeita (success/skip)
+                        } else if (i === frontier) {
+                            next = failedIdx !== -1 ? 'error' : 'running';
+                        } else {
+                            next = 'idle';                            // depois da fronteira: ainda não rodou
+                        }
                         return next === s.status ? s : { ...s, status: next };
                     }));
-                    // Locate the active (last RUNNING, or first FAILED) step and scroll.
-                    let activeIdx = -1;
-                    for (let i = 0; i < cs.length; i++) {
-                        if (cs[i].status === 'FAILED') { activeIdx = i; break; }
-                    }
-                    if (activeIdx === -1) {
-                        for (let i = cs.length - 1; i >= 0; i--) {
-                            if (cs[i].status === 'RUNNING') { activeIdx = i; break; }
-                        }
-                    }
+                    // Rola até o passo ativo (fronteira).
+                    const activeIdx = frontier === -1 ? cs.length - 1 : frontier;
                     if (activeIdx !== -1 && activeIdx !== lastScrolledIdx) {
                         lastScrolledIdx = activeIdx;
                         // Defer to next paint so the row has the new status class applied.
@@ -1144,6 +1180,11 @@ export default function TestEditorPage() {
                     if (m && m[1]) { appId = m[1].trim(); break; }
                 }
             }
+            if (!appId && maestroYaml) {
+                // Último recurso: o cabeçalho do YAML carregado (`appId: ...`).
+                const m = maestroYaml.match(/^\s*appId\s*:\s*["']?([^"'\n\r]+?)["']?\s*$/m);
+                if (m && m[1]) appId = m[1].trim();
+            }
             if (!appId) {
                 clearTimeout(timeoutId);
                 executionTimeoutRef.current = null;
@@ -1171,24 +1212,43 @@ export default function TestEditorPage() {
 
             let yamlPath = maestroYamlPath;
             if (yamlContent) {
+                // Caminho relativo EXATO do flow dentro do workspace. Preferimos
+                // workspace_path (migration 019); senão derivamos de folder_path +
+                // nome sanitizado. O daemon materializa a árvore inteira do projeto
+                // (Storage → disco) e roda o flow AQUI, no local aninhado, para
+                // runFlow/runScript relativos resolverem.
+                const fileName = testYamlFileName(testName || execRunId);
+                const entryPath = testWorkspacePath
+                    || (testFolderPath ? `${testFolderPath.replace(/\/+$/,'')}/${fileName}` : fileName);
                 try {
-                    const saveRes = await fetch(`${DAEMON_URL}/api/maestro/save-yaml`, {
+                    const saveRes = await fetch(`${DAEMON_URL}/api/maestro/save-workspace`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             yaml_content: yamlContent,
                             project_id: currentProjectId || 'runs',
-                            test_name: testName || execRunId,
+                            entry_path: entryPath,
                         }),
                     });
                     const saveData = await saveRes.json();
+                    if (!saveRes.ok) {
+                        throw new Error(saveData?.detail || `save-workspace falhou (${saveRes.status})`);
+                    }
                     if (saveData.path) {
                         yamlPath = saveData.path;
                         setMaestroYamlPath(saveData.path);
                         setMaestroYaml(yamlContent);
                     }
                 } catch (e) {
-                    console.error('Failed to save YAML before execution:', e);
+                    console.error('Failed to materialize workspace before execution:', e);
+                    clearTimeout(timeoutId);
+                    executionTimeoutRef.current = null;
+                    setIsExecuting(false);
+                    setShowExecutionOverlay(false);
+                    setExecutionError({
+                        message: `Falha ao preparar o workspace: ${e instanceof Error ? e.message : String(e)}`,
+                    });
+                    return;
                 }
             }
 
@@ -1500,6 +1560,7 @@ export default function TestEditorPage() {
                 stepCount={recordedSteps.length}
                 durationSeconds={elapsedSeconds}
                 currentProjectId={currentProjectId}
+                recordingAppId={recordingAppId || testAppId || ''}
                 onSave={handleSaveRecording}
                 onCancel={() => { setShowSaveModal(false); clearRecording(); }}
                 engine={selectedEngine}

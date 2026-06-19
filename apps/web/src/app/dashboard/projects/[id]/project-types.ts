@@ -62,6 +62,10 @@ export interface TestCase {
     app_id?: string | null;
     // Pasta relativa do teste dentro do projeto (migration 018). NULL/'' = raiz.
     folder_path?: string | null;
+    // Caminho relativo exato do arquivo no workspace (migration 019), ex.:
+    // 'tests/home/inicio.yaml'. Usado p/ materializar a árvore e resolver
+    // runFlow/runScript na execução. NULL = derivar de folder_path + nome.
+    workspace_path?: string | null;
 }
 
 // Pasta de testes do projeto (migration 018). Persiste pastas vazias.

@@ -1,0 +1,36 @@
+######################################################################################################
+# DESCRIÇÃO: Realiza uma venda do tipo MERCADO
+######################################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+- assertVisible: "Vender Bitcoin (BTCBRL)"
+- assertVisible: "Mercado"
+- assertVisible: "QUANTO DESEJA VENDER?"
+- assertVisible: "0"
+- assertVisible: "1"
+- tapOn: "1"
+- tapOn: "2"
+- tapOn: "3"
+- tapOn: "4"
+- assertVisible: "1234"
+- assertVisible: "Botão Apagar"
+- tapOn: "Botão Apagar"
+- tapOn: "Botão Apagar"
+- tapOn: "Botão Apagar"
+- tapOn: "Botão Apagar"
+- tapOn: "1"
+- tapOn: "0"
+- assertVisible: "10"
+- extendedWaitUntil:
+    visible: "Continuar"
+    timeout: 2000
+- tapOn: "Continuar"
+- assertVisible: "Par:\nBTCBRL"
+- assertVisible: "Tipo de ordem:\nMercado"
+- scrollUntilVisible:
+    element: "Confirmar venda"
+    speed: 80
+- tapOn: "Confirmar venda"
+- assertVisible: "Ordem enviada com sucesso"
+- back

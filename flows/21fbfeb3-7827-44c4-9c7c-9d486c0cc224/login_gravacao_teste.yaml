@@ -1,0 +1,19 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: "bt_welcome_login"
+- tapOn:
+    id: "bt_welcome_login"
+- tapOn:
+    id: "inp_login_email"
+- inputText: "isaiasilva.info@gmail.com"
+- tapOn:
+    id: "inp_login_password"
+- inputText: "jhsofjd"
+- hideKeyboard
+- tapOn:
+    id: "bt_login_continue"
+- tapOn:
+    id: "Tentar novamente"

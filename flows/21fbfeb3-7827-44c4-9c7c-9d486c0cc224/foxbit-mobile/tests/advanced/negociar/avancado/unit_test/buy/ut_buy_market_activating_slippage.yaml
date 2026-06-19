@@ -1,0 +1,27 @@
+######################################################################################################
+# DESCRIÇÃO: Realiza uma compra do tipo MERCADO ativando o Slippage
+######################################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+- assertVisible: "Comprar Hathor (HTRBRL)"
+- assertVisible: "Mercado"
+- assertVisible: "QUANTO DESEJA COMPRAR?"
+- assertVisible: "0"
+- tapOn: "1"
+- tapOn: "2"
+- tapOn: "3"
+- tapOn: "4"
+- tapOn: "5"
+- tapOn: "6"
+- tapOn: "7"
+- tapOn: "8"
+- tapOn: "9"
+- assertVisible: "123456789"
+- assertVisible: "Continuar"
+- tapOn: "Continuar"
+- assertVisible: "Par:\nHTRBRL"
+- assertVisible: "O livro de ofertas pode não ter a profundidade necessária para esse trade!"
+- assertVisible: "Tipo de ordem:\nMercado"
+- back
+- back

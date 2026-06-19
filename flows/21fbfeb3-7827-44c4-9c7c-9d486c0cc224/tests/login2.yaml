@@ -1,0 +1,20 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: "txt_welcome_title"
+- assertVisible:
+    id: "bt_welcome_login"
+- tapOn:
+    id: "bt_welcome_login"
+- tapOn:
+    id: "inp_login_email"
+- inputText: "teste@gmail.com"
+- hideKeyboard
+- tapOn:
+    id: "inp_login_password"
+- inputText: "12345678"
+- hideKeyboard
+- tapOn:
+    id: "bt_login_continue"

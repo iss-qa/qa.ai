@@ -1,0 +1,8 @@
+######################################################################################################
+# DESCRIÇÃO: Realiza os testes de venda com ordem do tipo stop market
+######################################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+- runFlow:
+   file: ../unit_test/sell/ut_sell_stop_market.yaml

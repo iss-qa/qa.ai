@@ -1,0 +1,162 @@
+### ---
+#  Id: CONVERTER-1
+#  Name: Fluxo completo de conversão BRL para BTC e BTC para BRL
+#  Description: Validar o fluxo E2E de conversão: negociar > converter > input valor > revisar > confirmar > sucesso > histórico > inverter > converter novamente
+#  Gherkin: test-cases/advanced/negociar/converter.feature - tc_converter_001
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../../common/setup.yaml"
+- runScript: "../../../common/env.js"
+- runScript: "../../../pages/common.js"
+- runScript: "../../../pages/inicio.js"
+- runScript: "../../../pages/converter.js"
+
+# Clicar em Negociar -> Converter
+- tapOn:
+    id: ${output.INICIO.botaoNegociar}
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Validar que Converter está visível no modal e clicar
+- assertVisible:
+    id: ${output.INICIO.botaoNegociarConverter}
+- tapOn:
+    id: ${output.INICIO.botaoNegociarConverter}
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Validar tela do Converter (Você paga e Você recebe)
+- assertVisible:
+    id: ${output.CONVERTER.vocePaga}
+- assertVisible:
+    id: ${output.CONVERTER.voceRecebe}
+- assertVisible: BTC
+- tapOn:
+    id: bt_convert_input_receive_coin_selector
+- assertVisible: Você recebe
+- tapOn: Buscar
+- inputText: "ETH"
+- assertVisible: |-
+    Ethereum
+    Ethereum
+    ETH
+- tapOn:
+    id: tile_convert_coin
+
+# Informar valor 1 no input Você paga
+# Toca exatamente no "0" do R$ 0 para focar o input e abrir o teclado BRL -> BTC
+- tapOn:
+    point: "16%,25%"
+- waitForAnimationToEnd:
+    timeout: 2000
+# Toca no "1" do teclado numérico customizado via coordenada
+- tapOn:
+    point: "17%,75%"
+# Toca no card "Você recebe" para fechar o teclado e confirmar o valor
+- tapOn:
+    id: ${output.CONVERTER.voceRecebe}
+
+# Clicar no botão Continuar
+- tapOn:
+    point: "49%,92%"
+
+- tapOn: Revise sua conversão
+- assertVisible: Revise sua conversão
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/tc_converter_001_brl_para_eth"
+
+# Clicar em Confirmar
+- tapOn:
+    point: "49%,92%"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Validar sucesso
+- assertVisible:
+    id: ${output.CONVERTER.mensagemSucessoConverter}
+
+# Clicar em Ver histórico
+- assertVisible: |-
+    Sucesso!
+    Sucesso!
+- tapOn:
+    id: ${output.CONVERTER.botaoVerHistorico}
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Validar na tela de histórico que o valor R$ 1,00 está exibido
+- assertVisible:
+    text: ".*Meu Histórico.*"
+- assertVisible: Meu Histórico
+
+- assertVisible:
+    text: ".*1,00.*"
+- assertVisible:
+    text: ".*Conversão de ETH.*"
+- assertVisible:
+    text: ".*Conversão de BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/tc_converter_001_brl_para_eth"
+
+# Voltar para tela de sucesso
+- tapOn:
+    id: ${output.COMMON.botaoVoltar}
+
+# Clicar em Nova conversão
+- assertVisible:
+    id: ${output.CONVERTER.botaoNovaConversao}
+- tapOn:
+    id: ${output.CONVERTER.botaoNovaConversao}
+
+# ===== CONVERSÃO 2: BTC -> BRL (inverter) =====
+
+# Toca no ícone de inverter moedas
+- tapOn:
+    point: "50%,28%"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Informar valor 0,0000026 no input Você paga (agora ETH)
+# Toca no campo de valor para focar o input e abrir o teclado ETH -> BRL
+- tapOn:
+    point: "12%,25%"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: ","
+- tapOn:
+    text: "0"
+    index: 1
+- tapOn:
+    text: "0"
+    index: 1
+- tapOn:
+    text: "0"
+    index: 1
+- tapOn:
+    text: "0"
+    index: 1
+- tapOn: "8"
+- tapOn: "2"
+- tapOn:
+    id: ${output.CONVERTER.tecladoBotaoConfirmar}
+    index: 20
+
+# Clicar no botão Continuar
+- tapOn:
+    point: "49%,92%"
+
+- tapOn: Revise sua conversão
+- assertVisible: Revise sua conversão
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/tc_converter_001_eth_para_brl"
+
+# Clicar em Confirmar
+- tapOn:
+    point: "49%,92%"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Clicar em Finalizar
+- tapOn:
+    id: ${output.CONVERTER.botaoFinalizar}

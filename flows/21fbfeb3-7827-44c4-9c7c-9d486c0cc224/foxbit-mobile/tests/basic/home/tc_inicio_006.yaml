@@ -1,0 +1,99 @@
+### ---
+#  Id: INICIO-6
+#  Name: Atalhos Adicionais
+#  Description: Validar navegação para Livro de Ofertas, Crypto Assets, Earn e Card
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/login.js"
+
+# Livro de Ofertas (Pode estar visível dependendo da resolução, se não estiver, scroll)
+- scrollUntilVisible:
+    element:
+        id: ${output.INICIO.botaoLivroOfertas}
+    direction: RIGHT
+
+- tapOn:
+    id: ${output.INICIO.botaoLivroOfertas}
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Tratar modal de cookies se aparecer
+- runFlow:
+    when:
+      visible: "Utilizamos cookies"
+    commands:
+      - tapOn: "Aceitar todos"
+
+- assertVisible:
+    text: ".*Livro de Ofertas.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/tc_inicio_006_livro_ofertas"
+- tapOn:
+    id: ${output.LOGIN.botaoVoltar}
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Crypto Assets
+# - scrollUntilVisible:
+#     element:
+#         id: ${output.INICIO.botaoCryptoAssets}
+#     direction: RIGHT
+
+# Realizar scroll lateral para ver os demais botões - VAI DO NEGOCIAR até FOXBIT CARD
+- runFlow: "../../helpers/acoes_rapidas_home_direita.yaml"
+
+- tapOn:
+    id: ${output.INICIO.botaoCryptoAssets}
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    text: ".*Crypto Assets.*" # Validando o título da tela
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/tc_inicio_006_crypto_assets"
+- tapOn:
+    id: ${output.LOGIN.botaoVoltar}
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Foxbit Earn
+# - scrollUntilVisible:
+#     element:
+#         id: ${output.INICIO.botaoFoxbitEarn}
+#     direction: RIGHT
+
+- tapOn:
+    id: ${output.INICIO.botaoFoxbitEarn}
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    text: ".*Foxbit Earn.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/tc_inicio_006_foxbit_earn"
+- tapOn:
+    id: ${output.LOGIN.botaoVoltar}
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# # Foxbit Card
+# - scrollUntilVisible:
+#     element:
+#         id: ${output.INICIO.botaoFoxbitCard}
+#     direction: RIGHT
+
+# Realizar scroll lateral para ver os demais botões - VAI DO NEGOCIAR até FOXBIT CARD
+    
+- tapOn:
+    id: ${output.INICIO.botaoFoxbitCard}
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    text: ".*Foxbit Card.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/tc_inicio_006_foxbit_card"
+- tapOn:
+    id: ${output.LOGIN.botaoVoltar}
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Retornar estado do scroll home para o início (esquerda)
+- runFlow: "../../helpers/acoes_rapidas_home_esquerda.yaml"

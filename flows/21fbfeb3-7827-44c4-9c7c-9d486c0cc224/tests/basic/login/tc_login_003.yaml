@@ -1,0 +1,29 @@
+### ---
+#  Id: LOGIN-3
+#  Name: Empty fields validation
+#  Description: Submit login without filling fields and validate required messages
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/login.js"
+- waitForAnimationToEnd:
+    timeout: 10000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_tela_inicial"
+- tapOn: 
+    id: ${output.INICIO.botaoLogin}
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_tela_login"
+
+- tapOn:
+    id: ${output.LOGIN.botaoContinuar}
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_submit_vazio"
+
+- assertVisible: 
+    text: ${output.LOGIN.msgCampoObrigatorio}
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/04_validacao_campos"
+

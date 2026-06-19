@@ -1,0 +1,80 @@
+# COM O USUÁRIO LOGADO - EXECUTE -> maestro test -e SKIP_LAUNCH=true tc_markets_0005.yaml
+appId: br.com.foxbit.foxbitandroid
+---
+# Carregamento de Ambiente e Page Objects
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/markets.js"
+- runScript: "../../pages/inicio.js"
+
+# 1. ACESSO À ABA MERCADOS
+- assertVisible:
+    id: ${output.MARKETS.tabMercados}
+- tapOn:
+    id: ${output.MARKETS.tabMercados}
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# 2. BUSCA POR MOEDAS (5 MOEDAS)
+
+# 2.1 BTC
+- tapOn:
+    id: ${output.MARKETS.campoBusca}
+- inputText: "BTC"
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BTC/BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_busca_btc"
+
+# 2.2 Ethereum
+- tapOn:
+    id: ${output.MARKETS.campoBusca}
+- eraseText: 3
+- inputText: "Ethereum"
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*ETH/BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_busca_eth"
+
+# 2.3 XRP
+- tapOn:
+    id: ${output.MARKETS.campoBusca}
+- eraseText: 8 # "Ethereum"
+- inputText: "XRP"
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*XRP/BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_busca_xrp"
+
+# 2.4 SOLANA
+- tapOn:
+    id: ${output.MARKETS.campoBusca}
+- eraseText: 3 # "XRP"
+- inputText: "SOLANA"
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*SOL/BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/04_busca_solana"
+
+# 2.5 SHIB
+- tapOn:
+    id: ${output.MARKETS.campoBusca}
+- eraseText: 6 # "SOLANA"
+- inputText: "SHIB"
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*SHIB/BRL.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/05_busca_shib"
+- eraseText: 4 # "SHIB"
+
+# Reset para a Home
+- hideKeyboard
+- tapOn:
+    id: ${output.INICIO.botaoInicio}
+- waitForAnimationToEnd:
+    timeout: 2000

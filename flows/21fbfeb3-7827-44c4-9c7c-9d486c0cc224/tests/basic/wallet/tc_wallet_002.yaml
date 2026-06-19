@@ -1,0 +1,81 @@
+### ---
+#  Id: WALLET-2
+#  Name: Fluxo de seleção de documentos no MetaMap
+#  Description: Valida seleção de múltiplos documentos e cancelamento do fluxo completo
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/wallet.js"
+- runScript: "../../pages/inicio.js"
+
+# 1. Navegar para a aba Carteira
+- tapOn:
+    id: ${output.INICIO.botaoCarteira}
+
+# 2. Clicar em "Completar cadastro"
+- tapOn:
+    id: ${output.WALLET.botaoCompletarCadastro}
+
+# 3. Tocar para iniciar verificação
+- tapOn:
+    id: ${output.WALLET.botaoToqueParaIniciarVerificacao}
+
+# 4. Validar entrada na tela do MetaMap e clicar em "Próximo"
+- assertVisible:
+    text: ${output.WALLET.labelIdentidadeFoxbit}
+- assertVisible: "Vamos verificar sua identidade"
+- tapOn:
+    id: ${output.WALLET.botaoProximoMetamap}
+
+# 5. Validar tela "Selecionar documento"
+- assertVisible:
+    text: ${output.WALLET.labelSelecionarDocumento}
+
+# 6. Selecionar documentos e validar botão habilitado
+- tapOn:
+    text: ${output.WALLET.opcaoCNH}
+- assertVisible: "Confirmar seleção"
+
+# 7. Percorrer outras opções conforme solicitado
+- tapOn:
+    text: ${output.WALLET.opcaoPassaporte}
+- tapOn:
+    text: ${output.WALLET.opcaoRG}
+- tapOn:
+    text: ${output.WALLET.opcaoRNM}
+- tapOn:
+    text: ${output.WALLET.opcaoRGDigital}
+
+# 8. Marcar CNH novamente e clicar em Confirmar Seleção
+- tapOn:
+    text: ${output.WALLET.opcaoCNH}
+- tapOn: "Confirmar seleção"
+
+# 9. Validar label do documento selecionado
+#- assertVisible: ${output.WALLET.labelCNHConfirmada}
+- assertVisible: "Tire uma foto"
+- assertVisible: "Galeria"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/wallet_documento_confirmado"
+
+# 10. Clicar em "X" no alto da tela para sair
+- tapOn:
+    id: ${output.WALLET.botaoFecharMetamap}
+
+# 11. Validar tela "Você tem certeza de que quer sair?"
+- assertVisible:
+    text: ${output.WALLET.labelTemCertezaSair}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/wallet_saida_metamap_confirmacao"
+
+# 12. Clicar em "Sair" e validar retorno
+- tapOn:
+    text: ${output.WALLET.botaoSair}
+
+# 13. Validar retorno à tela de "Verificação da conta"
+- assertVisible:
+    id: ${output.WALLET.labelVerifiqueSuaConta}
+- assertVisible:
+    id: ${output.WALLET.botaoToqueParaIniciarVerificacao}
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/wallet_retorno_pos_cancelamento"
+- tapOn: "Voltar"

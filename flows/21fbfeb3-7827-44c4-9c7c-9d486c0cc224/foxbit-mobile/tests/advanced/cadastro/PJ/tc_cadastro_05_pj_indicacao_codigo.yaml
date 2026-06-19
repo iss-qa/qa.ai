@@ -1,0 +1,202 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow:
+    when:
+      true: ${SKIP_LAUNCH != 'true'}
+    commands:
+      - clearState
+- runFlow: "../../../common/setup.yaml"
+- runScript: "../../../common/env.js"
+
+- runScript: "../../../pages/login.js"
+- runScript: "../../../pages/cadastro.js"
+- runScript: "../../../pages/login.js"
+
+- runScript:
+    file: "../../../common/generate_email.js"
+    env:
+      EMAIL_PREFIX: "automacao_pj_codigo"
+
+- waitForAnimationToEnd:
+    timeout: 10000
+
+# INICIO DO CADASTRO
+- tapOn:
+    id: ${output.LOGIN.botaoCriarConta}
+- assertVisible:
+    text: ".*Crie sua conta..*"
+
+- tapOn: "E-mail"
+- inputText: ${output.TEMP_EMAIL}
+
+- assertVisible:
+    text: ".*Crie uma senha.*"
+- tapOn: "Crie uma senha"
+- inputText: ${output.TEMP_PASSWORD}
+- hideKeyboard
+
+# Expandir e inserir código de indicação
+- tapOn: "Tenho um código de indicação"
+- assertVisible:
+    text: ".*Código de indicação (opcional).*" 
+- tapOn: "Código de indicação (opcional)"
+- inputText: "F4JKA3AKCCRTAB"
+- hideKeyboard
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/pj_codigo_digitado"
+
+# Testando apagar e reinserir
+- tapOn: "F4JKA3AKCCRTAB"
+- eraseText: 20
+- inputText: "F4JKA3AKCCRTAB"
+- hideKeyboard
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/pj_codigo_redigitado"
+
+- tapOn: "Ao criar a sua conta na Foxbit.*"
+- tapOn: "Continuar"
+
+- runFlow: "../../../advanced/cadastro/verify_email.yaml"
+
+- runScript:
+    file: "../../../common/wait.js"
+    env:
+      MS: 10000
+
+# ESCOLHA DO TIPO DE CONTA (PJ)
+- assertVisible:
+    text: ".*Complete o cadastro..*"
+- assertVisible:
+    text: ".*Empresas Pessoa jurídica.*"
+- tapOn: "Empresas Pessoa jurídica"
+- tapOn: "Continuar"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/pj_info_empresa"
+
+# TELA DE INFORMACOES DA EMPRESA
+- runScript: "../../../common/generate_company_data.js"
+- runScript: "../../../common/generate_user_data.js"
+
+- assertVisible:
+    text: ".*Informações da Empresa.*"
+
+- tapOn: "CNPJ"
+- inputText: ${output.COMPANY_CNPJ}
+- hideKeyboard
+
+- tapOn: "Razão social"
+- inputText: ${output.COMPANY_NAME}
+- hideKeyboard
+
+- tapOn: "Atividade"
+- inputText: ${output.COMPANY_ACTIVITY}
+- hideKeyboard
+
+- tapOn: "Telefone"
+- inputText: ${output.COMPANY_PHONE}
+- hideKeyboard
+
+- tapOn: "Tipo de empresa"
+- assertVisible:
+    text: ".*Empresa Individual de Responsabilidade Limitada (EIRELI).*"
+- tapOn: "Empresa Individual de Responsabilidade Limitada (EIRELI)"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/pj_empresa_eireli_preenchida"
+
+- tapOn: "Próximo"
+
+# TELA DE INFORMACOES DO ADMINISTRADOR
+- assertVisible:
+    text: ".*Informações do administrador.*"
+
+- tapOn: "Nome completo"
+- inputText: ${output.USER_NAME}
+- hideKeyboard
+
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- tapOn: "Dia"
+- inputText: "22"
+
+- tapOn: "Mês"
+- inputText: "11"
+
+- tapOn: "Ano"
+- inputText: "1985"
+- hideKeyboard
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/pj_info_admin"
+
+- tapOn: "Continuar"
+
+# TELA DE ENDERECO DA EMPRESA
+- assertVisible:
+    text: ".*Endereço da empresa.*"
+
+- tapOn: "País da sede"
+- assertVisible:
+    text: ".*Brasil.*"
+- tapOn: "Brasil"
+
+- tapOn: "Código postal"
+- inputText: "42739100"
+- hideKeyboard
+
+- scroll
+
+- tapOn: "Número"
+- inputText: "789"
+- hideKeyboard
+
+- tapOn: "Complemento"
+- inputText: "Galpão 3"
+- hideKeyboard
+
+- tapOn:
+    text: "Como conheceu a Foxbit?"
+    index: 1
+- assertVisible:
+    text: ".*Google.*"
+- tapOn: "Google"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/pj_endereco_empresa"
+
+- assertVisible:
+    text: "Declaro para fins de comprovação de residência, sob as penas da Lei (art. 2º da Lei 7.115/83), que resido no endereço acima."
+    index: 0
+
+- tapOn:
+    text: "Declaro para fins de comprovação de residência, sob as penas da Lei (art. 2º da Lei 7.115/83), que resido no endereço acima."
+    index: 1
+
+- assertVisible:
+    text: ".*Todos os dados prestados serão validados. Inclua informações completas e verdadeiras..*"
+- tapOn: "Concluir"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/pj_concluir"
+
+# CONTA CRIADA
+- assertVisible:
+    text: ".*Muito bem, sua conta foi criada com sucesso!.*"
+- assertVisible:
+    text: ".*Entrar na plataforma.*"
+- tapOn: "Entrar na plataforma"
+
+- runScript:
+    file: "../../../common/wait.js"
+    env:
+      MS: 5000
+
+- runFlow:
+    when:
+      visible: "Close"
+    commands:
+      - tapOn: "Close"
+
+- assertVisible:
+    text: "Início"
+    index: 1
+- assertVisible:
+    text: ".*Carteira.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/pj_tela_inicio"

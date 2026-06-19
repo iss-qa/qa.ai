@@ -1,0 +1,25 @@
+appId: br.com.foxbit.foxbitandroid
+---
+# Percorrer a lista de moedas até o fim (swipes para cima / direção UP)
+# O repeat executará o bloco de comandos a quantidade de vezes definida.
+- repeat:
+    times: 26
+    commands:
+      - swipe:
+          direction: UP
+          duration: 1000
+      - takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/scroll_coins_down"
+
+# Voltar ao topo da lista (swipes puxando para baixo / sentido inverso)
+# Por que 'direction: DOWN' falhava antes? 
+# O swipe nativo do dispositivo partindo da borda superior muitas vezes dispara um "Pull-to-Refresh" 
+# ou acerta áreas fixas (como cabeçalhos) em vez da lista, impedindo o scroll.
+# Solução: Passar as coordenadas de início e fim no meio da tela.
+- repeat:
+    times: 26
+    commands:
+      - swipe:
+          start: "50%, 40%"
+          end: "50%, 80%"
+          duration: 1000
+      - takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/scroll_coins_up"

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, Upload, ScanSearch, Eye, Wand2, MoreVertical, Clapperboard } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { ArrowLeft, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, Upload, ScanSearch, Eye, Wand2, MoreVertical, Clapperboard, CalendarClock, Search, X, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -9,9 +9,11 @@ import { pickWorkspaceDirectory, testYamlFileName, writeYamlToWorkspace, writeYa
 import { useDeviceStore } from '@/store/deviceStore';
 import { type DevicePreviewHandle, type RecordedInteraction } from '@/components/DevicePreview';
 import type { Project, ScanResults, TestStep, TestCase, TestFolder } from './project-types';
-import { extractAppIdFromYaml, parseMaestroYamlToSteps, extractElementName, buildTestTree } from './project-utils';
+import { extractAppIdFromYaml, parseMaestroYamlToSteps, extractElementName, buildTestTree, filterTestTree, batchOutcome } from './project-utils';
 import { ImportTestsModal } from './_components/ImportTestsModal';
 import { ProjectTestsList } from './_components/ProjectTestsList';
+import { BatchProgressModal } from './_components/BatchProgressModal';
+import { SchedulesModal } from './_components/SchedulesModal';
 import { MoveTestModal } from './_components/MoveTestModal';
 import { useProjectTestImport } from './useProjectTestImport';
 import { ScannerModal } from './_components/ScannerModal';
@@ -32,6 +34,12 @@ export default function ProjectDetailPage() {
     useEffect(() => { projectRef.current = project; }, [project]);
     const [tests, setTests] = useState<TestCase[]>([]);
     const [folders, setFolders] = useState<TestFolder[]>([]);
+    const [testSearch, setTestSearch] = useState('');
+    // Árvore filtrada pela busca (por nome de teste/pasta).
+    const testTree = useMemo(() => {
+        const full = buildTestTree(tests, folders);
+        return testSearch.trim() ? filterTestTree(full, testSearch) : full;
+    }, [tests, folders, testSearch]);
     const [loading, setLoading] = useState(true);
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [formData, setFormData] = useState({ name: '', description: '', platform: 'android', status: 'Ativo', workspace_path: '' });
@@ -356,6 +364,58 @@ export default function ProjectDetailPage() {
     const [scannerTimer, setScannerTimer] = useState<ReturnType<typeof setInterval> | null>(null);
     const [hasElementMap, setHasElementMap] = useState(false);
     const [availableDeviceUdid, setAvailableDeviceUdid] = useState<string | null>(null);
+    // Lote em execução (modal de progresso). null = nenhum.
+    const [batchRunId, setBatchRunId] = useState<string | null>(null);
+    // Agendamentos: modal aberto + (opcional) testes pré-selecionados p/ criar.
+    const [schedulesOpen, setSchedulesOpen] = useState(false);
+    const [scheduleTestIds, setScheduleTestIds] = useState<string[] | null>(null);
+    // Resumo p/ o card de Agendamentos (qtd ativa + desfecho do último lote).
+    const [scheduleCount, setScheduleCount] = useState<number | null>(null);
+    const [lastBatch, setLastBatch] = useState<{ status: string; passed_tests?: number; failed_tests?: number; total_tests?: number } | null>(null);
+    const loadScheduleSummary = useCallback(async () => {
+        const D = process.env.NEXT_PUBLIC_DAEMON_URL || 'http://localhost:8001';
+        try {
+            const [sRes, bRes] = await Promise.all([
+                fetch(`${D}/api/schedules?project_id=${projectId}`),
+                fetch(`${D}/api/batches?project_id=${projectId}`),
+            ]);
+            const s = await sRes.json().catch(() => []);
+            if (sRes.ok && Array.isArray(s)) setScheduleCount(s.filter((x: { is_active?: boolean }) => x.is_active).length);
+            const b = await bRes.json().catch(() => []);
+            if (bRes.ok && Array.isArray(b) && b.length) setLastBatch(b[0] ?? null);
+        } catch { /* daemon offline */ }
+    }, [projectId]);
+
+    // Dispara a execução em lote dos testes selecionados na árvore.
+    const handleRunBatch = async (testIds: string[]) => {
+        if (testIds.length === 0) return;
+        const udid = availableDeviceUdid || connectedDevice?.udid || '';
+        if (!udid) {
+            alert('Nenhum dispositivo conectado. Conecte um device antes de executar o lote.');
+            return;
+        }
+        const DAEMON = process.env.NEXT_PUBLIC_DAEMON_URL || 'http://localhost:8001';
+        try {
+            const res = await fetch(`${DAEMON}/api/batches/execute`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project_id: projectId,
+                    test_ids: testIds,
+                    device_udid: udid,
+                    name: `Lote de ${testIds.length} teste(s)`,
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.batch_run_id) {
+                alert(`Falha ao iniciar o lote: ${data?.detail || res.status}`);
+                return;
+            }
+            setBatchRunId(data.batch_run_id);
+        } catch (e) {
+            alert(`Erro ao iniciar o lote: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    };
     const [scanResults, setScanResults] = useState<ScanResults | null>(null);
     const [expandedScreens, setExpandedScreens] = useState<Record<string, boolean>>({});
     const [scanAppPackage, setScanAppPackage] = useState<string | null>(null);
@@ -380,7 +440,8 @@ export default function ProjectDetailPage() {
                 if (devs.length > 0) setAvailableDeviceUdid(devs[0].udid || devs[0].serial);
             })
             .catch(() => {});
-    }, [projectId]);
+        loadScheduleSummary();
+    }, [projectId, loadScheduleSummary]);
 
     // Close kebab menu when clicking outside
     useEffect(() => {
@@ -702,22 +763,30 @@ export default function ProjectDetailPage() {
         const steps = test.steps || [];
         const commands: string[] = [];
 
-        // Resolve appId via daemon
+        // Resolve appId. O launchApp GRAVADO já guarda o pacote real
+        // (ex.: br.com.foxbit.foxbitandroid) → usa direto. Só nomes amigáveis
+        // passam pela resolução via daemon.
         const DAEMON = process.env.NEXT_PUBLIC_DAEMON_URL || 'http://localhost:8001';
+        const PACKAGE_ID_RE = /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$/;
         let appId = 'com.app.unknown';
         const launchStep = steps.find((s: TestStep) => (s.action || '').toLowerCase() === 'launchapp');
         if (launchStep) {
-            try {
-                const udid = connectedDevice?.udid || '';
-                const appHint = extractElementName(launchStep.target || test.name);
-                if (udid) {
-                    const res = await fetch(`${DAEMON}/api/devices/${udid}/resolve-app?name=${encodeURIComponent(appHint)}`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data.resolved) appId = data.package_id;
+            const rawTarget = (launchStep.target || '').trim();
+            if (PACKAGE_ID_RE.test(rawTarget)) {
+                appId = rawTarget;
+            } else {
+                try {
+                    const udid = connectedDevice?.udid || '';
+                    const appHint = extractElementName(rawTarget || test.name);
+                    if (udid) {
+                        const res = await fetch(`${DAEMON}/api/devices/${udid}/resolve-app?name=${encodeURIComponent(appHint)}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.resolved) appId = data.package_id;
+                        }
                     }
-                }
-            } catch { /* use unknown */ }
+                } catch { /* use unknown */ }
+            }
         }
 
         for (const s of steps) {
@@ -839,8 +908,9 @@ export default function ProjectDetailPage() {
     // Importação (arquivos/ZIP), pastas e mover testes — extraído para um hook
     // dedicado (mantém page.tsx dentro do limite de 1.500 linhas).
     const {
-        showImportModal, importTargetFolder, importInitialMode, importStatus, importing,
-        handleImportFiles, handleImportZip, handleCreateFolder, handleDeleteFolder,
+        showImportModal, importTargetFolder, importInitialMode, importStatus, importing, importProgress,
+        handleImportFiles, handleImportZip, handleCreateFolder,
+        requestDeleteFolder, confirmDeleteFolder, deletingFolder, cancelDeleteFolder,
         openImportInto, openCreateFolder, closeImportModal,
         moveTest, setMoveTest, moving, moveStatus, setMoveStatus, confirmMoveTest,
     } = useProjectTestImport({ projectId, projectRef, refresh: fetchProject });
@@ -979,7 +1049,7 @@ export default function ProjectDetailPage() {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                 <div className="bg-foreground/5 border border-border rounded-xl p-4">
                     <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">TOTAL TESTES</p>
                     <p className="text-2xl font-bold text-foreground mt-1">{tests.length}</p>
@@ -1011,6 +1081,27 @@ export default function ProjectDetailPage() {
                         })()}
                     </p>
                 </div>
+                {/* Agendamentos / Execuções em lote — clicável */}
+                <button
+                    onClick={() => { setScheduleTestIds(null); setSchedulesOpen(true); }}
+                    className="bg-foreground/5 border border-border rounded-xl p-4 text-left transition-colors hover:border-brand/50 hover:bg-foreground/[0.08] group"
+                    title="Ver agendamentos e resultados das execuções em lote"
+                >
+                    <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider flex items-center gap-1">
+                        <CalendarClock className="w-3 h-3" /> AGENDAMENTOS
+                    </p>
+                    <p className="text-2xl font-bold text-foreground mt-1">{scheduleCount ?? '—'}</p>
+                    <p className="text-[11px] mt-0.5 inline-flex items-center gap-1">
+                        {lastBatch ? (() => {
+                            const { label, tone } = batchOutcome(lastBatch);
+                            const color = tone === 'success' ? 'text-green-400' : tone === 'warning' ? 'text-amber-400' : tone === 'danger' ? 'text-red-400' : tone === 'running' ? 'text-brand' : 'text-muted-foreground';
+                            return <span className={color}>último lote: {label}</span>;
+                        })() : (
+                            <span className="text-muted-foreground">ver execuções</span>
+                        )}
+                        <ChevronRight className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
+                    </p>
+                </button>
             </div>
 
             {/* Tests List */}
@@ -1068,6 +1159,12 @@ export default function ProjectDetailPage() {
                                     >
                                         <Upload className="w-3.5 h-3.5" /> Importar Testes
                                     </button>
+                                    <button
+                                        onClick={() => { setShowMoreMenu(false); setScheduleTestIds(null); setSchedulesOpen(true); }}
+                                        className="w-full text-left px-3 py-2 text-xs font-medium text-foreground hover:bg-accent flex items-center gap-2"
+                                    >
+                                        <CalendarClock className="w-3.5 h-3.5 text-brand" /> Agendamentos
+                                    </button>
                                 </div>
                             )}
                         </div>
@@ -1077,6 +1174,25 @@ export default function ProjectDetailPage() {
                         </span>
                     </div>
                     <div className="flex items-center gap-2">
+                        <div className="relative">
+                            <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            <input
+                                type="text"
+                                value={testSearch}
+                                onChange={(e) => setTestSearch(e.target.value)}
+                                placeholder="Buscar teste…"
+                                className="w-36 sm:w-56 bg-background border border-border rounded-lg pl-8 pr-7 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-brand/50"
+                            />
+                            {testSearch && (
+                                <button
+                                    onClick={() => setTestSearch('')}
+                                    title="Limpar busca"
+                                    className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-foreground rounded"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
                         <button
                             onClick={() => openImportInto('')}
                             className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 border-emerald-500/40 text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 hover:border-emerald-500/60"
@@ -1103,17 +1219,37 @@ export default function ProjectDetailPage() {
 
                 <ProjectTestsList
                     projectId={projectId}
-                    tree={buildTestTree(tests, folders)}
+                    tree={testTree}
                     totalCount={tests.length}
+                    forceExpand={!!testSearch.trim()}
                     onDeleteTest={handleDeleteTest}
                     onExportYaml={handleExportYaml}
                     onOpenStudio={openTestInMaestroStudio}
                     onMoveTest={(t) => { setMoveStatus({ type: 'idle', message: '' }); setMoveTest(t); }}
                     onImportIntoFolder={openImportInto}
                     onCreateSubfolder={openCreateFolder}
-                    onDeleteFolder={handleDeleteFolder}
+                    onDeleteFolder={requestDeleteFolder}
+                    onRunBatch={handleRunBatch}
+                    onScheduleBatch={(ids) => { setScheduleTestIds(ids); setSchedulesOpen(true); }}
                 />
             </div>
+
+            {batchRunId && (
+                <BatchProgressModal
+                    batchRunId={batchRunId}
+                    projectId={projectId}
+                    onClose={() => { setBatchRunId(null); fetchProject(); loadScheduleSummary(); }}
+                />
+            )}
+
+            {schedulesOpen && (
+                <SchedulesModal
+                    projectId={projectId}
+                    deviceUdid={availableDeviceUdid || connectedDevice?.udid || null}
+                    pendingTestIds={scheduleTestIds}
+                    onClose={() => { setSchedulesOpen(false); setScheduleTestIds(null); loadScheduleSummary(); }}
+                />
+            )}
 
             {/* Delete Confirmation */}
             {deleteConfirm && (
@@ -1145,6 +1281,22 @@ export default function ProjectDetailPage() {
                 </div>
             )}
 
+            {/* Excluir Pasta — modal da app (substitui o confirm() nativo) */}
+            {deletingFolder && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={cancelDeleteFolder}>
+                    <div className="bg-card border border-border rounded-2xl w-full max-w-sm p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        <h3 className="text-lg font-bold text-foreground mb-2">Excluir pasta?</h3>
+                        <p className="text-sm text-muted-foreground mb-6">
+                            A pasta <span className="font-mono text-foreground">{deletingFolder}/</span> e <span className="font-semibold text-foreground">todos os testes</span> dentro dela serão excluídos permanentemente. Esta ação não pode ser desfeita.
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <button onClick={cancelDeleteFolder} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">Cancelar</button>
+                            <button onClick={confirmDeleteFolder} className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 transition-colors">Excluir pasta</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Import Tests Modal — ZIP / Arquivos / Criar pasta */}
             {showImportModal && (
                 <ImportTestsModal
@@ -1152,6 +1304,7 @@ export default function ProjectDetailPage() {
                     initialMode={importInitialMode}
                     importStatus={importStatus}
                     importing={importing}
+                    importProgress={importProgress}
                     onClose={closeImportModal}
                     onImportFiles={handleImportFiles}
                     onImportZip={handleImportZip}

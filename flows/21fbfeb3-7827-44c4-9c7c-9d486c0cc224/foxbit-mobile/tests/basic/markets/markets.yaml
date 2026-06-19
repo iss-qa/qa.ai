@@ -1,0 +1,48 @@
+# COM O USUÁRIO LOGADO - EXECUTE -> maestro test -e SKIP_LAUNCH=true markets.yaml
+appId: br.com.foxbit.foxbitandroid
+---
+# Execução Sequencial de Testes de Mercados com Reset de Estado
+- runScript: "../../pages/inicio.js"
+
+# 1. Validar filtros principais, ocultos e moedas
+- runFlow: "tc_markets_001.yaml"
+
+# Reset: Volta para o Início antes do próximo fluxo
+- tapOn:
+    id: ${output.INICIO.botaoInicio}
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# 2. Validar busca e filtros avançados
+- runFlow: "tc_markets_002.yaml"
+
+# Reset: Volta para o Início
+- hideKeyboard
+- tapOn:
+    id: ${output.INICIO.botaoInicio}
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# 3. Validar navegação sequencial por categorias
+- runFlow: "tc_markets_003.yaml"
+
+# Reset: Volta para o Início
+
+- hideKeyboard
+- tapOn:
+    id: ${output.INICIO.botaoInicio}
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# 4. Validar troca de cotação e filtro "Todas"
+- runFlow: "tc_markets_004.yaml"
+
+# Reset: Volta para o Início
+- hideKeyboard
+- tapOn:
+    id: ${output.INICIO.botaoInicio}
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# 5. Validar busca por moedas específicas
+- runFlow: "tc_markets_005.yaml"

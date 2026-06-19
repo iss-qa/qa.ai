@@ -1,0 +1,47 @@
+### ---
+#  Id: INICIO-5
+#  Name: Tela de Saque
+#  Description: Validar a abertura e componentes da tela de Saque
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/login.js"
+
+# Clicar em Sacar
+- tapOn:
+    id: ${output.INICIO.botaoSacar}
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Validar título da tela ou aba
+- assertVisible:
+    text: ".*Sacar.*"
+
+- assertVisible: "Buscar"
+
+- tapOn: "Sacar"
+
+- assertVisible:
+    text: ".*Real.*"
+
+- assertVisible:
+    text: ".*Bitcoin.*"
+
+- assertVisible:
+    text: ".*XRP.*"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/tc_inicio_005_sacar"
+
+# Voltar para a home
+- tapOn:
+    id: ${output.LOGIN.botaoVoltar}
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Validar retorno à Home
+- assertVisible:
+    id: ${output.INICIO.botaoSacar}
+

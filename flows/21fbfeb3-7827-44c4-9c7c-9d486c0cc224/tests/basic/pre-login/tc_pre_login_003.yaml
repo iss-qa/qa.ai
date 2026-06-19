@@ -1,0 +1,31 @@
+### ---
+#  Id: PRE-LOGIN-3
+#  Name: Search for BTC
+#  Description: Search for BTC and validate Bitcoin appears in results
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/inicio.js"
+- waitForAnimationToEnd:
+    timeout: 10000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_pre_login_inicial"
+- tapOn: 
+    id: ${output.INICIO.campoBusca}
+
+- inputText: "BTC"
+- waitForAnimationToEnd:
+    timeout: 2000
+- hideKeyboard
+
+- assertVisible:
+    text: ".*Bitcoin.*"
+
+- assertVisible:
+    text: ".*BTC/USDT.*"
+
+- tapOn:
+    text: ".*BTC/BRL.*"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_busca_btc_brl"

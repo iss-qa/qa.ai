@@ -1,0 +1,76 @@
+### ---
+#  Id: LOGIN-1
+#  Name: Successful login
+#  Description: Login with valid credentials and validate home elements
+### ---
+appId: br.com.foxbit.foxbitandroid
+
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/login.js"
+- runScript: "../../pages/menu.js"
+
+- waitForAnimationToEnd:
+    timeout: 10000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_tela_inicial"
+
+- assertVisible:
+    id: "txt_welcome_title"
+- assertVisible: 
+    id: ${output.LOGIN.botaoEntrar}
+- tapOn: 
+    id: ${output.LOGIN.botaoEntrar}
+
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- runFlow:
+    when:
+      notVisible:
+        id: ${output.LOGIN.campoEmail}
+    commands:
+      - tapOn: 
+          id: ${output.LOGIN.botaoEntrar}
+      - waitForAnimationToEnd:
+          timeout: 2000
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_tela_login"
+
+- tapOn: 
+    id: ${output.LOGIN.campoEmail}
+- inputText: ${output.LOGIN.emailQA}
+- hideKeyboard
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_email_preenchido"
+
+- tapOn: 
+    id: ${output.LOGIN.campoSenha}
+- inputText: ${output.LOGIN.senhaQA}
+- hideKeyboard
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/04_senha_preenchida"
+
+- tapOn:
+    id: ${output.LOGIN.botaoContinuar}
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/05_apos_submit"
+- waitForAnimationToEnd:
+    timeout: 15000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/06_tela_final"
+
+- waitForAnimationToEnd:
+    timeout: 150000
+
+- assertVisible: 
+    id: ${output.LOGIN.labelSalvarBiometria}
+- tapOn: 
+    id: ${output.LOGIN.botaoNaoBiometria}
+
+- assertVisible:
+    id: ${output.INICIO.cardHomeBalance}
+- assertVisible:
+    id: ${output.INICIO.botaoCarteirasInteligentes}
+
+- assertVisible: "Olá, Luiz!"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/07_login_sucesso"

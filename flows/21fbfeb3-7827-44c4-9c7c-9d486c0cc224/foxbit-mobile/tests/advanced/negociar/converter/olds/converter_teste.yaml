@@ -1,0 +1,28 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runScript: "../../../pages/converter.js"
+# /Users/isaiassilva/development/projects/foxbit/foxbit-mobile/tests/pages/converter.js
+- runFlow:
+    when:
+      true: ${SKIP_LAUNCH != 'true'}
+    commands:
+      - launchApp:
+          appId: "br.com.foxbit.foxbitandroid"
+          clearState: false
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    text: "Converter"
+- assertVisible:
+    text: "Converta criptomoedas e reais de forma simples e rápida"
+
+- tapOn: "Converter"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- assertVisible: ${output.CONVERTER.textHeaderConverter}
+- assertVisible: ${output.CONVERTER.textVocePaga}
+- assertVisible: ${output.CONVERTER.textVoceRecebe}
+
+- tapOn: ${output.CONVERTER.comboVocePaga}
+- stopApp

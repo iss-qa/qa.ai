@@ -1,0 +1,46 @@
+### ---
+#  Id: INICIO-2
+#  Name: Filtros de moedas
+#  Description: Validar funcionamento e scroll lateral dos filtros de moedas na home
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/inicio.js"
+
+# Validar filtros principais
+- assertVisible:
+    id: ${output.INICIO.filtroPopulares}
+- assertVisible:
+    id: ${output.INICIO.filtroMaioresAltas}
+- assertVisible:
+    id: ${output.INICIO.filtroMaioresBaixas}
+
+# Realizar swipe nos filtros para mostrar os ocultos (Direita para Esquerda)
+- runFlow: "../../helpers/filtros_home_scroll_direita.yaml"
+
+- assertVisible:
+    id: ${output.INICIO.filtroMaiorPreco}
+- assertVisible:
+    id: ${output.INICIO.filtroMenorPreco}
+
+# Testar clique em um filtro adicional
+- tapOn:
+    id: ${output.INICIO.filtroMaiorPreco}
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- assertVisible:
+    id: ${output.INICIO.coinFirstList}
+
+# Realizar swipe nos filtros para voltar ao início (Esquerda para Direita)
+- runFlow: "../../helpers/filtros_home_scroll_esquerda.yaml"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/tc_inicio_002_filtros"
+
+- assertVisible:
+    text: ".*BTC/BRL.*"
+
+- assertVisible:
+    text: ".*BTC/USDT.*"

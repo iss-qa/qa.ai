@@ -1,0 +1,23 @@
+# COM O USUÁRIO LOGADO - EXECUTE -> maestro test -e SKIP_LAUNCH=true menu.yaml
+appId: br.com.foxbit.foxbitandroid
+---
+# Execução Sequencial de Testes de Menu com Reset de Estado
+- runScript: "../../pages/inicio.js"
+
+# 1. Valida atalhos do menu e cards de produtos
+- runFlow: "tc_menu_001.yaml"
+
+# Reset: Volta para o Início antes do próximo fluxo
+- tapOn:
+    id: ${output.INICIO.botaoInicio}
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# 2. Acessa cada item do menu e retorna pela seta
+- runFlow: "tc_menu_002.yaml"
+
+# Reset: Volta para o Início
+- tapOn:
+    id: ${output.INICIO.botaoInicio}
+- waitForAnimationToEnd:
+    timeout: 2000

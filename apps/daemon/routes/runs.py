@@ -142,6 +142,47 @@ def _extract_element_name(text: str) -> str:
     return label.strip()
 
 
+# Um package id Android: segmentos separados por ponto, começando por letra
+# (ex.: br.com.foxbit.foxbitandroid). Usado para detectar quando um "hint" já é
+# o próprio pacote — caso típico de launchApp GRAVADO, que armazena o pacote real.
+_PACKAGE_ID_RE = _re.compile(r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$')
+
+
+def _looks_like_package_id(value: str) -> bool:
+    return bool(value) and bool(_PACKAGE_ID_RE.match(value.strip()))
+
+
+def _resolve_app_id_from_hint(app_hint: str, udid: str = "") -> str:
+    """
+    Deriva o appId a partir do alvo de um launchApp.
+
+    O launchApp GRAVADO já guarda o pacote real (ex.: br.com.foxbit.foxbitandroid);
+    nesse caso usamos direto. Só quando o hint é um NOME amigável é que tentamos
+    resolver para o pacote via cache/ADB. Retorna "com.app.unknown" só em último caso.
+    """
+    app_hint = (app_hint or "").strip()
+    if not app_hint:
+        return "com.app.unknown"
+
+    # 1. Já é um package id (caso do teste gravado) → usa direto.
+    if _looks_like_package_id(app_hint):
+        return app_hint
+
+    # 2. Nome amigável → tenta resolver para o pacote.
+    resolved = _resolve_app_package(app_hint, udid)
+    if _looks_like_package_id(resolved):
+        return resolved
+
+    # 3. Fallback: tenta cada palavra "significativa" do nome.
+    for w in app_hint.split():
+        if len(w) > 3:
+            r = _resolve_app_package(w, udid)
+            if _looks_like_package_id(r) and r != w:
+                return r
+
+    return "com.app.unknown"
+
+
 def _resolve_app_package(app_name: str, udid: str = "") -> str:
     """
     Resolve an app name to its Android package ID.
@@ -150,6 +191,10 @@ def _resolve_app_package(app_name: str, udid: str = "") -> str:
     3. Return best match or the name as-is
     """
     name_lower = app_name.lower().strip()
+
+    # 0. Se já é um package id, ele resolve para si mesmo.
+    if _looks_like_package_id(app_name):
+        return app_name.strip()
 
     # 1. Check cache
     for key, pkg in state.APP_PACKAGE_CACHE.items():
@@ -383,24 +428,16 @@ async def start_run(request: RunAIRequest):
                 commands = []
                 app_id = "com.app.unknown"
 
-                # First pass: find app name from launchApp step
+                # First pass: derive appId from the launchApp step. O alvo gravado
+                # já costuma ser o pacote real (ex.: br.com.foxbit.foxbitandroid);
+                # _resolve_app_id_from_hint usa direto e só resolve nomes amigáveis.
                 for s in request.steps:
                     raw = s if isinstance(s, dict) else dict(s)
                     action = raw.get("action", "").lower()
                     if action == "launchapp":
                         app_hint = raw.get("target", "") or raw.get("value", "")
                         if app_hint:
-                            resolved = _resolve_app_package(app_hint, request.device_udid)
-                            if resolved != app_hint:
-                                app_id = resolved
-                            else:
-                                words = app_hint.split()
-                                for w in words:
-                                    if len(w) > 3 and w[0].isupper():
-                                        resolved2 = _resolve_app_package(w, request.device_udid)
-                                        if resolved2 != w:
-                                            app_id = resolved2
-                                            break
+                            app_id = _resolve_app_id_from_hint(app_hint, request.device_udid)
                         break
 
                 # Second pass: generate commands
@@ -590,5 +627,211 @@ async def cancel_run(run_id: str):
 @router.get("/api/devices/{udid}/resolve-app")
 async def resolve_app(udid: str, name: str):
     """Resolve an app name to its package ID on the device."""
-    pkg = _resolve_app_package(name, udid)
-    return {"app_name": name, "package_id": pkg, "resolved": pkg != name}
+    pkg = _resolve_app_id_from_hint(name, udid)
+    # "resolved" = conseguimos um package id válido (inclui o caso em que o
+    # próprio nome já era um pacote, como no teste gravado).
+    return {"app_name": name, "package_id": pkg, "resolved": _looks_like_package_id(pkg)}
+
+
+# ============================================================
+# Batch (suite) execution
+# ============================================================
+
+class BatchExecuteRequest(BaseModel):
+    project_id: str
+    test_ids: List[str]           # ordem = ordem de execução
+    device_udid: str
+    name: Optional[str] = None    # rótulo do lote (ex.: "basic/ (12 testes)")
+
+
+@router.post("/api/batches/execute")
+async def execute_batch(req: BatchExecuteRequest):
+    """Cria um lote e executa os testes em sequência (background).
+
+    Retorna o batch_run_id imediatamente; o front acompanha o progresso por
+    polling em test_batch_runs / test_runs (batch_run_id).
+    """
+    if not req.test_ids:
+        raise HTTPException(status_code=400, detail="Nenhum teste selecionado para o lote")
+    if not req.device_udid:
+        raise HTTPException(status_code=400, detail="device_udid é obrigatório")
+
+    sb_url = supabase_url.rstrip("/")
+    sb_key = supabase_service_key
+    if not sb_url or not sb_key:
+        raise HTTPException(status_code=500, detail="Supabase não configurado no daemon")
+
+    headers = {
+        "apikey": sb_key, "Authorization": f"Bearer {sb_key}",
+        "Content-Type": "application/json", "Prefer": "return=representation",
+    }
+    row = {
+        "project_id": req.project_id,
+        "name": req.name or f"Lote de {len(req.test_ids)} teste(s)",
+        "status": "pending",
+        "triggered_by": "manual",
+        "device_udid": req.device_udid,
+        "total_tests": len(req.test_ids),
+    }
+    async with httpx.AsyncClient(verify=False) as client:
+        resp = await client.post(f"{sb_url}/rest/v1/test_batch_runs", headers=headers, json=row, timeout=15)
+        if resp.status_code not in (200, 201):
+            raise HTTPException(status_code=502, detail=f"Falha ao criar lote: {resp.text[:200]}")
+        batch_run_id = resp.json()[0]["id"]
+
+    from services.maestro.batch import run_batch
+    _task = asyncio.create_task(run_batch(req.project_id, req.test_ids, req.device_udid, batch_run_id))
+    state.background_tasks.add(_task)
+    _task.add_done_callback(state.background_tasks.discard)
+
+    return {"status": "started", "batch_run_id": batch_run_id, "total": len(req.test_ids)}
+
+
+@router.get("/api/batches")
+async def list_batches(project_id: str, limit: int = 50):
+    """Histórico de execuções em lote de um projeto (manuais + agendadas).
+
+    Lido via service key (sem RLS) para funcionar igual em PRD/localhost. Cada
+    item linka para o relatório completo (`/api/batches/{id}/report`).
+    """
+    sb_url = supabase_url.rstrip("/")
+    sb_key = supabase_service_key
+    if not sb_url or not sb_key:
+        raise HTTPException(status_code=500, detail="Supabase não configurado no daemon")
+    headers = {"apikey": sb_key, "Authorization": f"Bearer {sb_key}"}
+    async with httpx.AsyncClient(verify=False) as client:
+        resp = await client.get(
+            f"{sb_url}/rest/v1/test_batch_runs",
+            headers=headers,
+            params={
+                "project_id": f"eq.{project_id}",
+                "select": ("id,name,status,triggered_by,schedule_id,total_tests,"
+                           "passed_tests,failed_tests,started_at,ended_at,duration_ms"),
+                "order": "started_at.desc",
+                "limit": str(limit),
+            },
+            timeout=15,
+        )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Falha ao listar lotes: {resp.text[:200]}")
+    return resp.json()
+
+
+@router.get("/api/batches/{batch_run_id}")
+async def get_batch(batch_run_id: str):
+    """Status do lote + execuções por teste (lido via service key → sem RLS).
+
+    O front faz polling daqui em vez do Supabase direto, evitando bloqueio de
+    RLS nas tabelas novas e funcionando igual em PRD/localhost.
+    """
+    sb_url = supabase_url.rstrip("/")
+    sb_key = supabase_service_key
+    if not sb_url or not sb_key:
+        raise HTTPException(status_code=500, detail="Supabase não configurado no daemon")
+    headers = {"apikey": sb_key, "Authorization": f"Bearer {sb_key}"}
+    async with httpx.AsyncClient(verify=False) as client:
+        b_resp = await client.get(
+            f"{sb_url}/rest/v1/test_batch_runs",
+            headers=headers,
+            params={"id": f"eq.{batch_run_id}",
+                    "select": "id,status,total_tests,passed_tests,failed_tests,duration_ms"},
+            timeout=15,
+        )
+        r_resp = await client.get(
+            f"{sb_url}/rest/v1/test_runs",
+            headers=headers,
+            params={"batch_run_id": f"eq.{batch_run_id}",
+                    "select": "id,test_case_id,status,duration_ms,error_message,test_cases(name)",
+                    "order": "started_at.asc"},
+            timeout=15,
+        )
+    batch = (b_resp.json() or [None])[0] if b_resp.status_code == 200 else None
+    runs = r_resp.json() if r_resp.status_code == 200 else []
+    return {"batch": batch, "runs": runs}
+
+
+@router.get("/api/batches/{batch_run_id}/report")
+async def get_batch_report(batch_run_id: str):
+    """Dados COMPLETOS do lote para o relatório PDF: metadados + cada teste com
+    YAML executado, status, duração, erro e evidências (bug_reports). Lido via
+    service key (sem RLS). Endpoint separado do polling leve (não infla o poll).
+    """
+    sb_url = supabase_url.rstrip("/")
+    sb_key = supabase_service_key
+    if not sb_url or not sb_key:
+        raise HTTPException(status_code=500, detail="Supabase não configurado no daemon")
+    headers = {"apikey": sb_key, "Authorization": f"Bearer {sb_key}"}
+    async with httpx.AsyncClient(verify=False) as client:
+        b_resp = await client.get(
+            f"{sb_url}/rest/v1/test_batch_runs",
+            headers=headers, params={"id": f"eq.{batch_run_id}", "select": "*"}, timeout=15,
+        )
+        r_resp = await client.get(
+            f"{sb_url}/rest/v1/test_runs",
+            headers=headers,
+            params={"batch_run_id": f"eq.{batch_run_id}",
+                    "select": "id,test_case_id,status,duration_ms,started_at,ended_at,error_message,"
+                              "steps_total,steps_passed,steps_failed,device_udid,"
+                              "test_cases(name,raw_yaml,app_id,folder_path)",
+                    "order": "started_at.asc"},
+            timeout=20,
+        )
+        runs = r_resp.json() if r_resp.status_code == 200 else []
+        run_ids = [r["id"] for r in runs]
+        evidence_by_run: dict = {}
+        shots_by_run: dict = {}
+        if run_ids:
+            ids_csv = ",".join(run_ids)
+            e_resp = await client.get(
+                f"{sb_url}/rest/v1/bug_reports",
+                headers=headers,
+                params={"test_run_id": f"in.({ids_csv})",
+                        "select": "test_run_id,title,severity,screenshot_url,pdf_url,jira_url",
+                        "order": "created_at.desc"},
+                timeout=15,
+            )
+            if e_resp.status_code == 200:
+                for ev in e_resp.json():
+                    evidence_by_run.setdefault(ev["test_run_id"], []).append(ev)
+            # Screenshots por passo (run_steps.run_id = test_run.id no lote).
+            s_resp = await client.get(
+                f"{sb_url}/rest/v1/run_steps",
+                headers=headers,
+                params={"run_id": f"in.({ids_csv})",
+                        "select": "run_id,step_order,screenshot_url,status",
+                        "order": "step_order.asc"},
+                timeout=15,
+            )
+            if s_resp.status_code == 200:
+                for st in s_resp.json():
+                    if st.get("screenshot_url"):
+                        shots_by_run.setdefault(st["run_id"], []).append(st)
+
+    batch = (b_resp.json() or [None])[0] if b_resp.status_code == 200 else None
+
+    def _tc(r):
+        tc = r.get("test_cases")
+        if isinstance(tc, list):
+            return tc[0] if tc else {}
+        return tc or {}
+
+    tests = [{
+        "test_run_id": r["id"],
+        "test_case_id": r.get("test_case_id"),
+        "name": _tc(r).get("name") or "teste",
+        "app_id": _tc(r).get("app_id"),
+        "folder_path": _tc(r).get("folder_path"),
+        "raw_yaml": _tc(r).get("raw_yaml"),
+        "status": r.get("status"),
+        "duration_ms": r.get("duration_ms"),
+        "started_at": r.get("started_at"),
+        "ended_at": r.get("ended_at"),
+        "error_message": r.get("error_message"),
+        "steps_total": r.get("steps_total"),
+        "steps_passed": r.get("steps_passed"),
+        "steps_failed": r.get("steps_failed"),
+        "evidence": evidence_by_run.get(r["id"], []),
+        "screenshots": shots_by_run.get(r["id"], []),
+    } for r in runs]
+
+    return {"batch": batch, "tests": tests}

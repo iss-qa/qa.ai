@@ -1,0 +1,19 @@
+# PARA TESTAR FLUXOS DE LOGIN - EXECUTE -> maestro test login.yaml
+appId: br.com.foxbit.foxbitandroid
+---
+# Execução Sequencial de Fluxos de Login
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/login.js"
+
+# 1. Validar login com sucesso
+- runFlow: "tc_login_001.yaml"
+
+# 2. Validar login com senha incorreta
+- runFlow: "tc_login_002.yaml"
+
+# 3. Validar login com e-mail inválido
+- runFlow: "tc_login_003.yaml"
+
+# 4. Validar recuperar senha
+- runFlow: "tc_login_004.yaml"
+

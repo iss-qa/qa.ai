@@ -1,0 +1,34 @@
+### ---
+#  Id: PRE-LOGIN-4
+#  Name: Search for Ethereum
+#  Description: Search for ETH and validate Ethereum appears in results
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/inicio.js"
+- waitForAnimationToEnd:
+    timeout: 10000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_pre_login_inicial"
+- tapOn: 
+    id: ${output.INICIO.campoBusca}
+
+- inputText: "ETH"
+- waitForAnimationToEnd:
+    timeout: 2000
+- hideKeyboard
+
+- assertVisible:
+    text: ".*Ethereum.*"
+
+- assertVisible:
+    text: ".*ETH.*"
+
+- assertVisible:
+    text: ".*ETH/USDT.*"
+
+- tapOn:
+    text: ".*ETH/BRL.*"    
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_busca_eth_brl"
+

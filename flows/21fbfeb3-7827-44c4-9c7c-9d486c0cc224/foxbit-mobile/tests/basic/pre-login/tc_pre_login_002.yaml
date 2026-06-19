@@ -1,0 +1,36 @@
+### ---
+#  Id: PRE-LOGIN-2
+#  Name: Validate disabled platform options
+#  Description: Validate that platform options are disabled before login
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/inicio.js"
+
+- waitForAnimationToEnd:
+    timeout: 10000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_pre_login_inicial"
+- assertVisible: 
+    text: ${output.INICIO.textoConhecaPlataforma}
+
+- assertVisible: 
+    id: ${output.INICIO.botaoDepositar}
+
+- assertVisible: 
+    id: ${output.INICIO.botaoSacar}
+
+- assertVisible: 
+    id: ${output.INICIO.botaoNegociar}
+
+- assertVisible: 
+    id: ${output.INICIO.botaoCryptoAssets}
+
+- assertVisible: 
+    id: ${output.INICIO.botaoEarn}
+
+- assertVisible: 
+    id: ${output.INICIO.botaoCompraRecorrente}
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_opcoes_desabilitadas"

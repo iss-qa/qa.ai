@@ -1,0 +1,52 @@
+######################################################################################################
+# DESCRIÇÃO: Realiza uma compra do tipo LIMITE
+######################################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+- assertVisible: "Comprar Bitcoin (BTCBRL)"
+- assertVisible: "Limite"
+- tapOn: "Limite"
+- assertVisible: "Limite"
+- assertVisible: "Stop Market"
+- tapOn: "Stop Market"
+- assertVisible: "QUANTO DESEJA COMPRAR?"
+- assertVisible: "0"
+- assertVisible: "1"
+- tapOn: "1"
+- tapOn: "0"
+- assertVisible: "10"
+- runFlow:
+    when:
+      notVisible: "Próximo"
+    commands:
+      - assertVisible: "Continuar"
+      - assertVisible: "R$\nQUAL O PREÇO DE COMPRA?\n0"
+      - tapOn: "R$\nQUAL O PREÇO DE COMPRA?\n0"
+- runFlow:
+    when:
+      visible: "Próximo"
+    commands:
+      - tapOn: "Próximo"
+- assertVisible: "R$\nQUAL O PREÇO DE COMPRA?\n0"
+- assertVisible: "0"
+- assertVisible: "2"
+- tapOn: "2"
+- tapOn: "0"
+- tapOn: "0"
+- tapOn: "0"
+- tapOn: "0"
+- tapOn: "0"
+- assertVisible: "R$\nQUAL O PREÇO DE COMPRA?\n200.000"
+- assertVisible: "Continuar"
+- tapOn: "Continuar"
+- assertVisible: "Par:\nBTCBRL"
+- assertVisible: "Tipo de ordem:\nStop Market"
+- scrollUntilVisible:
+    element: "Confirmar compra"
+    speed: 80
+- tapOn: "Confirmar compra"
+- assertVisible: "Ordem enviada com sucesso"
+- back
+- assertVisible: "0"
+- tapOn: "0"

@@ -1,0 +1,71 @@
+### ---
+#  Id: ACCOUNT-2
+#  Name: Validar Meus Dados preenchidos e anonimizados
+#  Description: Entra na tela de Meus dados e valida informações anonimizadas.
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/accounts.js"
+- runScript: "../../pages/inicio.js"
+
+# 1. Navegar para a aba "Conta"
+- tapOn:
+    id: ${output.INICIO.botaoConta}
+
+# 2. Clicar em "Meus dados"
+- tapOn:
+    id: ${output.ACCOUNTS.botaoMeusDados}
+# 3. Validar título da tela e seções básicas
+- assertVisible: "Meus dados"
+- assertVisible:
+    id: ${output.ACCOUNTS.labelInformacoesBasicas}
+- assertVisible: "NOME COMPLETO"    
+- assertVisible:
+    text: ".*\\*\\*\\*.*" # Valida que há asteriscos (anonimização)
+- assertVisible: "CPF"
+- assertVisible:
+    text: "..[0-9]\\*\\*\\*.*" # Valida que o CPF contém asteriscos após os dígitos iniciais
+- assertVisible: "DATA DE NASCIMENTO"
+- assertVisible:
+    text: "..\\/\\*\\*\\/\\*\\*\\*\\*" # Valida o formato 03/**/****
+- assertVisible: "E-MAIL"
+- assertVisible:
+    text: ".*\\*\\*\\*@.*" # Valida o e-mail anonimizado
+- assertVisible: "TELEFONE\nTelefone"
+
+# 4. Scroll up (Deslocamento para baixo) para ver os itens finais
+- swipe:
+    direction: UP
+- swipe:
+    direction: UP
+
+- assertVisible:
+    id: ${output.ACCOUNTS.enderecoPais}
+- assertVisible:
+    id: ${output.ACCOUNTS.enderecoCEP}
+- assertVisible:
+    id: ${output.ACCOUNTS.enderecoEstado}
+- assertVisible:
+    id: ${output.ACCOUNTS.endercoCidade}
+- assertVisible:
+    id: ${output.ACCOUNTS.enderecoBairro}
+- assertVisible:
+    id: ${output.ACCOUNTS.enderecoInput}
+- assertVisible:
+    id: ${output.ACCOUNTS.enderecoNumero}
+- assertVisible:
+    id: ${output.ACCOUNTS.enderecoComplemento}
+
+
+# 5. Validar seção de endereço (precisa de um pequeno scroll)
+- swipe:
+    direction: DOWN
+- assertVisible: "Meus dados"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_meus_dados"
+
+# 6. Retorna para Conta
+- tapOn:
+    id: ${output.ACCOUNTS.botaoVoltar}

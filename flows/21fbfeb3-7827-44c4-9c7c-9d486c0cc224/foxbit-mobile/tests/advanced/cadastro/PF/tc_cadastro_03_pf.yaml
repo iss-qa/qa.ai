@@ -1,0 +1,224 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow:
+    when:
+      true: ${SKIP_LAUNCH != 'true'}
+    commands:
+      - clearState
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+
+- runScript: "../../pages/login.js"
+- runScript: "../../pages/cadastro.js"
+- runScript: "../../pages/login.js"
+
+- runScript:
+    file: "../../common/generate_email.js"
+    env:
+      EMAIL_PREFIX: "automacao_pf"
+
+- waitForAnimationToEnd:
+    timeout: 10000
+
+# INICIO DO CADASTRO
+- tapOn:
+    id: ${output.LOGIN.botaoCriarConta}
+- assertVisible:
+    text: ".*Crie sua conta..*"
+- assertVisible:
+    text: ".*E-mail e senha.*"
+
+- tapOn: "E-mail"
+- inputText: ${output.TEMP_EMAIL}
+
+- tapOn: "Crie uma senha"
+- inputText: ${output.TEMP_PASSWORD}
+- hideKeyboard
+
+- tapOn: "Ao criar a sua conta na Foxbit.*"
+- tapOn: "Continuar"
+
+- runFlow: "../../advanced/cadastro/verify_email.yaml"
+
+- runScript:
+    file: "../../common/wait.js"
+    env:
+      MS: 10000
+
+- assertVisible:
+    text: ".*Complete o cadastro..*"
+- assertVisible:
+    text: ".*Terminar sessão.*"
+- tapOn: "Terminar sessão"
+
+# Fechar o app nativo
+- stopApp: br.com.foxbit.foxbitandroid
+
+# Fechar o Google Chrome
+- stopApp: com.android.chrome
+
+# Abrir o Chrome na rota de login
+- openLink: "https://app.foxbit.com.br/login"
+
+- runScript:
+    file: "../../common/wait.js"
+    env:
+      MS: 15000
+
+# LOGIN VIA WEB
+- assertVisible:
+    text: ".*Entrar.*"
+- tapOn:
+    id: "email"
+- inputText: ${output.TEMP_EMAIL}
+- hideKeyboard
+# TODO - TESTE FALHANDO POR AUSENCIA DE DATA ID NA TELA - SOLICITAR INCLUSAO DE ID EMAIL, SENHA E BOTAO ENTRAR NA WEB
+- tapOn:
+    id: "password"
+- inputText: ${output.TEMP_PASSWORD}
+- hideKeyboard
+
+- tapOn:
+    id: "email"
+- inputText: ${output.TEMP_EMAIL}
+- hideKeyboard
+
+- tapOn: "Entrar"
+
+- runScript:
+    file: "../../common/wait.js"
+    env:
+      MS: 10000
+
+- assertVisible:
+    text: ".*Complete o cadastro..*"
+- tapOn: "Pessoas individuais Pessoa física"
+- tapOn: "Continuar"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/dados_pessoais"
+- runScript: "../../common/generate_user_data.js"
+
+# TELA DE INFORMACOES PESSOAIS
+- assertVisible:
+    text: ".*Informações pessoais.*"
+- tapOn:
+    id: "name"
+- inputText: ${output.USER_NAME}
+- hideKeyboard
+
+- waitForAnimationToEnd:
+    timeout: 10000
+
+- tapOn:
+    id: "cpf"
+- inputText: ${output.USER_CPF}
+- hideKeyboard
+
+- tapOn:
+    id: "birthDate"
+- inputText: "01/09/1995"
+- hideKeyboard
+
+- assertVisible:
+    text: ".*Continuar.*"
+- tapOn: "Continuar"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/dados_endereco"
+
+# TELA DE ENDERECO
+- assertVisible:
+    text: ".*Complete o cadastro..*"
+- assertVisible:
+    text: "Endereço"
+    index: 0
+
+- tapOn:
+    id: "country"
+- assertVisible:
+    text: ".*Brasil.*"
+- tapOn: "Brasil"
+- hideKeyboard
+
+- tapOn:
+    id: "zipcode"
+- inputText: "42739100"
+- hideKeyboard
+
+- tapOn:
+    id: "city"
+- eraseText: 50
+- inputText: "Lauro de Freitas"
+- hideKeyboard
+
+- tapOn:
+    id: "state"
+- tapOn: "Bahia"
+- hideKeyboard
+
+- scroll
+
+- tapOn:
+    id: "neighborhood"
+- eraseText: 50
+- inputText: "Itinga"
+- hideKeyboard
+
+- tapOn:
+    id: "street"
+- eraseText: 50
+- inputText: "Rua Cacule"
+- hideKeyboard
+
+- tapOn:
+    id: "number"
+- inputText: "123"
+- hideKeyboard
+
+- tapOn:
+    id: "complement"
+- inputText: "Apto 123"
+- hideKeyboard
+
+- tapOn:
+    id: "howKnew"
+- assertVisible:
+    text: ".*Google.*"
+- tapOn: "Google"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/conta_metamap_03_endereco"
+
+- tapOn:
+    id: "acceptTerms"
+
+- assertVisible:
+    text: ".*Todos os dados prestados serão validados. Inclua informações completas e verdadeiras..*"
+- tapOn: "Concluir"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/conta_metamap_04_concluir"
+
+# CONTA CRIADA JA DENTRO DA PLATAFORMA
+- assertVisible:
+    text: ".*Muito bem, sua conta foi criada com sucesso!.*"
+- assertVisible:
+    text: ".*Entrar na plataforma.*"
+- tapOn: "Entrar na plataforma"
+
+# Aguarda até 5 segundos caso o modal demore
+- runScript:
+    file: "../../common/wait.js"
+    env:
+      MS: 5000
+
+# Se aparecer o botão "Close" (X da propaganta), ele clica nele
+- runFlow:
+    when:
+      visible: "Close"
+    commands:
+      - tapOn: "Close"
+
+- assertVisible:
+    text: "Início"
+    index: 1
+- assertVisible:
+    text: ".*Carteira.*"
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/conta_metamap_05_inicio"

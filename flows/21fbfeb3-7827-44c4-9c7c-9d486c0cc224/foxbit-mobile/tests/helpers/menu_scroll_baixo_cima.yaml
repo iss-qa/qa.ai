@@ -1,0 +1,18 @@
+appId: br.com.foxbit.foxbitandroid
+---
+# Xiaomi Redmi Note 13
+# - swipe:
+#     start: "50%, 80%"
+#     end: "50%, 20%"
+#     duration: 1000
+# - waitForAnimationToEnd:
+#     timeout: 1000
+
+# Samsung A22
+- swipe:
+    start: "50%, 80%"
+    end: "50%, 20%"
+    duration: 1000
+- waitForAnimationToEnd:
+    timeout: 1000
+

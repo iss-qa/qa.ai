@@ -1,0 +1,47 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow:
+    when:
+      true: ${SKIP_LAUNCH != 'true'}
+    commands:
+      - clearState
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+
+- runScript: "../../pages/login.js"
+- runScript: "../../pages/cadastro.js"
+
+- waitForAnimationToEnd:
+    timeout: 10000
+
+- tapOn:
+    id: ${output.LOGIN.botaoCriarConta}
+- assertVisible: ${output.CADASTRO.tituloEmaileSenha}
+
+- assertVisible: ${output.CADASTRO.inputEmail}
+- assertVisible: ${output.CADASTRO.inputSenha}
+
+- tapOn: ${output.CADASTRO.inputSenha}
+
+# 1. Tentar apenas letras
+- inputText: "senhasimples"
+- hideKeyboard
+- assertVisible: ${output.CADASTRO.regraLetras} # A UI normalmente pinta de verde ou mantém o texto visivel, mas Maestro pode validar o texto em tela. Se o app mudar a view para "check", verificamos que os outros continuam errados ou visíveis
+
+# 2. Adicionar Numeros
+- tapOn: "senhasimples"
+- eraseText: 12
+- inputText: "senhasimples12"
+- hideKeyboard
+- assertVisible: ${output.CADASTRO.regraLetras}
+- assertVisible: ${output.CADASTRO.regraNumeros}
+
+# 3. Adicionar Caractere Especial
+- tapOn: "senhasimples12"
+- eraseText: 14
+- inputText: "senhasimples12!"
+- hideKeyboard
+- assertVisible: ${output.CADASTRO.regraEspeciais}
+
+# 4. Checar min num
+- assertVisible: ${output.CADASTRO.regraTamanho}

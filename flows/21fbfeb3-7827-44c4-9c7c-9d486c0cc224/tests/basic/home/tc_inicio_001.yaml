@@ -1,0 +1,64 @@
+### ---
+#  Id: INICIO-1
+#  Name: Visibilidade e componentes da tela inicial
+#  Description: Validar a visibilidade de todos os componentes principais da Home
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/inicio.js"
+
+# Validar componentes do topo
+- assertVisible:
+    id: ${output.INICIO.iconEyeToogle}
+- assertVisible:
+    id: ${output.INICIO.iconNotification}
+- assertVisible:
+    id: ${output.INICIO.cardHomeBalance}
+
+# Validar botões de atalho iniciais
+- assertVisible:
+    id: ${output.INICIO.botaoNegociar}
+- assertVisible:
+    id: ${output.INICIO.botaoDepositar}
+- assertVisible:
+    id: ${output.INICIO.botaoSacar}
+- assertVisible:
+    id: ${output.INICIO.botaoLivroOfertas}
+
+# Realizar scroll lateral para ver os demais botões - VAI DO NEGOCIAR até FOXBIT CARD
+- runFlow: "../../helpers/acoes_rapidas_home_direita.yaml"
+- assertVisible:
+    id: ${output.INICIO.botaoCryptoAssets}
+- assertVisible:
+    id: ${output.INICIO.botaoFoxbitEarn}
+- assertVisible:
+    id: ${output.INICIO.botaoIndiqueAmigos}
+- assertVisible:
+    id: ${output.INICIO.botaoFoxbitCard}
+
+# Realizar scroll inverso para voltar - VAI DO FOXBIT CARD até NEGOCIAR
+- runFlow: "../../helpers/acoes_rapidas_home_esquerda.yaml"
+
+# Validar componente de Carteiras Inteligentes (Recomendação)
+- assertVisible:
+    id: ${output.INICIO.botaoCarteirasInteligentes}
+
+- swipe:
+    direction: UP
+    waitToSettleTimeoutMs: 1000
+
+# Validar moedas na lista (BTC, ETH, USDT) - Filtro Populares por padrão
+- assertVisible:
+    id: ${output.INICIO.coinFirstList}
+- assertVisible:
+    id: ${output.INICIO.coinSecondList}
+- assertVisible:
+    id: ${output.INICIO.coinThirdList}
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/tc_inicio_001_visibilidade"
+
+- swipe:
+    direction: DOWN
+    waitToSettleTimeoutMs: 1000

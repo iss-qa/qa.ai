@@ -1,0 +1,52 @@
+######################################################################################################
+# DESCRIÇÃO: Realiza uma compra do tipo MERCADO com Desvio de Preço Significativo
+# OBS: Procurando moeda que de pra relalizar esse teste
+######################################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+- assertVisible: "Comprar Bitcoin (BTCBRL)"
+- assertVisible: "Mercado"
+- tapOn: "Mercado"
+- assertVisible: "Limite"
+- assertVisible: "Stop Market"
+- tapOn: "Mercado"
+- assertVisible: "QUANTO DESEJA COMPRAR?"
+- assertVisible: "0"
+- assertVisible: "0\n BTC"
+- tapOn: "0\n BTC"
+- tapOn: "1"
+- tapOn: "5"
+- assertVisible: "15"
+- assertVisible: "Continuar"
+- tapOn: "Continuar"
+- assertVisible: "Par:\nBTCBRL"
+- assertVisible: "Tipo de ordem:\nMercado"
+- runFlow:
+    when:
+      visible: "O livro de ofertas pode não ter a profundidade necessária para esse trade!"
+    commands:
+      - scrollUntilVisible:
+            element: "Confirmar compra"
+            speed: 80
+      - tapOn: "Confirmar compra"
+      - assertVisible: "Ops, algo parece errado..."
+      - assertVisible: "Desvio de preço significativo detectado, excedendo os limites aceitáveis. Reduza o volume da ordem e tente novamente."
+      - assertVisible: "Tentar novamente"
+      - tapOn: "Tentar novamente"
+      - assertVisible: "Botão Apagar"
+      - tapOn: "Botão Apagar"
+      - tapOn: "Botão Apagar"
+      - assertVisible: "R$\ \n0"
+      - tapOn: "R$\ \n0"
+- runFlow:
+    when:
+      notVisible: "O livro de ofertas pode não ter a profundidade necessária para esse trade!"
+    commands:
+      - assertVisible: "Recalculando"
+      - back
+      - assertVisible: "Botão Apagar"
+      - tapOn: "Botão Apagar"
+      - tapOn: "Botão Apagar"
+      - assertVisible: "R$\ \n0"
+      - tapOn: "R$\ \n0"

@@ -1,12 +1,23 @@
 'use client';
 
 import { useState, type MutableRefObject } from 'react';
+import JSZip from 'jszip';
 import { supabase } from '@/lib/supabase';
-import { testYamlPath, writeYaml, deleteYaml, workspaceRefFromProject } from '@/lib/workspace';
+import { testYamlPath, writeFile, deleteYaml, workspaceRefFromProject } from '@/lib/workspace';
 import { extractAppIdFromYaml, parseMaestroYamlToSteps, normalizeFolderPath } from './project-utils';
 import type { Project, TestCase } from './project-types';
 
 type ImportStatus = { type: 'idle' | 'error' | 'success'; message: string };
+
+// Caminhos a ignorar SEMPRE na importação: pastas de dependências/build,
+// metadados do macOS e qualquer pasta/arquivo oculto (.git, .vscode, .maestro…).
+function isJunkPath(relPath: string): boolean {
+    const segments = relPath.split('/').filter(Boolean);
+    return segments.some(seg =>
+        seg === 'node_modules'
+        || seg === '__MACOSX'
+        || seg.startsWith('.'));   // dotfiles/dotfolders (._*, .DS_Store, .git, .vscode…)
+}
 type MoveStatus = { type: 'idle' | 'error'; message: string };
 
 interface UseProjectTestImportOpts {
@@ -31,6 +42,10 @@ export function useProjectTestImport({ projectId, projectRef, refresh }: UseProj
     const [importInitialMode, setImportInitialMode] = useState<'zip' | 'files' | 'folder'>('files');
     const [importStatus, setImportStatus] = useState<ImportStatus>({ type: 'idle', message: '' });
     const [importing, setImporting] = useState(false);
+    // Progresso da importação (0–100) para a barra animada no modal.
+    const [importProgress, setImportProgress] = useState(0);
+    // Pasta aguardando confirmação de exclusão (modal da app, não confirm()).
+    const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
     // Mover teste entre pastas
     const [moveTest, setMoveTest] = useState<TestCase | null>(null);
     const [moving, setMoving] = useState(false);
@@ -60,13 +75,25 @@ export function useProjectTestImport({ projectId, projectRef, refresh }: UseProj
         rawContent: string,
         folderPath: string,
     ): Promise<{ ok: boolean; name: string; error?: string }> => {
-        const testName = fileName.replace(/\.(ya?ml|json|js|ts)$/i, '').replace(/_/g, ' ').trim() || fileName;
-        const isYaml = /\.(ya?ml)$/i.test(fileName);
-        const steps = isYaml ? parseMaestroYamlToSteps(rawContent) : [];
-        if (isYaml && steps.length === 0) {
+        // Import é estrito: SÓ arquivos YAML viram testes. Qualquer outro
+        // formato (.js/.ts/.json/etc.) é ignorado pelos chamadores, mas
+        // mantemos a guarda aqui por segurança.
+        if (!/\.(ya?ml)$/i.test(fileName)) {
+            return { ok: false, name: fileName, error: 'Ignorado (não é YAML)' };
+        }
+        const testName = fileName.replace(/\.(ya?ml)$/i, '').replace(/_/g, ' ').trim() || fileName;
+        const folder = normalizeFolderPath(folderPath) || null;
+        // Caminho relativo EXATO no workspace, preservando o basename original
+        // (ex.: 'tests/home/inicio.yaml'). É o que o Maestro espera para
+        // resolver runFlow na execução.
+        const exactRelPath = folder ? `${folder}/${fileName}` : fileName;
+        const proj = projectRef.current;
+        const ref = proj ? workspaceRefFromProject(proj) : null;
+
+        const steps = parseMaestroYamlToSteps(rawContent);
+        if (steps.length === 0) {
             return { ok: false, name: testName, error: 'YAML inválido ou sem comandos Maestro' };
         }
-        const folder = normalizeFolderPath(folderPath) || null;
         const importedAppId = extractAppIdFromYaml(rawContent);
         const baseRow: Record<string, unknown> = {
             name: testName,
@@ -78,6 +105,7 @@ export function useProjectTestImport({ projectId, projectRef, refresh }: UseProj
             app_id: importedAppId,
             raw_yaml: rawContent,
             folder_path: folder,
+            workspace_path: exactRelPath,
         };
         // Upsert por (nome, pasta): re-importar atualiza em vez de duplicar.
         let lookup = supabase
@@ -99,11 +127,10 @@ export function useProjectTestImport({ projectId, projectRef, refresh }: UseProj
             if (error) return { ok: false, name: testName, error: error.message };
         }
 
-        // Espelha no workspace (Storage ou disco via daemon) preservando a pasta.
+        // Espelha no workspace no caminho EXATO (basename original preservado),
+        // para runFlow "tc_x.yaml" casar com o arquivo materializado.
         try {
-            const proj = projectRef.current;
-            const ref = proj ? workspaceRefFromProject(proj) : null;
-            if (ref) await writeYaml(ref, testYamlPath(folder, testName), rawContent);
+            if (ref) await writeFile(ref, exactRelPath, rawContent);
         } catch { /* mirror é best-effort */ }
 
         return { ok: true, name: testName };
@@ -113,25 +140,37 @@ export function useProjectTestImport({ projectId, projectRef, refresh }: UseProj
     const handleImportFiles = async (files: File[], folderPath: string) => {
         if (files.length === 0) return;
         setImporting(true);
+        setImportProgress(0);
         setImportStatus({ type: 'idle', message: '' });
         try {
             const folder = normalizeFolderPath(folderPath);
+            // Import estrito: só arquivos .yaml/.yml. O resto é ignorado.
+            const yamlFiles = files.filter(f => /\.(ya?ml)$/i.test(f.name));
+            const ignored = files.length - yamlFiles.length;
+            if (yamlFiles.length === 0) {
+                setImportStatus({ type: 'error', message: 'Nenhum arquivo .yaml selecionado. Apenas testes YAML são importados.' });
+                return;
+            }
             if (folder) await ensureFolders([folder]);
             const results: { ok: boolean; name: string; error?: string }[] = [];
-            for (const file of files) {
+            let done = 0;
+            for (const file of yamlFiles) {
                 const content = await file.text();
                 results.push(await importTestContent(file.name, content, folder));
+                done++;
+                setImportProgress(Math.round((done / yamlFiles.length) * 100));
             }
             const okCount = results.filter(r => r.ok).length;
             const failed = results.filter(r => !r.ok);
+            const ignoredMsg = ignored > 0 ? ` (${ignored} não-YAML ignorado(s))` : '';
             await refresh();
             if (failed.length === 0) {
-                setImportStatus({ type: 'success', message: `${okCount} teste(s) importado(s) com sucesso!` });
+                setImportStatus({ type: 'success', message: `${okCount} teste(s) importado(s) com sucesso!${ignoredMsg}` });
                 setTimeout(() => { setShowImportModal(false); setImportStatus({ type: 'idle', message: '' }); }, 1500);
             } else {
                 setImportStatus({
                     type: 'error',
-                    message: `${okCount} importado(s), ${failed.length} falhou(aram): ${failed.map(f => f.name).join(', ')}`,
+                    message: `${okCount} importado(s), ${failed.length} falhou(aram)${ignoredMsg}: ${failed.map(f => f.name).join(', ')}`,
                 });
             }
         } catch (err: unknown) {
@@ -144,36 +183,57 @@ export function useProjectTestImport({ projectId, projectRef, refresh }: UseProj
     // Importa um ZIP recriando a estrutura de pastas (parse client-side).
     const handleImportZip = async (file: File) => {
         setImporting(true);
+        setImportProgress(0);
         setImportStatus({ type: 'idle', message: '' });
         try {
-            const JSZip = (await import('jszip')).default;
             const zip = await JSZip.loadAsync(await file.arrayBuffer());
-            const entries = Object.values(zip.files).filter(e => !e.dir && /\.(ya?ml|json|js|ts)$/i.test(e.name));
-            if (entries.length === 0) {
-                setImportStatus({ type: 'error', message: 'Nenhum arquivo de teste (.yaml/.json/.js/.ts) encontrado no ZIP.' });
+            const all = Object.values(zip.files).filter(e => !e.dir && !isJunkPath(e.name));
+            // TESTES = só .yaml/.yml (aparecem na lista do projeto).
+            const testEntries = all.filter(e => /\.(ya?ml)$/i.test(e.name));
+            // ASSETS = scripts de apoio (.js/.ts) referenciados por runScript.
+            // Vão para o workspace (Storage) mas NÃO viram teste na lista.
+            const assetEntries = all.filter(e => /\.(js|ts)$/i.test(e.name));
+            if (testEntries.length === 0) {
+                setImportStatus({ type: 'error', message: 'Nenhum arquivo .yaml encontrado no ZIP. Apenas testes YAML são importados.' });
                 return;
             }
-            // Pré-cria todas as pastas presentes no ZIP (inclusive vazias).
-            const allDirs = Object.values(zip.files)
-                .filter(e => e.dir)
-                .map(e => normalizeFolderPath(e.name))
-                .filter(Boolean);
-            const entryDirs = entries.map(e => normalizeFolderPath(e.name.split('/').slice(0, -1).join('/'))).filter(Boolean);
-            await ensureFolders([...allDirs, ...entryDirs]);
+            // Cria APENAS as pastas que contêm um YAML (ignora pastas-lixo vazias).
+            const entryDirs = testEntries.map(e => normalizeFolderPath(e.name.split('/').slice(0, -1).join('/'))).filter(Boolean);
+            await ensureFolders(entryDirs);
 
+            const proj = projectRef.current;
+            const ref = proj ? workspaceRefFromProject(proj) : null;
+            const total = testEntries.length + assetEntries.length;
+            let done = 0;
+            const bump = () => { done++; setImportProgress(Math.round((done / total) * 100)); };
+
+            // 1. Testes YAML → test_cases + espelho no workspace.
             const results: { ok: boolean; name: string; error?: string }[] = [];
-            for (const entry of entries) {
+            for (const entry of testEntries) {
                 const content = await entry.async('string');
                 const parts = entry.name.split('/');
                 const baseName = parts[parts.length - 1];
                 const folder = normalizeFolderPath(parts.slice(0, -1).join('/'));
                 results.push(await importTestContent(baseName, content, folder));
+                bump();
             }
+
+            // 2. Scripts de apoio → só espelho no workspace (caminho exato).
+            for (const entry of assetEntries) {
+                try {
+                    const content = await entry.async('string');
+                    if (ref) await writeFile(ref, normalizeFolderPath(entry.name), content);
+                } catch { /* best-effort */ }
+                bump();
+            }
+
+            setImportProgress(100);
             const okCount = results.filter(r => r.ok).length;
             const failed = results.filter(r => !r.ok);
+            const assetMsg = assetEntries.length > 0 ? ` + ${assetEntries.length} script(s) de apoio` : '';
             await refresh();
             if (failed.length === 0) {
-                setImportStatus({ type: 'success', message: `ZIP importado: ${okCount} teste(s) e estrutura de pastas recriada!` });
+                setImportStatus({ type: 'success', message: `ZIP importado: ${okCount} teste(s)${assetMsg} e estrutura de pastas recriada!` });
                 setTimeout(() => { setShowImportModal(false); setImportStatus({ type: 'idle', message: '' }); }, 1800);
             } else {
                 setImportStatus({
@@ -207,11 +267,18 @@ export function useProjectTestImport({ projectId, projectRef, refresh }: UseProj
         }
     };
 
-    // Exclui uma pasta e tudo dentro dela (sub-pastas + testes).
-    const handleDeleteFolder = async (path: string) => {
+    // Exclui uma pasta e tudo dentro dela — confirmação via modal nativo da app
+    // (DeleteConfirmModal), não o confirm() do navegador.
+    // requestDeleteFolder apenas abre o modal; confirmDeleteFolder executa.
+    const requestDeleteFolder = (path: string) => {
         const norm = normalizeFolderPath(path);
+        if (norm) setDeletingFolder(norm);
+    };
+
+    const confirmDeleteFolder = async () => {
+        const norm = deletingFolder;
         if (!norm) return;
-        if (!confirm(`Excluir a pasta "${norm}/" e todos os testes dentro dela? Esta ação não pode ser desfeita.`)) return;
+        setDeletingFolder(null);
         try {
             // Testes na pasta ou em sub-pastas. Dentro de .or(), o wildcard do
             // like é '*' (PostgREST), não '%'.
@@ -289,21 +356,28 @@ export function useProjectTestImport({ projectId, projectRef, refresh }: UseProj
 
             if (dest) await ensureFolders([dest]);
 
+            // Preserva o basename exato (workspace_path antigo) ao trocar de pasta;
+            // cai para o nome sanitizado quando o teste não tem workspace_path.
+            const baseName = (test.workspace_path?.split('/').pop()) || testYamlPath(null, test.name);
+            const newWorkspacePath = dest ? `${dest}/${baseName}` : baseName;
+            const oldWorkspacePath = test.workspace_path
+                || testYamlPath(from || null, test.name);
+
             const { error } = await supabase
                 .from('test_cases')
-                .update({ folder_path: dest || null })
+                .update({ folder_path: dest || null, workspace_path: newWorkspacePath })
                 .eq('id', test.id);
             if (error) throw error;
 
-            // Migra o YAML espelhado: grava no novo caminho e apaga o antigo
+            // Migra o arquivo espelhado: grava no novo caminho e apaga o antigo
             // (best-effort — o banco é a fonte da verdade).
             try {
                 const proj = projectRef.current;
                 const ref = proj ? workspaceRefFromProject(proj) : null;
                 if (ref && typeof test.raw_yaml === 'string' && test.raw_yaml.trim()) {
-                    await writeYaml(ref, testYamlPath(dest || null, test.name), test.raw_yaml);
-                    if (testYamlPath(from || null, test.name) !== testYamlPath(dest || null, test.name)) {
-                        await deleteYaml(ref, testYamlPath(from || null, test.name));
+                    await writeFile(ref, newWorkspacePath, test.raw_yaml);
+                    if (oldWorkspacePath !== newWorkspacePath) {
+                        await deleteYaml(ref, oldWorkspacePath);
                     }
                 }
             } catch { /* mirror é best-effort */ }
@@ -319,8 +393,10 @@ export function useProjectTestImport({ projectId, projectRef, refresh }: UseProj
 
     return {
         // import / pastas
-        showImportModal, setShowImportModal, importTargetFolder, importInitialMode, importStatus, importing,
-        handleImportFiles, handleImportZip, handleCreateFolder, handleDeleteFolder,
+        showImportModal, setShowImportModal, importTargetFolder, importInitialMode, importStatus, importing, importProgress,
+        handleImportFiles, handleImportZip, handleCreateFolder,
+        // exclusão de pasta via modal da app
+        requestDeleteFolder, confirmDeleteFolder, deletingFolder, cancelDeleteFolder: () => setDeletingFolder(null),
         openImportInto, openCreateFolder, closeImportModal,
         // mover
         moveTest, setMoveTest, moving, moveStatus, setMoveStatus, confirmMoveTest,

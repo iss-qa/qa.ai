@@ -1,0 +1,74 @@
+### ---
+#  Id: LOGIN-1
+#  Name: Successful login (Work Profile)
+#  Description: Login with valid credentials on Work Profile (user 10)
+#  Pré-requisito: Executar via ./scripts/run_work_test.sh para abrir o app no perfil de trabalho
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/login.js"
+- runScript: "../../pages/menu.js"
+
+# Configura variáveis de ambiente do staging (work profile)
+# NOTA: A troca de perfil ADB é feita pelo script stage.sh ANTES do Maestro
+- runScript: "../../../scripts/stage_app.js"
+
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_tela_inicial"
+
+- assertVisible: 
+    id: ${output.LOGIN.botaoEntrar}
+- tapOn: 
+    id: ${output.LOGIN.botaoEntrar}
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_tela_login"
+
+- tapOn: 
+    id: ${output.LOGIN.campoEmail}
+- inputText: ${output.LOGIN.emailQA}
+- hideKeyboard
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_email_preenchido"
+
+- tapOn: 
+    id: ${output.LOGIN.campoSenha}
+- inputText: ${output.LOGIN.senhaQA}
+- hideKeyboard
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/04_senha_preenchida"
+
+- tapOn:
+    id: ${output.LOGIN.botaoContinuar}
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/05_apos_submit"
+- waitForAnimationToEnd:
+    timeout: 15000
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/06_tela_final"
+
+- assertVisible: 
+    id: ${output.LOGIN.labelSalvarBiometria}
+- tapOn: 
+    id: ${output.LOGIN.botaoNaoBiometria}
+
+#- assertVisible: 
+#    id: ${output.LOGIN.labelBoasVindas}
+
+- assertVisible: 
+    id: ${output.INICIO.botaoNegociar}
+
+- assertVisible: 
+    id: ${output.INICIO.botaoDepositar}
+- assertVisible: 
+    id: ${output.INICIO.botaoSacar}
+
+- assertVisible:
+    id: "bt_home_qa_offer_book"
+
+- assertVisible: "Populares"
+- assertVisible: "Maiores altas"
+- assertVisible: "Maiores baixas"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/07_login_sucesso"
+# ... restante do seu teste

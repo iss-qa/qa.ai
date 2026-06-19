@@ -1,0 +1,6 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- launchApp
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/teste"

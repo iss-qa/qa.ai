@@ -1,0 +1,98 @@
+### ---
+#  Id: LivroOfertas-002
+#  Name: Livro de Ofertas - Trocar Moeda para SOL
+#  Description: Validar troca de moeda no Livro de Ofertas para SOLBRL, conferindo dados de mercado, livro de ofertas e últimos trades
+#  Gherkin: test-cases/advanced/livroOfertas/livroOfertas.feature
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/common.js"
+- runScript: "../../pages/inicio.js"
+- runScript: "../../pages/comprar.js"
+
+# Livro de Ofertas
+- assertVisible:
+    id: ${output.INICIO.botaoLivroOfertas}
+- tapOn:
+    id: ${output.INICIO.botaoLivroOfertas}
+- waitForAnimationToEnd:
+    timeout: 3000
+# Screenshot - Tela inicial Livro de Ofertas
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/01_livro_ofertas_inicial"
+- assertVisible: Livro de Ofertas
+- assertVisible:
+    id: ${output.COMMON.botaoTrocarMoeda}
+
+#TROCAR A MOEDA E VALIDAR O LIVRO DE OFERTAS
+- tapOn:
+    id: ${output.COMMON.botaoTrocarMoeda}
+- waitForAnimationToEnd:
+    timeout: 3000
+# Screenshot - Tela de busca de moeda
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/02_busca_moeda"
+- assertVisible: Buscar
+- tapOn: Buscar
+- inputText: "SOL"
+- waitForAnimationToEnd:
+    timeout: 2000
+- doubleTapOn:
+    id: ${output.COMMON.tileMercadoListagem}
+    delay: 100
+# Screenshot - Tela do Livro de Ofertas SOL
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/03_livro_ofertas_sol"
+- assertVisible:
+    text: ".*Solana.*"
+- assertVisible:
+    text: ".*SOLBRL.*"
+- assertVisible:
+    text: ".*Baixa em 24h.*"
+- assertVisible:
+    text: ".*Alta em 24h.*"
+- assertVisible:
+    text: ".*Volume 24h.*"
+- assertVisible: Gráfico para SOLBRL, 6 horas
+
+- assertVisible:
+    id: ${output.COMMON.botaoTrocarMoeda}
+- swipe:
+    from:
+      text: Comprar
+    direction: UP
+# Screenshot - Livro de ofertas SOL após scroll
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/04_livro_ofertas_sol_scroll"
+- assertVisible:
+    text: Livro de ofertas
+    index: 1
+- assertVisible: Últimos trades
+- tapOn: Últimos trades
+# Screenshot - Últimos trades SOL
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/05_ultimos_trades_sol"
+- assertVisible: Preço (R$)
+- assertVisible: Quantia (SOL)
+- assertVisible: Data
+- tapOn:
+    text: Livro de ofertas
+    index: 1
+- waitForAnimationToEnd:
+    timeout: 3000
+# Screenshot - Livro de ofertas SOL detalhado
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/06_livro_ofertas_sol_detalhado"
+- assertVisible: |-
+    Alternar livro de ofertas e trades
+    Livro de ofertas
+    Valor (BRL)
+    Quantia (SOL)
+    Total
+    Aba livro de ofertas
+
+# Scroll para ver o restante
+- runFlow: "../../helpers/scroll_coins_bottom_to_top.yaml"
+- runFlow: "../../helpers/scroll_coins_bottom_to_top.yaml"
+
+- tapOn: Voltar
+- waitForAnimationToEnd:
+    timeout: 3000
+# Screenshot - Retorno à tela inicial
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/07_retorno_tela_inicial"

@@ -1,0 +1,54 @@
+###############################################################################################
+# TÍTULO: Validar Comprar e Vender de Cripto na Carteira no Negociar
+# DESCRIÇÃO: Validar se o usuário é consegue comprar e vender de cripto na carteira no negociar
+###############################################################################################
+appId: br.com.foxbit.foxbitandroid
+---
+
+#- runFlow:
+#    file:  ../../login/test_case/login.yaml
+- assertVisible:
+    id: "bt_bottom_bar_menu"
+- tapOn:
+    id: "bt_bottom_bar_menu"
+- assertVisible:
+    id: "bt_menu_buy"
+- tapOn:
+    id: "bt_menu_buy"
+- assertVisible: "Escolha um mercado"
+- assertVisible: "Comprar"
+- assertVisible:
+    id: "tile_market_listing_market"
+    index: 0
+- tapOn:
+    id: "tile_market_listing_market"
+    index: 0
+# Compra
+- runFlow:
+    file: ../common/tc_negotiate_common_market_buy.yaml
+- runFlow:
+    file: ../common/tc_negotiate_common_limit_buy.yaml
+- runFlow:
+    file: ../common/tc_negotiate_common_stop_market_buy.yaml
+- assertVisible:
+    id: "filter_coin_tile_wallet"
+    index: 0
+- tapOn:
+    id: "filter_coin_tile_wallet"
+    index: 0
+- assertVisible: "Vender"
+- tapOn: "Vender"
+# Venda
+- runFlow:
+    file: ../common/tc_negotiate_common_market_sell.yaml
+- runFlow:
+    file: ../common/tc_negotiate_common_limit_sell.yaml
+- runFlow:
+    file: ../common/tc_negotiate_common_stop_market_sell.yaml
+- assertVisible:
+    id: "back_button_app_bar"
+- tapOn:
+    id: "back_button_app_bar"
+- scrollUntilVisible:
+    element: "Ações rápidas"
+    direction: UP

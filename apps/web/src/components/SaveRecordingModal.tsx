@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, X, Loader2, FolderSearch, Cloud } from 'lucide-react';
+import { Save, X, Loader2, FolderSearch, Cloud, FolderTree, ChevronRight, Check, Folder, FolderOpen } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { pickWorkspaceDirectory, workspaceRefFromProject, type WorkspaceRef } from '@/lib/workspace';
 
@@ -17,7 +17,9 @@ interface SaveRecordingModalProps {
     stepCount: number;
     durationSeconds: number;
     currentProjectId?: string | null;
-    onSave: (testName: string, projectId: string, yamlContent?: string, workspaceRef?: WorkspaceRef | null) => void | Promise<void>;
+    // appId escolhido na gravação — usado para pré-selecionar o projeto certo.
+    recordingAppId?: string;
+    onSave: (testName: string, projectId: string, yamlContent?: string, workspaceRef?: WorkspaceRef | null, folderPath?: string) => void | Promise<void>;
     onCancel: () => void;
     engine?: 'uiautomator2' | 'maestro';
     maestroYaml?: string;
@@ -29,6 +31,7 @@ export function SaveRecordingModal({
     stepCount,
     durationSeconds,
     currentProjectId,
+    recordingAppId = '',
     onSave,
     onCancel,
     engine = 'uiautomator2',
@@ -43,6 +46,9 @@ export function SaveRecordingModal({
     const [isEditingYaml, setIsEditingYaml] = useState(false);
     const [workspacePath, setWorkspacePath] = useState('');
     const [pickingWorkspace, setPickingWorkspace] = useState(false);
+    // Pasta de destino dentro do projeto ('' = raiz) + pastas disponíveis.
+    const [folderPath, setFolderPath] = useState('');
+    const [folders, setFolders] = useState<string[]>([]);
     // Trava anti duplo-clique + spinner: sem isso o salvar parecia "morto"
     // (nenhum feedback) e cada clique extra criava um teste duplicado.
     const [saving, setSaving] = useState(false);
@@ -56,27 +62,48 @@ export function SaveRecordingModal({
         setTestName('');
         setLoadingProjects(true);
 
-        // Fetch projects from Supabase
-        supabase
-            .from('projects')
-            .select('id, name, workspace_type, workspace_path')
-            .order('name')
-            .then(({ data }) => {
-                if (data && data.length > 0) {
-                    setProjects(data);
-                    // Pre-select current project if available, otherwise first project
-                    if (currentProjectId && data.some(p => p.id === currentProjectId)) {
-                        setProjectId(currentProjectId);
-                    } else {
-                        setProjectId(data[0].id);
-                    }
-                } else {
-                    setProjects([{ id: 'default', name: 'Projeto Padrao' }]);
-                    setProjectId('default');
-                }
+        // Fetch projects from Supabase + escolhe o projeto certo.
+        (async () => {
+            const { data } = await supabase
+                .from('projects')
+                .select('id, name, workspace_type, workspace_path')
+                .order('name');
+            if (!data || data.length === 0) {
+                setProjects([{ id: 'default', name: 'Projeto Padrao' }]);
+                setProjectId('default');
                 setLoadingProjects(false);
-            });
-    }, [isOpen, currentProjectId]);
+                return;
+            }
+            setProjects(data);
+
+            // Prioridade na pré-seleção:
+            // 1) projeto que JÁ tem testes com este appId (o usuário gravou o app X
+            //    → cai no projeto do app X, não no 1º da lista);
+            // 2) projeto do contexto (currentProjectId), se válido;
+            // 3) primeiro da lista.
+            let chosen = '';
+            if (recordingAppId) {
+                const { data: rows } = await supabase
+                    .from('test_cases')
+                    .select('project_id')
+                    .eq('app_id', recordingAppId)
+                    .not('project_id', 'is', null)
+                    .limit(200);
+                const tally = new Map<string, number>();
+                for (const r of rows || []) {
+                    const pid = r.project_id as string;
+                    if (data.some(p => p.id === pid)) tally.set(pid, (tally.get(pid) || 0) + 1);
+                }
+                // Empate: prefere o contexto atual se estiver entre os candidatos.
+                if (currentProjectId && tally.has(currentProjectId)) chosen = currentProjectId;
+                else if (tally.size > 0) chosen = Array.from(tally.entries()).sort((a, b) => b[1] - a[1])[0][0];
+            }
+            if (!chosen && currentProjectId && data.some(p => p.id === currentProjectId)) chosen = currentProjectId;
+            if (!chosen) chosen = data[0].id;
+            setProjectId(chosen);
+            setLoadingProjects(false);
+        })();
+    }, [isOpen, currentProjectId, recordingAppId]);
 
     const selectedProject = projects.find(p => p.id === projectId);
     const wsType = selectedProject?.workspace_type || 'local';
@@ -88,6 +115,23 @@ export function SaveRecordingModal({
         const proj = projects.find(p => p.id === projectId);
         setWorkspacePath(proj?.workspace_path || '');
     }, [projectId, projects]);
+
+    // Carrega as pastas do projeto selecionado para o seletor de destino.
+    useEffect(() => {
+        if (!isOpen || !projectId || projectId === 'default') { setFolders([]); setFolderPath(''); return; }
+        let cancelled = false;
+        supabase
+            .from('test_folders')
+            .select('path')
+            .eq('project_id', projectId)
+            .order('path')
+            .then(({ data }) => {
+                if (cancelled) return;
+                setFolders((data || []).map(r => r.path as string).filter(Boolean));
+                setFolderPath('');   // default = raiz ao trocar de projeto
+            });
+        return () => { cancelled = true; };
+    }, [isOpen, projectId]);
 
     const handlePickWorkspace = async () => {
         setPickingWorkspace(true);
@@ -131,6 +175,7 @@ export function SaveRecordingModal({
                 projectId,
                 engine === 'maestro' ? editableYaml : undefined,
                 ref,
+                folderPath,
             );
         } catch (e) {
             // Mantém o modal aberto para o usuário corrigir e tentar de novo.
@@ -194,14 +239,32 @@ export function SaveRecordingModal({
 
                     <div className="flex flex-col gap-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                            Workspace (pasta do YAML)
+                            Pasta de destino
                         </label>
-                        {isSupabaseWorkspace ? (
-                            <div className="flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-2.5 text-xs">
-                                <Cloud className="w-4 h-4 text-brand shrink-0" />
-                                <span className="text-foreground">Nuvem (Supabase Storage) · pasta exclusiva do projeto</span>
-                            </div>
-                        ) : (
+                        <FolderPicker
+                            folders={folders}
+                            value={folderPath}
+                            onChange={setFolderPath}
+                            disabled={projectId === 'default'}
+                        />
+                        <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                            {isSupabaseWorkspace
+                                ? <Cloud className="w-3 h-3 text-brand shrink-0" />
+                                : <FolderSearch className="w-3 h-3 text-brand shrink-0" />}
+                            <span>
+                                {isSupabaseWorkspace ? 'Nuvem do projeto (Supabase Storage)' : 'Workspace local'}
+                                {' · '}
+                                {folderPath ? <>em <span className="font-mono text-foreground">{folderPath}/</span></> : 'na raiz'}
+                            </span>
+                        </p>
+                    </div>
+
+                    {/* Workspace LOCAL precisa do caminho em disco; na nuvem é implícito. */}
+                    {!isSupabaseWorkspace && (
+                        <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                                Pasta local do workspace
+                            </label>
                             <div className="flex gap-2">
                                 <input
                                     type="text"
@@ -220,13 +283,8 @@ export function SaveRecordingModal({
                                     {pickingWorkspace ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderSearch className="w-4 h-4" />}
                                 </button>
                             </div>
-                        )}
-                        <p className="text-[11px] text-muted-foreground">
-                            {isSupabaseWorkspace
-                                ? 'O YAML será gravado no Supabase Storage, numa pasta exclusiva deste projeto.'
-                                : 'O YAML do teste será salvo nesta pasta (a mesma usada pelo Maestro Studio do projeto).'}
-                        </p>
-                    </div>
+                        </div>
+                    )}
 
                     <div className="bg-foreground/5 border border-border rounded-lg px-4 py-3">
                         <div className="text-xs text-muted-foreground">
@@ -291,6 +349,128 @@ export function SaveRecordingModal({
                     </button>
                 </div>
             </div>
+        </div>
+    );
+}
+
+// ── Seletor de pasta em árvore (contido no modal) ──────────────────────────
+// Substitui o <select> nativo (cujo dropdown do SO estourava a janela com
+// caminhos longos). Mostra as pastas hierarquicamente; clicar no nome
+// seleciona, clicar no chevron expande os filhos.
+
+interface FolderNode { name: string; path: string; children: FolderNode[]; }
+
+function buildFolderTree(paths: string[]): FolderNode[] {
+    const root: FolderNode[] = [];
+    const byPath = new Map<string, FolderNode>();
+    // Ordena para garantir que pais venham antes dos filhos.
+    for (const full of [...paths].sort()) {
+        const segs = full.split('/').filter(Boolean);
+        let acc = '';
+        let level = root;
+        for (const seg of segs) {
+            acc = acc ? `${acc}/${seg}` : seg;
+            let node = byPath.get(acc);
+            if (!node) {
+                node = { name: seg, path: acc, children: [] };
+                byPath.set(acc, node);
+                level.push(node);
+            }
+            level = node.children;
+        }
+    }
+    return root;
+}
+
+function FolderPicker({ folders, value, onChange, disabled }: {
+    folders: string[];
+    value: string;
+    onChange: (path: string) => void;
+    disabled?: boolean;
+}) {
+    const [open, setOpen] = useState(false);
+    const [expanded, setExpanded] = useState<Set<string>>(new Set());
+    const tree = buildFolderTree(folders);
+
+    // Ao abrir, expande os ancestrais da seleção atual para mostrá-la.
+    useEffect(() => {
+        if (!open || !value) return;
+        const segs = value.split('/').filter(Boolean);
+        const acc: string[] = [];
+        let cur = '';
+        for (const s of segs) { cur = cur ? `${cur}/${s}` : s; acc.push(cur); }
+        setExpanded(prev => new Set([...Array.from(prev), ...acc]));
+    }, [open, value]);
+
+    const toggle = (path: string) => setExpanded(prev => {
+        const next = new Set(prev);
+        if (next.has(path)) next.delete(path); else next.add(path);
+        return next;
+    });
+    const pick = (path: string) => { onChange(path); setOpen(false); };
+
+    const renderNodes = (nodes: FolderNode[], depth: number) => nodes.map(node => {
+        const isOpen = expanded.has(node.path);
+        const isSel = value === node.path;
+        return (
+            <div key={node.path}>
+                <div
+                    className={`flex items-center gap-1 rounded-md cursor-pointer transition-colors ${isSel ? 'bg-brand/15' : 'hover:bg-foreground/5'}`}
+                    style={{ paddingLeft: `${6 + depth * 14}px` }}
+                >
+                    <button
+                        type="button"
+                        onClick={() => node.children.length && toggle(node.path)}
+                        className={`p-1 shrink-0 ${node.children.length ? 'text-muted-foreground hover:text-foreground' : 'opacity-0 pointer-events-none'}`}
+                    >
+                        <ChevronRight className={`w-3.5 h-3.5 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                    </button>
+                    <button type="button" onClick={() => pick(node.path)} className="flex-1 flex items-center gap-1.5 py-1.5 pr-2 text-left min-w-0">
+                        {isOpen ? <FolderOpen className="w-3.5 h-3.5 text-brand shrink-0" /> : <Folder className="w-3.5 h-3.5 text-brand shrink-0" />}
+                        <span className={`text-xs truncate ${isSel ? 'text-brand font-semibold' : 'text-foreground'}`}>{node.name}</span>
+                        {isSel && <Check className="w-3.5 h-3.5 text-brand ml-auto shrink-0" />}
+                    </button>
+                </div>
+                {isOpen && node.children.length > 0 && renderNodes(node.children, depth + 1)}
+            </div>
+        );
+    });
+
+    return (
+        <div className="relative">
+            <button
+                type="button"
+                onClick={() => !disabled && setOpen(v => !v)}
+                disabled={disabled}
+                className="w-full flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-brand/50 disabled:opacity-60"
+            >
+                <FolderTree className="w-4 h-4 text-brand shrink-0" />
+                <span className="truncate flex-1 text-left">{value ? `${value}/` : 'Raiz do projeto'}</span>
+                <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
+            </button>
+            {open && (
+                <>
+                    <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+                    <div className="absolute left-0 right-0 top-full mt-1 z-50 max-h-64 overflow-y-auto custom-scrollbar bg-popover border border-border rounded-lg shadow-2xl py-1">
+                        <button
+                            type="button"
+                            onClick={() => pick('')}
+                            className={`w-full flex items-center gap-1.5 px-3 py-2 text-left ${value === '' ? 'bg-brand/15' : 'hover:bg-foreground/5'}`}
+                        >
+                            <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                            <span className={`text-xs ${value === '' ? 'text-brand font-semibold' : 'text-foreground'}`}>Raiz do projeto</span>
+                            {value === '' && <Check className="w-3.5 h-3.5 text-brand ml-auto" />}
+                        </button>
+                        {tree.length > 0 && <div className="my-1 border-t border-border" />}
+                        {renderNodes(tree, 0)}
+                        {tree.length === 0 && (
+                            <p className="px-3 py-2 text-[11px] text-muted-foreground italic">
+                                Sem subpastas. Crie pastas pela tela do projeto (Importar Testes → Criar pasta).
+                            </p>
+                        )}
+                    </div>
+                </>
+            )}
         </div>
     );
 }

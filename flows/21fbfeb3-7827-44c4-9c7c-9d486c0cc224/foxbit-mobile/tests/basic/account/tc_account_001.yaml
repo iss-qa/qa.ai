@@ -1,0 +1,57 @@
+### ---
+#  Id: ACCOUNT-1
+#  Name: Validar elementos básicos da conta e scroll
+#  Description: Acessa a tela de conta, valida status, nivel e os menus principais.
+### ---
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow: "../../common/setup.yaml"
+- runScript: "../../common/env.js"
+- runScript: "../../pages/accounts.js"
+- runScript: "../../pages/inicio.js"
+
+# 1. Navegar para a aba "Conta"
+- tapOn:
+    id: ${output.INICIO.botaoConta}
+
+# 2. Validar informações de destaque (Status e Nível)
+- assertVisible:
+    id: ${output.ACCOUNTS.botaoCompletarCadastro}
+- assertVisible:
+    id: ${output.ACCOUNTS.areaCardNivel}
+
+# 3. Validar itens da seção Geral (Topo)
+- assertVisible:
+    id: ${output.ACCOUNTS.botaoMeusDados}
+- assertVisible:
+    id: ${output.ACCOUNTS.botaoVerificarDuasEtapas}
+- assertVisible:
+    id: ${output.ACCOUNTS.botaoHistorico}
+- assertVisible:
+    id: ${output.ACCOUNTS.botaoIndiqueAmigos}
+- assertVisible:
+    id: ${output.ACCOUNTS.botaoPerfilInvestimento}
+- assertVisible:
+    id: ${output.ACCOUNTS.botaoAparencia}
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_topo"
+
+# 4. Scroll up (Deslocamento para baixo) para ver os itens finais
+- swipe:
+    start: 500, 800
+    end: 500, 200
+    duration: 500
+
+# 5. Validar itens finais da lista
+- assertVisible:
+    id: ${output.ACCOUNTS.botaoSuporte}
+- assertVisible:
+    id: ${output.ACCOUNTS.botaoCancelarConta}
+- assertVisible:
+    id: ${output.ACCOUNTS.botaoSair}
+
+# 6. Validar Versão (Regex para aceitar qualquer versão similar)
+- assertVisible: 
+    text: ".*Versão .*"
+
+- takeScreenshot: "${output.SCREENSHOT_DIR_DYNAMIC}/account_final"

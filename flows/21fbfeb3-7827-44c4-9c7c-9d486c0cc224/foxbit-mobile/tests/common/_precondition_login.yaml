@@ -1,0 +1,14 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runScript: "../../pages/login.js"
+- runFlow:
+    when:
+      true: ${SKIP_LAUNCH != 'true'}
+    commands:
+      - launchApp:
+          appId: "br.com.foxbit.foxbitandroid"
+          clearState: false
+- runFlow:
+    when:
+      visible: ${output.login.buttonEntrar}
+    file: "../login/login_only.yaml"

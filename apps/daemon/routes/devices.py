@@ -90,10 +90,10 @@ async def websocket_device_stream(websocket: WebSocket, udid: str):
         await screen_stream_manager.connect(udid, websocket)
     except WebSocketDisconnect:
         logger.info(f"Stream WebSocket disconnected normally for {udid}")
-        await screen_stream_manager.disconnect(udid)
+        await screen_stream_manager.disconnect(udid, websocket)
     except Exception as e:
         logger.error(f"Stream WebSocket error for {udid}: {e}")
-        await screen_stream_manager.disconnect(udid)
+        await screen_stream_manager.disconnect(udid, websocket)
 
 
 @router.websocket("/ws/{client_id}")

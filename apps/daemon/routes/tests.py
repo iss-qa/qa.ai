@@ -31,6 +31,12 @@ class SaveTestRequest(BaseModel):
     steps: list = []
     project_id: Optional[str] = None
     tags: list = ["recorded"]
+    # Persistidos no insert (service role) — antes eram droppados pelo modelo e
+    # só o backfill do front os gravava, o que falhava/condicionava o folder_path.
+    folder_path: Optional[str] = None
+    workspace_path: Optional[str] = None
+    app_id: Optional[str] = None
+    raw_yaml: Optional[str] = None
 
 
 @router.post("/api/tests/save")
@@ -78,6 +84,16 @@ async def save_test(req: SaveTestRequest):
             }
             if req.project_id:
                 supabase_body["project_id"] = req.project_id
+            # Campos opcionais — só entram quando enviados (evita erro de coluna
+            # inexistente em bancos sem a migration correspondente).
+            if req.folder_path is not None:
+                supabase_body["folder_path"] = req.folder_path or None
+            if req.workspace_path is not None:
+                supabase_body["workspace_path"] = req.workspace_path
+            if req.app_id is not None:
+                supabase_body["app_id"] = req.app_id
+            if req.raw_yaml is not None:
+                supabase_body["raw_yaml"] = req.raw_yaml
 
             async with httpx.AsyncClient(verify=False) as client:
                 resp = await client.post(
@@ -241,6 +257,80 @@ async def save_maestro_yaml(req: MaestroYamlRequest):
 
     file_path = save_yaml_flow(req.project_id, req.test_name, req.yaml_content)
     return {"status": "saved", "path": file_path}
+
+
+class SaveWorkspaceRequest(BaseModel):
+    project_id: str
+    # Caminho RELATIVO do flow a executar dentro do workspace, ex.:
+    # "tests/home/inicio.yaml". Vazio = grava na raiz do projeto.
+    entry_path: str = ""
+    # Conteúdo atual do flow (edições não salvas do editor sobrescrevem a cópia
+    # baixada do Storage). Opcional: se vazio, usa o que veio do Storage.
+    yaml_content: str = ""
+
+
+@router.post("/api/maestro/save-workspace")
+async def save_maestro_workspace(req: SaveWorkspaceRequest):
+    """Materializa a árvore COMPLETA do projeto no disco e devolve o caminho
+    do flow de entrada (no seu local aninhado), pronto para o Maestro resolver
+    runFlow/runScript relativos.
+
+    1. Baixa todos os arquivos de `workspaces/<project_id>/` → `flows/<project_id>/`.
+    2. Sobrescreve o flow de entrada com o conteúdo atual (se enviado).
+    3. Retorna o caminho absoluto aninhado do flow de entrada.
+    """
+    from engines.maestro_runner import FLOWS_DIR
+    from services.maestro.workspace import find_missing_dependencies, materialize_workspace
+
+    if req.yaml_content:
+        valid, message = validate_maestro_yaml(req.yaml_content)
+        if not valid:
+            raise HTTPException(status_code=400, detail=f"YAML invalido: {message}")
+
+    # 1. Materializa o workspace inteiro (best-effort).
+    materialized = await materialize_workspace(req.project_id)
+
+    base_dir = (Path(FLOWS_DIR) / req.project_id).resolve()
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    # Resolve o caminho de entrada com confinamento a flows/<project_id>/.
+    rel = (req.entry_path or "").strip().lstrip("/")
+    if not rel:
+        rel = "flow.yaml"
+    entry_abs = (base_dir / rel).resolve()
+    if not str(entry_abs).startswith(str(base_dir)):
+        raise HTTPException(status_code=400, detail="entry_path inválido")
+
+    # 2. Sobrescreve o flow de entrada com o conteúdo atual do editor.
+    if req.yaml_content:
+        entry_abs.parent.mkdir(parents=True, exist_ok=True)
+        entry_abs.write_text(req.yaml_content, encoding="utf-8")
+    elif not entry_abs.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Flow de entrada não encontrado após materializar ({rel}). "
+                   "Reimporte o projeto para espelhar os arquivos no Storage.",
+        )
+
+    # 3. PRÉ-CONDIÇÃO (rápida, sem JVM): valida que todas as dependências
+    #    relativas (runScript/runFlow) existem ANTES de subir o Maestro.
+    #    Falha em <1s em vez de esperar a JVM cold-start e só então errar.
+    missing = find_missing_dependencies(entry_abs, base_dir)
+    if missing:
+        listed = "\n".join(f"  • {m}" for m in missing[:20])
+        more = f"\n  … e mais {len(missing) - 20}" if len(missing) > 20 else ""
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Dependências do teste não encontradas no workspace "
+                f"({len(missing)}):\n{listed}{more}\n\n"
+                "Reimporte o projeto (ZIP) para trazer os scripts (.js) e sub-flows "
+                "referenciados — a importação precisa incluir esses arquivos."
+            ),
+        )
+
+    logger.info(f"[WORKSPACE] save-workspace: {materialized} arquivos, entrada={entry_abs}")
+    return {"status": "saved", "path": str(entry_abs), "materialized": materialized}
 
 
 class RevealTestRequest(BaseModel):

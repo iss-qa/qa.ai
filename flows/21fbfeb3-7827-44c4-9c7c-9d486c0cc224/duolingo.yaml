@@ -1,0 +1,20 @@
+appId: com.duolingo
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: "action_bar_root"
+- assertVisible:
+    id: "homeContainer"
+- tapOn:
+    id: "introFlowNewUserButton"
+- tapOn:
+    id: "primaryButton"
+- tapOn:
+    id: "primaryButton"
+- tapOn:
+    id: "languageName"
+- tapOn:
+    id: "primaryButton"
+- tapOn:
+    id: "primaryButton"

@@ -1,0 +1,47 @@
+appId: br.com.foxbit.foxbitandroid
+---
+- runFlow:
+    when:
+      true: ${SKIP_LAUNCH != 'true'}
+    commands:
+      - launchApp:
+          appId: "br.com.foxbit.foxbitandroid"
+          clearState: false
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    text: ".*Comprar rápida.*"
+- assertVisible:
+    text: ".*Converter.*"
+- assertVisible:
+    text: ".*Avançado.*"
+
+- tapOn: "Avançado"
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    text: ".*Escolha um mercado.*"
+- assertVisible:
+    text: ".*Comprar.*"
+- assertVisible:
+    text: ".*Vender.*"
+- assertVisible:
+    text: ".*Buscar.*"
+- assertVisible:
+    text: ".*Todos.*"
+- assertVisible:
+    text: ".*BRL.*"
+- assertVisible:
+    text: ".*USDT.*"
+
+- tapOn: "Buscar"
+- inputText: "BTC"
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertVisible:
+    text: ".*BTC.*"
+
+- tapOn:
+    point: "70, 190"
+- waitForAnimationToEnd:
+    timeout: 2000

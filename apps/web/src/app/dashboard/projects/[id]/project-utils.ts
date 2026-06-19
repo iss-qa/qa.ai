@@ -193,6 +193,30 @@ export const extractElementName = (text: string): string => {
 // Normaliza um path de pasta: remove barras nas pontas, colapsa barras
 // duplicadas e espacos. Retorna '' para a raiz. Segmentos sao sanitizados
 // para evitar caracteres problematicos em filesystem/Storage.
+// Resultado REAL de um lote para exibição. O campo `status` em test_batch_runs
+// significa só se o lote RODOU até o fim (`completed`), não se todos os testes
+// passaram. Aqui derivamos o desfecho olhando passou/falhou:
+//   - executando: ainda rodando
+//   - cancelado: interrompido
+//   - falha: todos os testes falharam
+//   - parcial: rodou, mas houve ao menos 1 falha
+//   - sucesso: rodou e todos passaram
+//   - concluido: terminou sem falhas mas sem todos passarem (ex.: teste pulado)
+export type BatchTone = 'running' | 'muted' | 'danger' | 'warning' | 'success';
+export const batchOutcome = (
+    b: { status: string; passed_tests?: number; failed_tests?: number; total_tests?: number }
+): { label: string; tone: BatchTone } => {
+    const passed = b.passed_tests ?? 0;
+    const failed = b.failed_tests ?? 0;
+    const total = b.total_tests ?? passed + failed;
+    if (b.status === 'running' || b.status === 'pending') return { label: 'Executando', tone: 'running' };
+    if (b.status === 'cancelled') return { label: 'Cancelado', tone: 'muted' };
+    if (failed > 0 && passed === 0) return { label: 'Falha', tone: 'danger' };
+    if (failed > 0) return { label: 'Com falhas', tone: 'warning' };
+    if (total > 0 && passed >= total) return { label: 'Sucesso', tone: 'success' };
+    return { label: 'Concluído', tone: 'muted' };
+};
+
 export const normalizeFolderPath = (p?: string | null): string => {
     if (!p) return '';
     return p
@@ -246,4 +270,28 @@ export const buildTestTree = (tests: TestCase[], folders: TestFolder[]): TestTre
     sortNode(root);
 
     return root;
+};
+
+// Filtra a árvore por um termo de busca (nome do teste / da pasta).
+// Mantém um teste se o nome casa; mantém uma pasta se ela casa OU tem
+// descendentes que casam. Retorna uma nova RAIZ podada.
+export const filterTestTree = (root: TestTreeNode, query: string): TestTreeNode => {
+    const q = query.trim().toLowerCase();
+    if (!q) return root;
+    const prune = (node: TestTreeNode): TestTreeNode | null => {
+        const tests = node.tests.filter(t => (t.name || '').toLowerCase().includes(q));
+        const folders = node.folders
+            .map(prune)
+            .filter((f): f is TestTreeNode => f !== null);
+        const folderNameMatches = node.name.toLowerCase().includes(q);
+        // Pasta cujo nome casa: mantém todo o conteúdo original (não poda dentro).
+        if (folderNameMatches) return node;
+        if (tests.length === 0 && folders.length === 0) return null;
+        return { ...node, tests, folders };
+    };
+    return {
+        ...root,
+        tests: root.tests.filter(t => (t.name || '').toLowerCase().includes(q)),
+        folders: root.folders.map(prune).filter((f): f is TestTreeNode => f !== null),
+    };
 };

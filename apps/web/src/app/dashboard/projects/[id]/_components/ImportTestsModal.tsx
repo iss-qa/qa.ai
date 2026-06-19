@@ -21,6 +21,7 @@ interface ImportTestsModalProps {
     // Aba inicial: 'files' (importar) ou 'folder' (criar subpasta).
     initialMode?: ImportMode;
     importing: boolean;
+    importProgress?: number;   // 0–100
     importStatus: ImportStatus;
     onClose: () => void;
     onImportFiles: (files: File[], folderPath: string) => void;
@@ -28,12 +29,14 @@ interface ImportTestsModalProps {
     onCreateFolder: (path: string) => void;
 }
 
-const FILE_ACCEPT = '.yaml,.yml,.json,.js,.ts';
+// Import estrito: apenas testes YAML. Outros formatos são ignorados.
+const FILE_ACCEPT = '.yaml,.yml';
 
 export function ImportTestsModal({
     defaultFolder = '',
     initialMode = 'files',
     importing,
+    importProgress = 0,
     importStatus,
     onClose,
     onImportFiles,
@@ -155,6 +158,7 @@ export function ImportTestsModal({
                             mode={mode}
                             dragActive={dragActive}
                             importing={importing}
+                            importProgress={importProgress}
                             files={files}
                             zipFile={zipFile}
                             onDragOver={() => setDragActive(true)}
@@ -165,7 +169,7 @@ export function ImportTestsModal({
                                     const zip = dropped.find(f => f.name.toLowerCase().endsWith('.zip'));
                                     if (zip) setZipFile(zip);
                                 } else {
-                                    setFiles(dropped.filter(f => /\.(ya?ml|json|js|ts)$/i.test(f.name)));
+                                    setFiles(dropped.filter(f => /\.(ya?ml)$/i.test(f.name)));
                                 }
                             }}
                             onClick={() => {
@@ -173,7 +177,7 @@ export function ImportTestsModal({
                                     pickFiles(false, '.zip', (fs) => { if (fs[0]) setZipFile(fs[0]); });
                                 } else {
                                     pickFiles(true, FILE_ACCEPT, (fs) =>
-                                        setFiles(fs.filter(f => /\.(ya?ml|json|js|ts)$/i.test(f.name))));
+                                        setFiles(fs.filter(f => /\.(ya?ml)$/i.test(f.name))));
                                 }
                             }}
                         />
@@ -240,11 +244,12 @@ function ModeCard({
 }
 
 function DropZone({
-    mode, dragActive, importing, files, zipFile, onDragOver, onDragLeave, onDrop, onClick,
+    mode, dragActive, importing, importProgress = 0, files, zipFile, onDragOver, onDragLeave, onDrop, onClick,
 }: {
     mode: 'zip' | 'files';
     dragActive: boolean;
     importing: boolean;
+    importProgress?: number;
     files: File[];
     zipFile: File | null;
     onDragOver: () => void;
@@ -264,9 +269,28 @@ function DropZone({
             onClick={onClick}
         >
             {importing ? (
-                <div className="flex flex-col items-center gap-3">
-                    <Loader2 className="w-10 h-10 text-brand animate-spin" />
-                    <p className="text-sm text-foreground font-medium">Importando...</p>
+                <div className="flex flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                    {/* Anel de progresso com percentual; chega a 100% ao concluir. */}
+                    <div className="relative w-16 h-16">
+                        <svg className="w-16 h-16 -rotate-90" viewBox="0 0 36 36">
+                            <circle cx="18" cy="18" r="15.5" fill="none" strokeWidth="3"
+                                className="stroke-foreground/10" />
+                            <circle cx="18" cy="18" r="15.5" fill="none" strokeWidth="3" strokeLinecap="round"
+                                className="stroke-brand transition-[stroke-dashoffset] duration-300 ease-out"
+                                strokeDasharray={2 * Math.PI * 15.5}
+                                strokeDashoffset={2 * Math.PI * 15.5 * (1 - Math.min(100, Math.max(0, importProgress)) / 100)} />
+                        </svg>
+                        <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-brand tabular-nums">
+                            {Math.round(importProgress)}%
+                        </span>
+                    </div>
+                    <p className="text-sm text-foreground font-medium">
+                        {importProgress >= 100 ? 'Concluído!' : 'Importando...'}
+                    </p>
+                    <div className="w-full max-w-xs h-1.5 rounded-full bg-foreground/10 overflow-hidden">
+                        <div className="h-full rounded-full bg-brand transition-[width] duration-300 ease-out"
+                            style={{ width: `${Math.min(100, Math.max(0, importProgress))}%` }} />
+                    </div>
                 </div>
             ) : hasSelection ? (
                 <div className="flex flex-col items-center gap-2">
@@ -294,8 +318,8 @@ function DropZone({
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
                             {mode === 'zip'
-                                ? 'A estrutura de pastas do ZIP será recriada no projeto'
-                                : '.yaml, .json, .js, .ts — adicionados à lista de testes do projeto'}
+                                ? 'Apenas arquivos .yaml serão importados; a estrutura de pastas é preservada'
+                                : 'Apenas testes .yaml / .yml — outros formatos são ignorados'}
                         </p>
                     </div>
                 </div>

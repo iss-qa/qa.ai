@@ -22,6 +22,7 @@ from routes.runs import router as runs_router
 from routes.recording import router as recording_router
 from routes.tests import router as tests_router
 from routes.projects import router as projects_router
+from routes.schedules import router as schedules_router
 from routes.scanner import router as scanner_router
 from routes.logs import router as logs_router
 from routes.maestro_studio import router as maestro_studio_router
@@ -67,7 +68,7 @@ app.add_middleware(
 # Register all routers
 for router in [
     device_input_router, engines_router, devices_router, runs_router,
-    recording_router, tests_router, projects_router, scanner_router,
+    recording_router, tests_router, projects_router, schedules_router, scanner_router,
     logs_router, maestro_studio_router,
     mss_device_screen_router, mss_commands_router, mss_workspace_router,
     mss_flows_router, mss_devices_router, mss_apps_router, mss_misc_router,
@@ -110,6 +111,14 @@ async def startup_event():
         logger.info("Started maestro pre-warm background task.")
     except Exception as e:
         logger.warning(f"Pre-warm scheduling failed (non-fatal): {e}")
+
+    # Agendador de lotes (lê test_schedules e dispara run_batch na hora).
+    try:
+        from services.scheduler import scheduler_loop
+        asyncio.create_task(scheduler_loop())
+        logger.info("Started batch scheduler background task.")
+    except Exception as e:
+        logger.warning(f"Scheduler start failed (non-fatal): {e}")
 
 
 @app.on_event("shutdown")
