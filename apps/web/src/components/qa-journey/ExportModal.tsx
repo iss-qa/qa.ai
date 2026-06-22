@@ -74,7 +74,11 @@ export function ExportModal({ journeys, subflowsByJourney, casesBySubflow, defau
     );
 
     const toggleExpand = (id: string) =>
-        setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+        setExpanded(prev => {
+            const n = new Set(prev);
+            if (n.has(id)) n.delete(id); else n.add(id);
+            return n;
+        });
 
     const allKeys = useMemo(() => journeys.flatMap(keysOfJourney), [journeys, trees]); // eslint-disable-line react-hooks/exhaustive-deps
     const masterTri = triFor(allKeys);
