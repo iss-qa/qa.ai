@@ -8,7 +8,7 @@ import { persist } from 'zustand/middleware';
 // é `scheduleId@next_run_at`, então cada disparo programado alerta uma única vez,
 // mesmo com o watcher rodando a cada minuto e mesmo após reload da página.
 
-export type NotificationType = 'schedule_upcoming' | 'info' | 'success' | 'error';
+export type NotificationType = 'schedule_upcoming' | 'automation_due' | 'info' | 'success' | 'error';
 
 export interface AppNotification {
     id: string;
@@ -17,6 +17,8 @@ export interface AppNotification {
     message: string;
     createdAt: number; // epoch ms
     read: boolean;
+    // Rota a abrir ao clicar na notificação (ex.: a jornada do caso a automatizar).
+    href?: string;
 }
 
 const genId = () =>
@@ -38,6 +40,10 @@ interface NotificationState {
 
     // Alerta de agendamento prestes a executar — idempotente por `key`.
     notifyScheduleUpcoming: (args: { key: string; title: string; message: string }) => void;
+
+    // Alerta "caso/sub-fluxo deve ser automatizado" — só no sino (sem modal),
+    // idempotente por `key` (ex.: `autocase:<id>:<dias>`).
+    notifyAutomationDue: (args: { key: string; title: string; message: string; href?: string }) => void;
 
     dismissAlert: (id: string) => void;
     markRead: (id: string) => void;
@@ -82,6 +88,23 @@ export const useNotificationStore = create<NotificationState>()(
                 set((s) => ({
                     notifications: [notif, ...s.notifications].slice(0, 100),
                     pendingAlerts: [...s.pendingAlerts, notif],
+                    alertedKeys: [...s.alertedKeys, key].slice(-200),
+                }));
+            },
+
+            notifyAutomationDue: ({ key, title, message, href }) => {
+                if (get().alertedKeys.includes(key)) return;
+                const notif: AppNotification = {
+                    id: genId(),
+                    type: 'automation_due',
+                    title,
+                    message,
+                    href,
+                    createdAt: Date.now(),
+                    read: false,
+                };
+                set((s) => ({
+                    notifications: [notif, ...s.notifications].slice(0, 100),
                     alertedKeys: [...s.alertedKeys, key].slice(-200),
                 }));
             },

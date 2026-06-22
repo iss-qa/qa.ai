@@ -4,6 +4,29 @@
 
 import type { QAJourneyCase, QAJourneySubflow } from '@/types/qa-journey';
 
+// Um caso conta como AUTOMATIZADO quando tem teste Maestro vinculado
+// (test_case_id) OU referência Playwright (Web — migration 022).
+export function isCaseAutomated(c: QAJourneyCase): boolean {
+    return Boolean(c.test_case_id)
+        || (c.automation_engine === 'playwright' && Boolean(c.playwright_path || c.playwright_repo));
+}
+
+/**
+ * ID externo de casos pode vir extenso quando gerado por import
+ * (ex.: "tc_tc_login_001_realizar_login_..._013"), o que estoura o layout e
+ * esconde colunas/ações. Para ids longos exibimos um rótulo curto
+ * "tc_<nº final>" (ex.: "tc_013"); o id completo deve ir no `title`/tooltip.
+ * Ids já curtos e legíveis (ex.: "LOGIN-01", "CT-LOGIN-001") são mantidos.
+ */
+export function formatExternalId(id: string | null | undefined): string {
+    if (!id) return '';
+    const trimmed = id.trim();
+    if (trimmed.length <= 20) return trimmed;
+    const m = trimmed.match(/(\d+)\s*$/);
+    if (m) return `tc_${m[1]}`;
+    return `${trimmed.slice(0, 17)}…`;
+}
+
 export interface SubflowTreeNode {
     subflow: QAJourneySubflow;
     children: SubflowTreeNode[];
@@ -86,6 +109,7 @@ export interface JourneyMetrics {
     passing: number;          // last_run_status === 'pass'
     failing: number;          // last_run_status === 'fail'
     healthPct: number | null; // passing / (passing+failing); null se sem execuções
+    docCount: number;         // sub-fluxos "documento" (html_doc anexado)
 }
 
 /**
@@ -98,14 +122,14 @@ export function computeMetrics(
     subflows: QAJourneySubflow[],
     casesBySubflow: Record<string, QAJourneyCase[]>,
 ): JourneyMetrics {
-    let totalCases = 0, automatedCases = 0, manualCases = 0, passing = 0, failing = 0;
+    let totalCases = 0, automatedCases = 0, manualCases = 0, passing = 0, failing = 0, docCount = 0;
     for (const s of subflows) {
+        if (s.html_doc) docCount++;
         const cases = casesBySubflow[s.id] || [];
         for (const c of cases) {
             totalCases++;
-            // Automatizado = CASO com teste Maestro vinculado (test_case_id).
-            // Sem vínculo = manual.
-            if (c.test_case_id) automatedCases++;
+            // Automatizado = caso com teste vinculado (Maestro ou Playwright).
+            if (isCaseAutomated(c)) automatedCases++;
             else manualCases++;
             if (c.last_run_status === 'pass') passing++;
             else if (c.last_run_status === 'fail') failing++;
@@ -114,5 +138,5 @@ export function computeMetrics(
     const coveragePct = totalCases > 0 ? Math.round((automatedCases / totalCases) * 100) : 0;
     const runs = passing + failing;
     const healthPct = runs > 0 ? Math.round((passing / runs) * 100) : null;
-    return { totalCases, automatedCases, manualCases, coveragePct, passing, failing, healthPct };
+    return { totalCases, automatedCases, manualCases, coveragePct, passing, failing, healthPct, docCount };
 }

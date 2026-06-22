@@ -6,7 +6,7 @@ import {
     GitBranch, MinusCircle, MoreHorizontal, Plus, Trash2, XCircle,
 } from 'lucide-react';
 import type { CaseRunStatus, QAJourneyCase } from '@/types/qa-journey';
-import { formatRelativeTime, type SubflowTreeNode } from './helpers';
+import { formatRelativeTime, isCaseAutomated, type SubflowTreeNode } from './helpers';
 
 export interface SubflowBlockCallbacks {
     onOpenCase: (caseId: string) => void;
@@ -52,6 +52,9 @@ export function SubflowBlock({
     const closeMenu = () => setMenuOpen(false);
     const isChild = depth > 0;
     const hasChildren = children.length > 0;
+    // Sub-fluxo de documento (HTML anexado): sem badge/contagem/casos —
+    // o card mostra só o documento.
+    const isDoc = Boolean(subflow.html_doc);
 
     return (
         // Árvore HORIZONTAL: card à esquerda, filhos à direita (desktop) ligados
@@ -62,7 +65,7 @@ export function SubflowBlock({
                 (bottom-full), então nunca é cortado.
                 Filho (isChild): borda + leve fundo em brand e card mais largo
                 (sobra espaço à direita) para exibir melhor os títulos dos casos. */}
-            <div className={`bg-card border rounded-xl flex flex-col min-h-[104px] w-full shrink-0 ${isChild ? 'sm:w-80' : 'sm:w-72'} ${isChild ? 'border-brand/30 bg-brand/[0.03]' : 'border-border'}`}>
+            <div className={`bg-card border rounded-xl flex flex-col min-h-[104px] w-full shrink-0 ${isChild ? 'sm:w-80 lg:w-96' : 'sm:w-96 lg:w-[30rem] xl:w-[34rem]'} ${isChild ? 'border-brand/30 bg-brand/[0.03]' : 'border-border'}`}>
                 {/* Cabeçalho — título em linha própria; badge + contador embaixo. */}
                 <div className="px-2.5 pt-2.5 pb-1.5 flex flex-col gap-1">
                     <div className="flex items-center gap-2">
@@ -77,36 +80,61 @@ export function SubflowBlock({
                         </span>
                     )}
                     <div className="flex items-center gap-2 pl-[22px]">
-                        <span className={`text-[9px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 ${badge.color}`}>
-                            {badge.label}
-                        </span>
-                        <span
-                            className="text-[11px] text-muted-foreground tabular-nums"
-                            title={hasChildren ? 'Inclui casos dos subfluxos filhos' : undefined}
-                        >
-                            {totalCount} {totalCount === 1 ? 'caso' : 'casos'}
-                        </span>
+                        {isDoc ? (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 bg-brand/15 text-brand">
+                                <FileCode2 className="w-2.5 h-2.5" /> Documento
+                            </span>
+                        ) : (
+                            <>
+                                <span className={`text-[9px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 ${badge.color}`}>
+                                    {badge.label}
+                                </span>
+                                <span
+                                    className="text-[11px] text-muted-foreground tabular-nums"
+                                    title={hasChildren ? 'Inclui casos dos subfluxos filhos' : undefined}
+                                >
+                                    {totalCount} {totalCount === 1 ? 'caso' : 'casos'}
+                                </span>
+                            </>
+                        )}
                     </div>
                 </div>
 
-                {/* Casos do subfluxo */}
-                <div className="flex flex-col gap-1.5 px-2.5 pb-2">
-                    {cases.map(c => (
-                        <CaseRow
-                            key={c.id}
-                            case_={c}
-                            onClick={() => cb.onOpenCase(c.id)}
-                            onRemove={() => cb.onRemoveCase(c)}
-                        />
-                    ))}
-                    <button
-                        type="button"
-                        onClick={() => cb.onAddCase(subflow.id)}
-                        className="self-start inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-brand transition-colors pt-0.5"
-                    >
-                        <Plus className="w-3 h-3" /> Adicionar caso
-                    </button>
-                </div>
+                {/* Corpo: documento (modo documento) OU casos do subfluxo. */}
+                {isDoc ? (
+                    <div className="px-2.5 pb-2">
+                        <button
+                            type="button"
+                            onClick={() => cb.onOpenSubflow(subflow.id)}
+                            className="flex items-center justify-between gap-2 w-full bg-brand/5 border border-brand/20 rounded-lg px-2.5 py-2 text-left hover:border-brand/50 transition-colors group"
+                        >
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-foreground">
+                                <FileCode2 className="w-3.5 h-3.5 text-brand" /> Documento HTML
+                            </span>
+                            <span className="text-[10px] text-muted-foreground group-hover:text-brand transition-colors inline-flex items-center gap-0.5">
+                                Ver <ChevronRight className="w-3 h-3" />
+                            </span>
+                        </button>
+                    </div>
+                ) : (
+                    <div className="flex flex-col gap-1.5 px-2.5 pb-2">
+                        {cases.map(c => (
+                            <CaseRow
+                                key={c.id}
+                                case_={c}
+                                onClick={() => cb.onOpenCase(c.id)}
+                                onRemove={() => cb.onRemoveCase(c)}
+                            />
+                        ))}
+                        <button
+                            type="button"
+                            onClick={() => cb.onAddCase(subflow.id)}
+                            className="self-start inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-brand transition-colors pt-0.5"
+                        >
+                            <Plus className="w-3 h-3" /> Adicionar caso
+                        </button>
+                    </div>
+                )}
 
                 {/* Rodapé: ver detalhe (seta) + menu de ações (3 pontinhos). */}
                 <div className="mt-auto px-2.5 py-2 border-t border-border flex items-center justify-between">
@@ -181,7 +209,7 @@ function subtreeStats(
 ): { total: number; auto: number } {
     const own = casesBySubflow[node.subflow.id] || [];
     let total = own.length;
-    let auto = own.filter(c => c.test_case_id).length;
+    let auto = own.filter(isCaseAutomated).length;
     for (const ch of node.children) {
         const s = subtreeStats(ch, casesBySubflow);
         total += s.total;
@@ -194,7 +222,7 @@ function CaseRow({ case_, onClick, onRemove }: { case_: QAJourneyCase; onClick: 
     const ran = case_.last_run_status && case_.last_run_status !== 'not_run';
     const when = formatRelativeTime(case_.last_run_at);
     const runLabel = RUN_LABEL[case_.last_run_status ?? 'not_run'];
-    const isAuto = Boolean(case_.test_case_id);   // automatizado = caso com Maestro vinculado
+    const isAuto = isCaseAutomated(case_);   // automatizado = Maestro vinculado ou ref Playwright
     // Wrapper relativo: o botão principal abre o detalhe; a lixeira (absoluta,
     // visível no hover) remove o caso — botões irmãos, nunca aninhados.
     return (

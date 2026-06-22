@@ -1,5 +1,9 @@
 import type { AutomationStatus, CasePriority, CaseRunStatus } from '@/types/qa-journey';
 
+// Prazos (em dias) oferecidos no "alerta de automação" — conta a partir da
+// criação do caso/sub-fluxo (migration 022).
+export const AUTOMATION_ALERT_DAYS = [5, 7, 15, 30] as const;
+
 export const AUTOMATION_STATUS_OPTIONS: { value: AutomationStatus; label: string; color: string }[] = [
     { value: 'automated', label: 'Automatizado', color: 'bg-green-500/20 text-green-500' },
     { value: 'partial',   label: 'Parcial',       color: 'bg-yellow-500/20 text-yellow-500' },

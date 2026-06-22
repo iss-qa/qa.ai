@@ -9,6 +9,7 @@ import { motion } from 'framer-motion';
 import { ChevronRight, FileCode2, FileText, GitBranch, Link2, X } from 'lucide-react';
 import { AUTOMATION_STATUS_OPTIONS, PRIORITY_OPTIONS, RUN_STATUS_DISPLAY, RUN_STATUS_OPTIONS } from '@/lib/qa-journey/constants';
 import { HtmlDocModal } from './HtmlDocModal';
+import { formatExternalId } from '@/components/qa-journey/columns/helpers';
 import type { QAJourney, QAJourneyCase, QAJourneySubflow } from '@/types/qa-journey';
 
 interface SubflowModalProps {
@@ -22,6 +23,10 @@ interface SubflowModalProps {
 export function SubflowModal({ journey, subflow, cases, onSelectCase, onClose }: SubflowModalProps) {
     const statusOpt = AUTOMATION_STATUS_OPTIONS.find(o => o.value === subflow.automation_status);
     const [docOpen, setDocOpen] = useState(false);
+    // Sub-fluxo de documento (HTML anexado) não tem comportamento de casos de
+    // teste: escondemos automação / total de casos / lista de casos e
+    // destacamos o documento.
+    const isDoc = Boolean(subflow.html_doc);
 
     return (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
@@ -62,75 +67,85 @@ export function SubflowModal({ journey, subflow, cases, onSelectCase, onClose }:
                         <p className="text-sm text-muted-foreground leading-relaxed">{subflow.description}</p>
                     )}
 
-                    <div className="grid grid-cols-2 gap-3">
-                        <Stat
-                            label="Automação"
-                            value={statusOpt?.label || subflow.automation_status}
-                            color={statusOpt?.color}
-                        />
-                        <Stat
-                            label="Total de casos"
-                            value={String(cases.length)}
-                        />
-                    </div>
-
-                    {subflow.test_case_id && (
-                        <div className="bg-brand/5 border border-brand/20 rounded-lg p-3 flex items-center gap-2 text-xs text-brand">
-                            <Link2 className="w-3.5 h-3.5" />
-                            Vinculado a um teste Maestro
-                        </div>
-                    )}
-
-                    {subflow.html_doc && (
+                    {isDoc ? (
+                        // Modo documento: card de destaque que abre o HTML.
                         <button
                             type="button"
                             onClick={() => setDocOpen(true)}
-                            className="flex items-center justify-between gap-2 w-full bg-foreground/[0.02] border border-border rounded-lg p-3 text-left hover:border-brand/50 transition-colors group"
+                            className="flex items-center justify-between gap-3 w-full bg-brand/5 border border-brand/20 rounded-xl p-4 text-left hover:border-brand/50 transition-colors group"
                         >
-                            <span className="flex items-center gap-2 text-xs font-bold text-foreground">
-                                <FileCode2 className="w-4 h-4 text-brand" />
-                                Documento HTML anexado
+                            <span className="flex items-center gap-3 min-w-0">
+                                <span className="w-9 h-9 rounded-lg bg-brand/10 flex items-center justify-center shrink-0">
+                                    <FileCode2 className="w-4 h-4 text-brand" />
+                                </span>
+                                <span className="flex flex-col min-w-0">
+                                    <span className="text-sm font-bold text-foreground">Documento HTML</span>
+                                    <span className="text-[11px] text-muted-foreground">
+                                        Especificação deste sub-fluxo em documento.
+                                    </span>
+                                </span>
                             </span>
-                            <span className="text-[11px] text-muted-foreground group-hover:text-brand transition-colors flex items-center gap-1">
-                                Ver documento <ChevronRight className="w-3.5 h-3.5" />
+                            <span className="text-xs font-semibold text-brand group-hover:underline flex items-center gap-1 shrink-0">
+                                Ver documento <ChevronRight className="w-4 h-4" />
                             </span>
                         </button>
+                    ) : (
+                        <>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Stat
+                                    label="Automação"
+                                    value={statusOpt?.label || subflow.automation_status}
+                                    color={statusOpt?.color}
+                                />
+                                <Stat
+                                    label="Total de casos"
+                                    value={String(cases.length)}
+                                />
+                            </div>
+
+                            {subflow.test_case_id && (
+                                <div className="bg-brand/5 border border-brand/20 rounded-lg p-3 flex items-center gap-2 text-xs text-brand">
+                                    <Link2 className="w-3.5 h-3.5" />
+                                    Vinculado a um teste Maestro
+                                </div>
+                            )}
+
+                            {/* Casos (filhos) — visíveis de cara */}
+                            <div className="flex flex-col gap-2">
+                                <div className="flex items-center gap-2">
+                                    <FileText className="w-4 h-4 text-brand" />
+                                    <h3 className="text-sm font-bold text-foreground">
+                                        Casos de teste ({cases.length})
+                                    </h3>
+                                </div>
+
+                                {cases.length === 0 ? (
+                                    <p className="text-xs text-muted-foreground italic">
+                                        Nenhum caso cadastrado neste sub-fluxo.
+                                    </p>
+                                ) : (
+                                    <ul className="divide-y divide-border border border-border rounded-xl overflow-hidden bg-foreground/[0.02]">
+                                        {cases.map((c, i) => (
+                                            <motion.li
+                                                key={c.id}
+                                                initial={{ opacity: 0, y: 6 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                transition={{ delay: Math.min(i * 0.03, 0.3), duration: 0.18 }}
+                                            >
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onSelectCase(c.id)}
+                                                    className="w-full px-4 py-3 flex flex-col gap-1.5 text-left hover:bg-accent transition-colors group"
+                                                >
+                                                    <CaseRowContent case_={c} />
+                                                </button>
+                                            </motion.li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        </>
                     )}
-
-                    {/* Casos (filhos) — visíveis de cara */}
-                    <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-brand" />
-                            <h3 className="text-sm font-bold text-foreground">
-                                Casos de teste ({cases.length})
-                            </h3>
-                        </div>
-
-                        {cases.length === 0 ? (
-                            <p className="text-xs text-muted-foreground italic">
-                                Nenhum caso cadastrado neste sub-fluxo.
-                            </p>
-                        ) : (
-                            <ul className="divide-y divide-border border border-border rounded-xl overflow-hidden bg-foreground/[0.02]">
-                                {cases.map((c, i) => (
-                                    <motion.li
-                                        key={c.id}
-                                        initial={{ opacity: 0, y: 6 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: Math.min(i * 0.03, 0.3), duration: 0.18 }}
-                                    >
-                                        <button
-                                            type="button"
-                                            onClick={() => onSelectCase(c.id)}
-                                            className="w-full px-4 py-3 flex flex-col gap-1.5 text-left hover:bg-accent transition-colors group"
-                                        >
-                                            <CaseRowContent case_={c} />
-                                        </button>
-                                    </motion.li>
-                                ))}
-                            </ul>
-                        )}
-                    </div>
                 </div>
             </motion.div>
 
@@ -169,7 +184,7 @@ function CaseRowContent({ case_ }: { case_: QAJourneyCase }) {
         <>
             <div className="flex items-center gap-2">
                 {case_.external_id && (
-                    <span className="text-[10px] font-mono text-muted-foreground">{case_.external_id}</span>
+                    <span className="text-[10px] font-mono text-muted-foreground" title={case_.external_id}>{formatExternalId(case_.external_id)}</span>
                 )}
                 <span className="text-xs font-bold text-foreground flex-1 truncate">{case_.title}</span>
                 {case_.platform && (

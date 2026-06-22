@@ -41,9 +41,13 @@ export interface QAJourneySubflow {
     // Documento HTML completo importado pelo admin (espelha o campo da jornada).
     // Renderizado em iframe sandbox quando o sub-fluxo é aberto no mapa.
     html_doc?: string | null;
+    // Alerta de automação (migration 022): prazo em dias a partir de created_at.
+    automation_alert_days?: number | null;
     created_at: string;
     updated_at: string;
 }
+
+export type AutomationEngine = 'maestro' | 'playwright';
 
 export interface QAJourneyCase {
     id: string;
@@ -63,6 +67,15 @@ export interface QAJourneyCase {
     test_case_id?: string | null;
     // Plataforma/ambiente do caso (Web, Mobile, API, ...) — migration 009.
     platform?: string | null;
+    // Alerta de automação (migration 022): prazo em dias a partir de created_at.
+    // Ao atingir o prazo (e ainda manual), dispara notificação no sino.
+    automation_alert_days?: number | null;
+    // Motor de automação (migration 022). 'maestro' usa test_case_id;
+    // 'playwright' (plataforma Web) usa as refs abaixo.
+    automation_engine?: AutomationEngine | null;
+    playwright_path?: string | null;   // caminho da pasta do projeto Playwright
+    playwright_repo?: string | null;   // URL do repositório git
+    playwright_spec?: string | null;   // arquivo/spec dentro do projeto
     // Evidência da última execução manual (migration 010).
     evidence_url?: string | null;
     evidence_type?: 'image' | 'video' | null;

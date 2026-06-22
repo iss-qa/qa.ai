@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 
 import { SubflowFormModal } from '@/components/qa-journey/SubflowFormModal';
-import { descendantIds, buildSubflowTree, type SubflowTreeNode } from '@/components/qa-journey/columns/helpers';
+import { descendantIds, buildSubflowTree, formatExternalId, type SubflowTreeNode } from '@/components/qa-journey/columns/helpers';
 import { CaseFormModal } from '@/components/qa-journey/CaseFormModal';
 import { ImportCasesModal } from '@/components/qa-journey/ImportCasesModal';
 import { DeleteConfirmModal } from '@/components/qa-journey/DeleteConfirmModal';
@@ -146,15 +146,6 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
         for (const s of subflows) result[s.id] = count(s.id);
         return result;
     }, [subflows, casesBySubflow]);
-
-    // ID externo costuma ser longo (ex.: tc_cenario_front_..._001) e empurrava a
-    // tabela para fora, escondendo as ações. Exibimos um rótulo curto
-    // "TC_<nº final>" (id completo no tooltip).
-    const shortExternalId = (id: string): string => {
-        const m = id.match(/(\d+)\s*$/);
-        if (m) return `TC_${m[1]}`;
-        return id.length > 12 ? `${id.slice(0, 11)}…` : id;
-    };
 
     const toggleExpand = (id: string) => {
         setExpanded(prev => {
@@ -428,7 +419,7 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                                     return (
                                                         <tr key={c.id} className={`transition-colors ${rowTone}`}>
                                                             <td className="px-6 py-2 text-[11px] font-mono text-muted-foreground w-20" title={c.external_id || undefined}>
-                                                                {c.external_id ? shortExternalId(c.external_id) : '—'}
+                                                                {c.external_id ? formatExternalId(c.external_id) : '—'}
                                                             </td>
                                                             <td className="px-6 py-2">
                                                                 <div className="flex items-center gap-2 min-w-0">

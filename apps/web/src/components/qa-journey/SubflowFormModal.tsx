@@ -1,9 +1,9 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { FileArchive, FileCode2, GitBranch, Loader2, Trash2, Upload } from 'lucide-react';
+import { Bell, FileArchive, FileCode2, GitBranch, Loader2, Trash2, Upload } from 'lucide-react';
 import { ModalShell } from './ModalShell';
-import { AUTOMATION_STATUS_OPTIONS } from '@/lib/qa-journey/constants';
+import { AUTOMATION_ALERT_DAYS, AUTOMATION_STATUS_OPTIONS } from '@/lib/qa-journey/constants';
 import { readHtmlDocument } from '@/lib/qa-journey/html-bundle';
 import type { TestCaseOption } from '@/lib/qa-journey/api';
 import type { QAJourneySubflow, QAJourneySubflowDraft, AutomationStatus } from '@/types/qa-journey';
@@ -31,8 +31,12 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
         automation_status: initial?.automation_status ?? 'manual',
         test_case_id: initial?.test_case_id ?? null,
         parent_subflow_id: initial?.parent_subflow_id ?? defaultParentId ?? null,
+        // Alerta de automação (migration 022). undefined = não tocado.
+        automation_alert_days: initial?.automation_alert_days ?? undefined,
     }));
     const [saving, setSaving] = useState(false);
+    // Painel do "alerta de automação" (sino) — aberto se já há prazo definido.
+    const [alertOpen, setAlertOpen] = useState(Boolean(initial?.automation_alert_days));
 
     // Documento HTML anexado ao sub-fluxo (renderizado no mapa em iframe).
     const [htmlEnabled, setHtmlEnabled] = useState(Boolean(initial?.html_doc));
@@ -68,6 +72,7 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
 
     const isEdit = Boolean(initial?.id);
     const canSave = (draft.title || '').trim().length > 0 && !saving && !htmlLoading;
+    const alertDays = draft.automation_alert_days ?? null;
 
     const submit = async () => {
         if (!canSave) return;
@@ -88,7 +93,11 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
                 ...draft,
                 title: (draft.title || '').trim(),
                 description: (draft.description || '').trim() || null,
-                test_case_id: draft.test_case_id || null,
+                // Sub-fluxo com documento HTML é "modo documento": não tem
+                // comportamento de casos de teste, então automação/teste vinculado
+                // são zerados (manual + sem vínculo) e ficam ocultos no form.
+                automation_status: htmlEnabled ? 'manual' : (draft.automation_status || 'manual'),
+                test_case_id: htmlEnabled ? null : (draft.test_case_id || null),
                 parent_subflow_id: parentPayload,
                 html_doc: htmlPayload,
             });
@@ -182,37 +191,41 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
                 </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex flex-col gap-1.5">
-                    <Label>Status de automação</Label>
-                    <select
-                        value={draft.automation_status || 'manual'}
-                        onChange={e => setDraft({ ...draft, automation_status: e.target.value as AutomationStatus })}
-                        className={inputClass}
-                    >
-                        {AUTOMATION_STATUS_OPTIONS.map(opt => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                    </select>
+            {/* Automação e teste vinculado só fazem sentido em sub-fluxo de CASOS.
+                Sub-fluxo de documento (HTML ligado) não tem esse comportamento. */}
+            {!htmlEnabled && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1.5">
+                        <Label>Status de automação</Label>
+                        <select
+                            value={draft.automation_status || 'manual'}
+                            onChange={e => setDraft({ ...draft, automation_status: e.target.value as AutomationStatus })}
+                            className={inputClass}
+                        >
+                            {AUTOMATION_STATUS_OPTIONS.map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                        <Label>Teste Automatizado vinculado</Label>
+                        <select
+                            value={draft.test_case_id || ''}
+                            onChange={e => setDraft({ ...draft, test_case_id: e.target.value || null })}
+                            className={inputClass}
+                            disabled={testCases.length === 0}
+                        >
+                            <option value="">— Nenhum —</option>
+                            {testCases.map(tc => (
+                                <option key={tc.id} value={tc.id}>{tc.name}</option>
+                            ))}
+                        </select>
+                        <p className="text-[10px] text-muted-foreground">
+                            Liga este sub-fluxo a um teste automatizado já existente.
+                        </p>
+                    </div>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                    <Label>Test case Maestro vinculado</Label>
-                    <select
-                        value={draft.test_case_id || ''}
-                        onChange={e => setDraft({ ...draft, test_case_id: e.target.value || null })}
-                        className={inputClass}
-                        disabled={testCases.length === 0}
-                    >
-                        <option value="">— Nenhum —</option>
-                        {testCases.map(tc => (
-                            <option key={tc.id} value={tc.id}>{tc.name}</option>
-                        ))}
-                    </select>
-                    <p className="text-[10px] text-muted-foreground">
-                        Liga este sub-fluxo a um teste automatizado já existente.
-                    </p>
-                </div>
-            </div>
+            )}
 
             {/* Documento HTML anexado */}
             <div className="border border-border rounded-xl p-4 flex flex-col gap-3">
@@ -280,6 +293,45 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
                             </>
                         )}
                         {htmlError && <span className="text-[11px] text-danger w-full">{htmlError}</span>}
+                    </div>
+                )}
+            </div>
+
+            {/* Alerta de automação (sino) */}
+            <div className="border border-border rounded-xl p-4 flex flex-col gap-3">
+                <button type="button" onClick={() => setAlertOpen(v => !v)} className="flex items-start gap-3 text-left">
+                    <span className={`relative w-9 h-5 rounded-full shrink-0 mt-0.5 transition-colors ${alertDays ? 'bg-brand' : 'bg-foreground/15'}`}>
+                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${alertDays ? 'left-[18px]' : 'left-0.5'}`} />
+                    </span>
+                    <span className="flex flex-col gap-0.5">
+                        <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                            <Bell className="w-3.5 h-3.5 text-brand" /> Alerta de automação
+                            {alertDays && <span className="text-brand">· {alertDays} dias</span>}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground leading-snug">
+                            Conta a partir da criação do sub-fluxo. Ao atingir o prazo (e ainda sem teste vinculado), surge um alerta no sino para incluir na sprint.
+                        </span>
+                    </span>
+                </button>
+                {alertOpen && (
+                    <div className="flex flex-wrap items-center gap-2 pl-12">
+                        {AUTOMATION_ALERT_DAYS.map(d => (
+                            <button
+                                key={d}
+                                type="button"
+                                onClick={() => setDraft({ ...draft, automation_alert_days: alertDays === d ? null : d })}
+                                className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-colors ${
+                                    alertDays === d ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted-foreground hover:border-brand/40'
+                                }`}
+                            >
+                                {d} dias
+                            </button>
+                        ))}
+                        {alertDays != null && (
+                            <button type="button" onClick={() => setDraft({ ...draft, automation_alert_days: null })} className="text-[11px] text-danger hover:underline ml-1">
+                                Desativar
+                            </button>
+                        )}
                     </div>
                 )}
             </div>

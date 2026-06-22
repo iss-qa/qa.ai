@@ -12,6 +12,9 @@ export interface JourneyNodeData {
     // computeMetrics): casos cujo subfluxo está 'automated' ÷ total de casos.
     automatedCount: number;
     totalCount: number;
+    // Quantos sub-fluxos desta jornada são "documento" (HTML anexado). Usado
+    // para mostrar "Documento(s)" em vez de "Sem casos" quando não há casos.
+    docCount?: number;
     isExpanded: boolean;
     onToggle: (journeyId: string) => void;
     // Abre o documento HTML anexado (quando journey.html_doc existe).
@@ -41,10 +44,13 @@ function coverageColor(pct: number, total: number): string {
 }
 
 export const JourneyNode = memo(function JourneyNode({ data, selected }: { data: JourneyNodeData; selected?: boolean }) {
-    const { journey, automatedCount, totalCount, isExpanded, onToggle, onOpenHtml } = data;
+    const { journey, automatedCount, totalCount, docCount = 0, isExpanded, onToggle, onOpenHtml } = data;
     const Icon = resolveIcon(journey.icon);
     const pct = coveragePct(totalCount, automatedCount);
     const color = journey.color || '#7c3aed';
+    // Jornada só de documentos (nenhum caso de teste, mas há sub-fluxos-doc):
+    // o vocabulário de cobertura não se aplica — mostra "Documento(s)".
+    const docOnly = totalCount === 0 && docCount > 0;
 
     return (
         <button
@@ -108,8 +114,10 @@ export const JourneyNode = memo(function JourneyNode({ data, selected }: { data:
             </div>
 
             <div className="mt-3 flex items-center justify-between gap-2">
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold ${coverageColor(pct, totalCount)}`}>
-                    {totalCount === 0 ? 'Sem casos' : `${automatedCount}/${totalCount} automatizados`}
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${docOnly ? 'bg-brand/15 text-brand' : coverageColor(pct, totalCount)}`}>
+                    {docOnly
+                        ? <><FileCode2 className="w-3 h-3" />{`${docCount} ${docCount === 1 ? 'documento' : 'documentos'}`}</>
+                        : totalCount === 0 ? 'Sem casos' : `${automatedCount}/${totalCount} automatizados`}
                 </span>
                 <span className="flex items-center gap-1.5">
                     {journey.html_doc && onOpenHtml && (
@@ -129,20 +137,24 @@ export const JourneyNode = memo(function JourneyNode({ data, selected }: { data:
                             <FileCode2 className="w-3 h-3" /> Doc
                         </span>
                     )}
-                    <span className="text-[10px] font-mono text-muted-foreground">{totalCount === 0 ? '—' : `${pct}%`}</span>
+                    {!docOnly && (
+                        <span className="text-[10px] font-mono text-muted-foreground">{totalCount === 0 ? '—' : `${pct}%`}</span>
+                    )}
                 </span>
             </div>
 
-            {/* Progress bar */}
-            <div className="mt-2 h-1 rounded-full bg-foreground/5 overflow-hidden">
-                <div
-                    className="h-full rounded-full transition-all"
-                    style={{
-                        width: `${pct}%`,
-                        background: pct >= 80 ? '#22c55e' : pct >= 30 ? '#eab308' : '#ef4444',
-                    }}
-                />
-            </div>
+            {/* Progress bar — só faz sentido em jornada de casos. */}
+            {!docOnly && (
+                <div className="mt-2 h-1 rounded-full bg-foreground/5 overflow-hidden">
+                    <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                            width: `${pct}%`,
+                            background: pct >= 80 ? '#22c55e' : pct >= 30 ? '#eab308' : '#ef4444',
+                        }}
+                    />
+                </div>
+            )}
         </button>
     );
 });

@@ -1,14 +1,14 @@
 'use client';
 
 import { useMemo, useState, type ComponentType } from 'react';
-import { FileText, Loader2, Sparkles, ListChecks, FileCode2 } from 'lucide-react';
+import { Bell, FileText, FlaskConical, Loader2, Sparkles, ListChecks, FileCode2 } from 'lucide-react';
 import { ModalShell } from './ModalShell';
 import { GherkinEditor } from './GherkinEditor';
 import { TestTreePicker } from './TestTreePicker';
-import { PRIORITY_OPTIONS, RUN_STATUS_OPTIONS, toSlug } from '@/lib/qa-journey/constants';
+import { AUTOMATION_ALERT_DAYS, PRIORITY_OPTIONS, RUN_STATUS_OPTIONS, toSlug } from '@/lib/qa-journey/constants';
 import type { TestCaseOption } from '@/lib/qa-journey/api';
 import type {
-    QAJourneyCase, QAJourneyCaseDraft, CasePriority, CaseRunStatus, CaseWritingMode,
+    QAJourneyCase, QAJourneyCaseDraft, CasePriority, CaseRunStatus, CaseWritingMode, AutomationEngine,
 } from '@/types/qa-journey';
 
 interface CaseFormModalProps {
@@ -57,6 +57,12 @@ export function CaseFormModal({
         // undefined = campo não tocado (não vai no payload — compatível com
         // banco sem a migration 009 da coluna platform).
         platform: initial?.platform ?? undefined,
+        // Alerta de automação + refs Playwright (migration 022). undefined =
+        // não tocado; só vai ao payload quando o usuário mexer.
+        automation_alert_days: initial?.automation_alert_days ?? undefined,
+        playwright_path: initial?.playwright_path ?? undefined,
+        playwright_repo: initial?.playwright_repo ?? undefined,
+        playwright_spec: initial?.playwright_spec ?? undefined,
     }));
     // Modo de escrita: tradicional (step-by-step) ou gherkin.
     // Caso NOVO abre em Gherkin por padrão; ao editar, respeita o modo salvo
@@ -64,9 +70,16 @@ export function CaseFormModal({
     const [mode, setMode] = useState<CaseWritingMode>(
         initial ? (initial.writing_mode ?? 'traditional') : 'gherkin',
     );
-    // Tipo do caso: automatizado = tem teste Maestro vinculado.
-    const [tipo, setTipo] = useState<'manual' | 'automated'>(initial?.test_case_id ? 'automated' : 'manual');
+    // Tipo do caso: automatizado = tem teste vinculado (Maestro OU Playwright).
+    const initiallyAutomated = Boolean(initial?.test_case_id)
+        || (initial?.automation_engine === 'playwright' && Boolean(initial?.playwright_path || initial?.playwright_repo));
+    const [tipo, setTipo] = useState<'manual' | 'automated'>(initiallyAutomated ? 'automated' : 'manual');
+    // Painel do "alerta de automação" (sino) — aberto se já há prazo definido.
+    const [alertOpen, setAlertOpen] = useState(Boolean(initial?.automation_alert_days));
     const [saving, setSaving] = useState(false);
+
+    // Plataforma Web não usa Maestro — usa referência Playwright.
+    const isWeb = (draft.platform || '').trim().toLowerCase() === 'web';
 
     const isEdit = Boolean(initial?.id);
     const canSave = (draft.title || '').trim().length > 0 && !saving;
@@ -85,10 +98,25 @@ export function CaseFormModal({
         if (!canSave) return;
         setSaving(true);
         try {
-            // Manual => limpa o vínculo. Guarded (padrão das migrations recentes):
-            // só envia test_case_id quando há vínculo ou ao limpar um existente.
-            const linkId = tipo === 'automated' ? (draft.test_case_id || null) : null;
-            const test_case_id = linkId ? linkId : (initial?.test_case_id ? null : undefined);
+            const automated = tipo === 'automated';
+            // Guard (padrão das migrations recentes): só envia o campo quando há
+            // valor novo OU quando se está limpando um valor que existia.
+            const guard = <T,>(val: T | null, had: unknown): T | null | undefined =>
+                val != null ? val : (had != null && had !== '' ? null : undefined);
+
+            // Maestro (Mobile/API): vínculo só quando automatizado e NÃO-Web.
+            const maestroId = automated && !isWeb ? (draft.test_case_id || null) : null;
+            const test_case_id = guard(maestroId, initial?.test_case_id);
+
+            // Playwright (Web): refs só quando automatizado e Web.
+            const pw = automated && isWeb;
+            const playwright_path = guard(pw ? ((draft.playwright_path || '').trim() || null) : null, initial?.playwright_path);
+            const playwright_repo = guard(pw ? ((draft.playwright_repo || '').trim() || null) : null, initial?.playwright_repo);
+            const playwright_spec = guard(pw ? ((draft.playwright_spec || '').trim() || null) : null, initial?.playwright_spec);
+
+            // Motor: playwright (Web) | maestro (demais) | null (manual).
+            const engineVal: AutomationEngine | null = automated ? (isWeb ? 'playwright' : 'maestro') : null;
+            const automation_engine = guard<AutomationEngine>(engineVal, initial?.automation_engine);
 
             const common = {
                 ...draft,
@@ -97,6 +125,10 @@ export function CaseFormModal({
                 // ID externo é sempre o gerado automaticamente (campo somente-leitura).
                 external_id: effectiveExternalId,
                 test_case_id,
+                automation_engine,
+                playwright_path,
+                playwright_repo,
+                playwright_spec,
                 platform: draft.platform !== undefined ? ((draft.platform || '').trim() || null) : undefined,
             };
 
@@ -153,17 +185,106 @@ export function CaseFormModal({
         </div>
     );
 
-    const maestroLinkBlock = tipo === 'automated' && (
-        <div className="flex flex-col gap-1.5">
-            <Label>Teste Maestro vinculado</Label>
-            <TestTreePicker
-                testCases={testCases}
-                value={draft.test_case_id || null}
-                onChange={id => setDraft({ ...draft, test_case_id: id })}
-            />
-            <p className="text-[10px] text-muted-foreground">
-                Selecione na árvore do projeto o teste automatizado do Maestro. Sem vínculo, o caso conta como manual.
-            </p>
+    // Vínculo do teste automatizado — depende da plataforma:
+    //   Web   → referência Playwright (pasta do projeto e/ou git + spec)
+    //   demais → seletor do teste Maestro (atual)
+    const linkBlock = tipo === 'automated' && (
+        isWeb ? (
+            <div className="flex flex-col gap-1.5">
+                <Label>Teste Automatizado vinculado (Playwright)</Label>
+                <div className="flex flex-col gap-2 border border-border rounded-lg p-3 bg-foreground/[0.02]">
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-brand">
+                        <FlaskConical className="w-3.5 h-3.5" /> Playwright (Web)
+                    </div>
+                    <input
+                        type="text"
+                        value={draft.playwright_path || ''}
+                        onChange={e => setDraft({ ...draft, playwright_path: e.target.value })}
+                        placeholder="Pasta do projeto — ex.: /Users/voce/web-tests"
+                        className={inputClass}
+                    />
+                    <input
+                        type="text"
+                        value={draft.playwright_repo || ''}
+                        onChange={e => setDraft({ ...draft, playwright_repo: e.target.value })}
+                        placeholder="Repositório git — ex.: github.com/foxbit-group/web-tests"
+                        className={inputClass}
+                    />
+                    <input
+                        type="text"
+                        value={draft.playwright_spec || ''}
+                        onChange={e => setDraft({ ...draft, playwright_spec: e.target.value })}
+                        placeholder="Arquivo/spec (opcional) — ex.: tests/login.spec.ts"
+                        className={inputClass}
+                    />
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                    Web usa Playwright. Informe a pasta do projeto e/ou o repositório git onde o teste vive. Sem referência, o caso conta como manual.
+                </p>
+            </div>
+        ) : (
+            <div className="flex flex-col gap-1.5">
+                <Label>Teste Automatizado vinculado</Label>
+                <TestTreePicker
+                    testCases={testCases}
+                    value={draft.test_case_id || null}
+                    onChange={id => setDraft({ ...draft, test_case_id: id })}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                    Selecione na árvore do projeto o teste automatizado do Maestro. Sem vínculo, o caso conta como manual.
+                </p>
+            </div>
+        )
+    );
+
+    // Alerta de automação (sino): conta a partir da criação do caso.
+    const alertDays = draft.automation_alert_days ?? null;
+    const automationAlertBlock = (
+        <div className="border border-border rounded-xl p-4 flex flex-col gap-3">
+            <button
+                type="button"
+                onClick={() => setAlertOpen(v => !v)}
+                className="flex items-start gap-3 text-left"
+            >
+                <span className={`relative w-9 h-5 rounded-full shrink-0 mt-0.5 transition-colors ${alertDays ? 'bg-brand' : 'bg-foreground/15'}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${alertDays ? 'left-[18px]' : 'left-0.5'}`} />
+                </span>
+                <span className="flex flex-col gap-0.5">
+                    <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        <Bell className="w-3.5 h-3.5 text-brand" /> Alerta de automação
+                        {alertDays && <span className="text-brand">· {alertDays} dias</span>}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground leading-snug">
+                        Conta a partir da criação do caso. Ao atingir o prazo (e ainda manual), surge um alerta no sino: o título do caso + “deve ser automatizado, inclua na sprint”.
+                    </span>
+                </span>
+            </button>
+
+            {alertOpen && (
+                <div className="flex flex-wrap items-center gap-2 pl-12">
+                    {AUTOMATION_ALERT_DAYS.map(d => (
+                        <button
+                            key={d}
+                            type="button"
+                            onClick={() => setDraft({ ...draft, automation_alert_days: alertDays === d ? null : d })}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-colors ${
+                                alertDays === d ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted-foreground hover:border-brand/40'
+                            }`}
+                        >
+                            {d} dias
+                        </button>
+                    ))}
+                    {alertDays != null && (
+                        <button
+                            type="button"
+                            onClick={() => setDraft({ ...draft, automation_alert_days: null })}
+                            className="text-[11px] text-danger hover:underline ml-1"
+                        >
+                            Desativar
+                        </button>
+                    )}
+                </div>
+            )}
         </div>
     );
 
@@ -321,13 +442,17 @@ export function CaseFormModal({
                 </div>
             )}
 
-            {/* Tipo de teste + Teste Maestro vinculado lado a lado */}
+            {/* Plataforma/Prioridade/Execução primeiro — a plataforma decide se o
+                vínculo abaixo é Maestro (Mobile) ou Playwright (Web). */}
+            {metaGridBlock}
+
+            {/* Tipo de teste + vínculo (Maestro/Playwright) lado a lado */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                 {tipoTesteBlock}
-                {maestroLinkBlock}
+                {linkBlock}
             </div>
 
-            {metaGridBlock}
+            {automationAlertBlock}
         </ModalShell>
     );
 }

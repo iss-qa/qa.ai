@@ -7,6 +7,7 @@ import { runSync, upsertSheetConfig } from '@/lib/qa-journey/sheet-api';
 import type { ColumnMap } from '@/types/qa-journey-sheet';
 import type { WizardState } from './types';
 import { QA_JOURNEY_FIELDS } from './types';
+import { formatExternalId } from '@/components/qa-journey/columns/helpers';
 
 interface Props {
     state: WizardState;
@@ -95,7 +96,7 @@ export function StepPreview({ state, onBack }: Props) {
                             return (
                                 <tr key={i} className={row.valid ? 'border-b border-border' : 'border-b border-border bg-danger/5'}>
                                     <td className="px-3 py-2 text-muted-foreground font-mono">{sheetRow}</td>
-                                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{row.values.external_id || '—'}</td>
+                                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground" title={row.values.external_id || undefined}>{formatExternalId(row.values.external_id) || '—'}</td>
                                     <td className="px-3 py-2 text-foreground">{row.values.journey || '—'}</td>
                                     <td className="px-3 py-2 text-foreground">{row.values.subflow || '—'}</td>
                                     <td className="px-3 py-2 text-foreground max-w-[200px] truncate">{row.values.title || '—'}</td>

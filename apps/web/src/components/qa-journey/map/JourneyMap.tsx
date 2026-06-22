@@ -208,6 +208,7 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                 journey,
                 automatedCount: m.automatedCases,
                 totalCount: m.totalCases,
+                docCount: sub.filter(s => s.html_doc).length,
                 isExpanded: expanded.has(journey.id),
                 onToggle: toggleJourney,
                 onOpenHtml: setHtmlJourneyId,
@@ -246,7 +247,6 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                         type: 'htmlDoc',
                         position: { x: 0, y: 0 },
                         data: htmlData,
-                        dragHandle: '.html-doc-drag',
                         width: hCustom?.width ?? HTML_DOC_DEFAULT.width,
                         height: hCustom?.height ?? HTML_DOC_DEFAULT.height,
                         // style SEMPRE presente: sem ele o iframe colapsa para o
@@ -325,7 +325,6 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                             type: 'htmlDoc',
                             position: { x: 0, y: 0 },
                             data: subHtmlData,
-                            dragHandle: '.html-doc-drag',
                             width: w,
                             height: h,
                             style: { width: w, height: h },

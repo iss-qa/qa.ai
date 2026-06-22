@@ -54,7 +54,7 @@ export const HtmlDocNode = memo(function HtmlDocNode({
 
             <Handle type="target" position={Position.Left} className="!bg-brand/40 !border-none !w-2 !h-2" />
 
-            {/* Barra de título = alça de drag (dragHandle do node) */}
+            {/* Barra de título — cursor de mover (o nó inteiro é arrastável) */}
             <div className="html-doc-drag cursor-move flex items-center gap-2 px-3 py-2 border-b border-border bg-surface-muted/60 shrink-0 select-none">
                 <FileCode2 className="w-3.5 h-3.5 text-brand shrink-0" />
                 <span className="text-[11px] font-bold text-foreground truncate flex-1">
@@ -71,15 +71,25 @@ export const HtmlDocNode = memo(function HtmlDocNode({
                 </button>
             </div>
 
-            {/* O iframe engole eventos de mouse — desliga pointer-events durante
-                drag/resize para a interação do React Flow não travar no meio. */}
+            {/* O iframe captura o mouse — se ficasse sempre ativo, o ponteiro
+                "travava" sobre o documento (não dá p/ arrastar/pan o canvas nem
+                mover o nó). Solução: só fica interativo quando o nó está
+                SELECIONADO (e fora de drag/resize). Sem seleção é pass-through:
+                o nó pode ser arrastado por qualquer ponto e o canvas pana. */}
             <iframe
                 srcDoc={html || ''}
                 sandbox="allow-scripts"
                 className="nodrag nowheel flex-1 w-full bg-white"
-                style={{ pointerEvents: dragging || resizing ? 'none' : 'auto' }}
+                style={{ pointerEvents: dragging || resizing || !selected ? 'none' : 'auto' }}
                 title={`Documento HTML — ${title}`}
             />
+
+            {/* Dica de interação enquanto não selecionado. */}
+            {!selected && !dragging && !resizing && (
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 pointer-events-none px-2 py-1 rounded-md bg-popover/90 border border-border text-[10px] text-muted-foreground shadow-sm whitespace-nowrap">
+                    Clique para interagir · arraste para mover
+                </div>
+            )}
         </div>
     );
 });

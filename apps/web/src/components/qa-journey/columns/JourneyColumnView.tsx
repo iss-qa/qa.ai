@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import {
-    ChevronRight, GitBranch, GripVertical, Map as MapIcon, PanelLeftClose, PanelLeftOpen, Plus,
+    ChevronRight, Download, FileCode2, GitBranch, GripVertical, Map as MapIcon, PanelLeftClose, PanelLeftOpen, Plus,
 } from 'lucide-react';
 import {
     DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors,
@@ -21,6 +21,7 @@ import type {
     QAJourney, QAJourneyCase, QAJourneyCaseDraft, QAJourneySubflow, QAJourneySubflowDraft,
 } from '@/types/qa-journey';
 import { SubflowFormModal } from '../SubflowFormModal';
+import { ExportModal } from '../ExportModal';
 import { CaseFormModal } from '../CaseFormModal';
 import { ImportCasesModal } from '../ImportCasesModal';
 import { SubflowModal } from '../map/SubflowModal';
@@ -84,6 +85,7 @@ export function JourneyColumnView({
     const [caseDetailId, setCaseDetailId] = useState<string | null>(null);
     const [removeCaseTarget, setRemoveCaseTarget] = useState<QAJourneyCase | null>(null);
     const [removingCase, setRemovingCase] = useState(false);
+    const [exportOpen, setExportOpen] = useState(false);
 
     // Restaura preferência de recolhimento da coluna.
     useEffect(() => {
@@ -230,6 +232,15 @@ export function JourneyColumnView({
                         <MetricChip label="Manual" value={metrics.manualCases} tone="muted" />
                         <MetricChip label="Passando" value={metrics.passing} tone="success" />
                         <MetricChip label="Falhando" value={metrics.failing} tone="danger" />
+                        <button
+                            type="button"
+                            onClick={() => setExportOpen(true)}
+                            title="Exportar documentação (.md / .html)"
+                            className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg px-2.5 py-2 border border-border bg-foreground/5 text-foreground hover:border-brand/50 hover:text-brand transition-colors"
+                        >
+                            <Download className="w-4 h-4" />
+                            <span className="hidden lg:inline">Exportar</span>
+                        </button>
                         {selectedJourney && (
                             <button
                                 type="button"
@@ -258,7 +269,7 @@ export function JourneyColumnView({
                             {tree.map(node => (
                                 <SubflowBlock key={node.subflow.id} node={node} casesBySubflow={casesBySubflow} cb={cb} />
                             ))}
-                            <div className="w-full sm:w-72">
+                            <div className="w-full sm:w-96 lg:w-[30rem] xl:w-[34rem]">
                                 <AddRootButton onClick={() => setSubflowForm({ open: true, initial: null, defaultParentId: null })} />
                             </div>
                         </div>
@@ -278,6 +289,16 @@ export function JourneyColumnView({
                     defaultParentId={subflowForm.defaultParentId}
                     onClose={() => setSubflowForm({ open: false, initial: null, defaultParentId: null })}
                     onSave={saveSubflow}
+                />
+            )}
+
+            {exportOpen && (
+                <ExportModal
+                    journeys={orderedJourneys}
+                    subflowsByJourney={subflowsByJourney}
+                    casesBySubflow={casesBySubflow}
+                    defaultJourneyId={selectedId || null}
+                    onClose={() => setExportOpen(false)}
                 />
             )}
 
@@ -363,6 +384,9 @@ function SortableJourneyCard({
         zIndex: isDragging ? 2 : 1,
         opacity: isDragging ? 0.85 : 1,
     };
+    // Jornada só de documentação (nenhum caso, mas há sub-fluxos-documento):
+    // métricas de cobertura/execução não se aplicam — mostra a tag "Documentação".
+    const docOnly = metrics.totalCases === 0 && metrics.docCount > 0;
 
     if (collapsed) {
         return (
@@ -392,7 +416,9 @@ function SortableJourneyCard({
             {...attributes}
             {...listeners}
             className={`group text-left rounded-xl border px-3 py-2.5 transition-colors cursor-grab active:cursor-grabbing ${
-                active ? 'border-brand/50 bg-brand/[0.06]' : 'border-border hover:border-brand/30 hover:bg-foreground/5'
+                docOnly
+                    ? (active ? 'border-brand/50 bg-brand/10' : 'border-brand/20 bg-brand/[0.04] hover:border-brand/40')
+                    : (active ? 'border-brand/50 bg-brand/[0.06]' : 'border-border hover:border-brand/30 hover:bg-foreground/5')
             } ${isDragging ? 'ring-2 ring-brand shadow-xl' : ''}`}
         >
             <div className="flex items-center gap-2">
@@ -402,18 +428,29 @@ function SortableJourneyCard({
                     <span className="text-[8px] uppercase font-bold text-muted-foreground bg-foreground/10 rounded px-1 py-0.5">Rascunho</span>
                 )}
             </div>
-            <div className="flex items-center gap-2 mt-1.5">
-                <div className="flex-1 h-1.5 rounded-full bg-foreground/10 overflow-hidden">
-                    <div className="h-full rounded-full bg-brand" style={{ width: `${metrics.coveragePct}%` }} />
+            {docOnly ? (
+                <div className="mt-1.5">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-brand bg-brand/15 rounded-md px-2 py-0.5">
+                        <FileCode2 className="w-3 h-3" />
+                        {metrics.docCount === 1 ? 'Documentação' : `Documentação · ${metrics.docCount}`}
+                    </span>
                 </div>
-                <span className="text-[10px] font-bold text-brand tabular-nums">{metrics.coveragePct}%</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[10px] text-muted-foreground">
-                <span>{metrics.automatedCases} auto</span>
-                <span>{metrics.manualCases} manual</span>
-                <span className="text-green-500">{metrics.passing} ok</span>
-                <span className="text-red-500">{metrics.failing} falhas</span>
-            </div>
+            ) : (
+                <>
+                    <div className="flex items-center gap-2 mt-1.5">
+                        <div className="flex-1 h-1.5 rounded-full bg-foreground/10 overflow-hidden">
+                            <div className="h-full rounded-full bg-brand" style={{ width: `${metrics.coveragePct}%` }} />
+                        </div>
+                        <span className="text-[10px] font-bold text-brand tabular-nums">{metrics.coveragePct}%</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[10px] text-muted-foreground">
+                        <span>{metrics.automatedCases} auto</span>
+                        <span>{metrics.manualCases} manual</span>
+                        <span className="text-green-500">{metrics.passing} ok</span>
+                        <span className="text-red-500">{metrics.failing} falhas</span>
+                    </div>
+                </>
+            )}
         </button>
     );
 }

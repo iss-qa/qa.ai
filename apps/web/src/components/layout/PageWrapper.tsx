@@ -4,6 +4,7 @@ import { SessionLogProvider } from '@/components/SessionLogProvider';
 import { ShellProvider } from './shell-context';
 import { ScheduleWatcher } from '@/components/notifications/ScheduleWatcher';
 import { ScheduleAlertModal } from '@/components/notifications/ScheduleAlertModal';
+import { AutomationAlertWatcher } from '@/components/notifications/AutomationAlertWatcher';
 
 export function PageWrapper({ children }: { children: React.ReactNode }) {
     return (
@@ -18,8 +19,9 @@ export function PageWrapper({ children }: { children: React.ReactNode }) {
                         </main>
                     </div>
                 </div>
-                {/* Notificações globais: observa agendamentos e exibe alertas. */}
+                {/* Notificações globais: observa agendamentos e alertas de automação. */}
                 <ScheduleWatcher />
+                <AutomationAlertWatcher />
                 <ScheduleAlertModal />
             </ShellProvider>
         </SessionLogProvider>

@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Bell, Check, Trash2, X, CalendarClock, Info, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Bell, BellRing, Check, Trash2, X, CalendarClock, Info, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useNotificationStore, type AppNotification } from '@/store/notificationStore';
 
 function timeAgo(ms: number): string {
@@ -17,6 +18,7 @@ function timeAgo(ms: number): string {
 function iconFor(type: AppNotification['type']) {
     switch (type) {
         case 'schedule_upcoming': return <CalendarClock className="w-4 h-4 text-brand" />;
+        case 'automation_due': return <BellRing className="w-4 h-4 text-warning" />;
         case 'success': return <CheckCircle2 className="w-4 h-4 text-success" />;
         case 'error': return <AlertCircle className="w-4 h-4 text-danger" />;
         default: return <Info className="w-4 h-4 text-muted-foreground" />;
@@ -24,6 +26,7 @@ function iconFor(type: AppNotification['type']) {
 }
 
 export function NotificationBell() {
+    const router = useRouter();
     const [open, setOpen] = useState(false);
     // Evita hydration mismatch: o store é reidratado do localStorage só no
     // cliente, então no 1º render (SSR) mostramos o sino "vazio".
@@ -33,8 +36,17 @@ export function NotificationBell() {
 
     const notifications = useNotificationStore((s) => s.notifications);
     const markAllRead = useNotificationStore((s) => s.markAllRead);
+    const markRead = useNotificationStore((s) => s.markRead);
     const removeNotification = useNotificationStore((s) => s.removeNotification);
     const clearAll = useNotificationStore((s) => s.clearAll);
+
+    // Clicar numa notificação com rota: marca lida, fecha o painel e navega.
+    const handleOpenNotification = (n: AppNotification) => {
+        if (!n.href) return;
+        markRead(n.id);
+        setOpen(false);
+        router.push(n.href);
+    };
 
     const unread = mounted ? notifications.filter((n) => !n.read).length : 0;
 
@@ -105,7 +117,9 @@ export function NotificationBell() {
                             notifications.map((n) => (
                                 <div
                                     key={n.id}
-                                    className={`group flex items-start gap-3 px-4 py-3 border-b border-border/60 last:border-0 ${n.read ? '' : 'bg-brand/5'}`}
+                                    className={`group flex items-start gap-3 px-4 py-3 border-b border-border/60 last:border-0 ${n.read ? '' : 'bg-brand/5'} ${n.href ? 'cursor-pointer hover:bg-accent' : ''}`}
+                                    onClick={n.href ? () => handleOpenNotification(n) : undefined}
+                                    role={n.href ? 'button' : undefined}
                                 >
                                     <div className="mt-0.5 shrink-0">{iconFor(n.type)}</div>
                                     <div className="min-w-0 flex-1">
@@ -114,10 +128,12 @@ export function NotificationBell() {
                                             {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-brand shrink-0" />}
                                         </div>
                                         <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{n.message}</p>
-                                        <p className="text-[10px] text-muted-foreground/70 mt-1">{timeAgo(n.createdAt)}</p>
+                                        <p className="text-[10px] text-muted-foreground/70 mt-1">
+                                            {timeAgo(n.createdAt)}{n.href ? ' · clique para abrir' : ''}
+                                        </p>
                                     </div>
                                     <button
-                                        onClick={() => removeNotification(n.id)}
+                                        onClick={(e) => { e.stopPropagation(); removeNotification(n.id); }}
                                         className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-muted-foreground hover:text-danger hover:bg-accent transition-all shrink-0"
                                         title="Remover"
                                     >

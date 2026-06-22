@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FileSpreadsheet, Loader2, RefreshCw, Search } from 'lucide-react';
 
 import { ModalShell } from './ModalShell';
+import { formatExternalId } from './columns/helpers';
 import { createCase, errorMessage } from '@/lib/qa-journey/api';
 import {
     fetchSheetPreview,
@@ -498,7 +499,7 @@ export function ImportCasesModal({ projectId, subflowId, subflowTitle, existingC
                                                             aria-label={`Selecionar ${title}`}
                                                         />
                                                     </td>
-                                                    <td className="px-3 py-2 text-[11px] font-mono">{cell('external_id') || '—'}</td>
+                                                    <td className="px-3 py-2 text-[11px] font-mono" title={cell('external_id') || undefined}>{formatExternalId(cell('external_id')) || '—'}</td>
                                                     <td className="px-3 py-2 text-[11px]">{cell('platform') || '—'}</td>
                                                     <td className="px-3 py-2 text-foreground max-w-[380px]">
                                                         <span className="flex items-center gap-2">

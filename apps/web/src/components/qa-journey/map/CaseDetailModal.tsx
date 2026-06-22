@@ -26,6 +26,7 @@ import { PRIORITY_OPTIONS, RUN_STATUS_DISPLAY, RUN_STATUS_OPTIONS } from '@/lib/
 import { errorMessage, updateCase, uploadCaseEvidence, type TestCaseOption } from '@/lib/qa-journey/api';
 import { createJiraBugForCase, type CreatedJiraBug } from '@/lib/qa-journey/jira';
 import { GherkinView } from '@/components/qa-journey/GherkinEditor';
+import { formatExternalId } from '@/components/qa-journey/columns/helpers';
 import { loadSubflowRuns, type RunEvidence, type SubflowTestRun } from '@/lib/qa-journey/runs';
 import type { CaseRunStatus, QAJourneyCase, QAJourneySubflow } from '@/types/qa-journey';
 
@@ -231,7 +232,7 @@ export function CaseDetailModal({ subflow, case_, testCases, onBack, onClose, on
                         <h2 className="text-lg font-bold text-foreground leading-snug mt-1 break-words">{current.title}</h2>
                         {current.external_id && (
                             <span className="block text-[11px] font-mono text-muted-foreground truncate mt-0.5" title={current.external_id}>
-                                {current.external_id}
+                                {formatExternalId(current.external_id)}
                             </span>
                         )}
                     </div>

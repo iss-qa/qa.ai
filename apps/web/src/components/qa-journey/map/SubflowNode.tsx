@@ -16,6 +16,9 @@ export interface SubflowNodeData {
 export const SubflowNode = memo(function SubflowNode({ data, selected }: { data: SubflowNodeData; selected?: boolean }) {
     const { subflow, caseCount, isActive, onSelect } = data;
     const statusOpt = AUTOMATION_STATUS_OPTIONS.find(o => o.value === subflow.automation_status);
+    // Sub-fluxo de documento: sem badge de automação / contagem de casos —
+    // mostra só que é um documento (a prévia vive no nó-webview ao lado).
+    const isDoc = Boolean(subflow.html_doc);
 
     return (
         <button
@@ -50,27 +53,30 @@ export const SubflowNode = memo(function SubflowNode({ data, selected }: { data:
             </div>
 
             <div className="mt-2 flex items-center justify-between gap-2">
-                {statusOpt && (
-                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide ${statusOpt.color}`}>
-                        {statusOpt.label}
+                {isDoc ? (
+                    <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-brand" title="Documento HTML anexado (prévia no mapa)">
+                        <FileCode2 className="w-2.5 h-2.5" /> Documento
                     </span>
+                ) : (
+                    <>
+                        {statusOpt && (
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide ${statusOpt.color}`}>
+                                {statusOpt.label}
+                            </span>
+                        )}
+                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                            {subflow.test_case_id && (
+                                <span className="inline-flex items-center gap-0.5 text-brand" title="Vinculado a um teste Maestro">
+                                    <Link2 className="w-2.5 h-2.5" />
+                                </span>
+                            )}
+                            <span className="inline-flex items-center gap-0.5">
+                                <CheckCircle2 className="w-2.5 h-2.5" />
+                                {caseCount}
+                            </span>
+                        </div>
+                    </>
                 )}
-                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                    {subflow.html_doc && (
-                        <span className="inline-flex items-center gap-0.5 text-brand" title="Documento HTML anexado (prévia no mapa)">
-                            <FileCode2 className="w-2.5 h-2.5" />
-                        </span>
-                    )}
-                    {subflow.test_case_id && (
-                        <span className="inline-flex items-center gap-0.5 text-brand" title="Vinculado a um teste Maestro">
-                            <Link2 className="w-2.5 h-2.5" />
-                        </span>
-                    )}
-                    <span className="inline-flex items-center gap-0.5">
-                        <CheckCircle2 className="w-2.5 h-2.5" />
-                        {caseCount}
-                    </span>
-                </div>
             </div>
         </button>
     );

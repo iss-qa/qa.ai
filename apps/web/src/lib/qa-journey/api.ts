@@ -435,6 +435,8 @@ function sanitizeSubflowPayload(draft: QAJourneySubflowDraft): Record<string, un
     // parent_subflow_id (migration 015) — só entra no payload quando definido,
     // p/ não quebrar bancos sem a coluna. null é válido (subfluxo raiz).
     if (draft.parent_subflow_id !== undefined) payload.parent_subflow_id = draft.parent_subflow_id;
+    // Alerta de automação (migration 022).
+    if (draft.automation_alert_days !== undefined) payload.automation_alert_days = draft.automation_alert_days ?? null;
     return payload;
 }
 
@@ -511,5 +513,11 @@ function sanitizeCasePayload(draft: QAJourneyCaseDraft): Record<string, unknown>
     if (draft.writing_mode !== undefined) payload.writing_mode = draft.writing_mode;            // 017
     if (draft.description !== undefined) payload.description = draft.description ?? null;        // 017
     if (draft.gherkin !== undefined) payload.gherkin = draft.gherkin ?? null;                   // 017
+    // Alerta de automação + referência Playwright (migration 022).
+    if (draft.automation_alert_days !== undefined) payload.automation_alert_days = draft.automation_alert_days ?? null;
+    if (draft.automation_engine !== undefined) payload.automation_engine = draft.automation_engine ?? null;
+    if (draft.playwright_path !== undefined) payload.playwright_path = draft.playwright_path ?? null;
+    if (draft.playwright_repo !== undefined) payload.playwright_repo = draft.playwright_repo ?? null;
+    if (draft.playwright_spec !== undefined) payload.playwright_spec = draft.playwright_spec ?? null;
     return payload;
 }

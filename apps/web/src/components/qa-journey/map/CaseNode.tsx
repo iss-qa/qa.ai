@@ -4,6 +4,7 @@ import { memo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { FileText } from 'lucide-react';
 import { PRIORITY_OPTIONS, RUN_STATUS_OPTIONS } from '@/lib/qa-journey/constants';
+import { formatExternalId } from '@/components/qa-journey/columns/helpers';
 import type { QAJourneyCase } from '@/types/qa-journey';
 
 export interface CaseNodeData {
@@ -35,7 +36,7 @@ export const CaseNode = memo(function CaseNode({ data }: { data: CaseNodeData })
                 <FileText className="w-3 h-3 text-muted-foreground mt-0.5 shrink-0" />
                 <div className="flex-1 min-w-0">
                     {case_.external_id && (
-                        <div className="text-[9px] font-mono text-muted-foreground truncate leading-none mb-0.5" title={case_.external_id}>{case_.external_id}</div>
+                        <div className="text-[9px] font-mono text-muted-foreground truncate leading-none mb-0.5" title={case_.external_id}>{formatExternalId(case_.external_id)}</div>
                     )}
                     <div className="text-[11px] font-bold text-foreground line-clamp-2 leading-tight">{case_.title}</div>
                 </div>
