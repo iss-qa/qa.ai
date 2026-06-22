@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { Menu } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { UserMenu } from './UserMenu';
 import { useShell } from './shell-context';
 
@@ -48,6 +49,7 @@ export function Header() {
                         {headerSlot}
                     </div>
                 )}
+                <NotificationBell />
                 <ThemeToggle />
                 <UserMenu />
             </div>

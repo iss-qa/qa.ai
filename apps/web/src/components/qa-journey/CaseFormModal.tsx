@@ -59,7 +59,11 @@ export function CaseFormModal({
         platform: initial?.platform ?? undefined,
     }));
     // Modo de escrita: tradicional (step-by-step) ou gherkin.
-    const [mode, setMode] = useState<CaseWritingMode>(initial?.writing_mode ?? 'traditional');
+    // Caso NOVO abre em Gherkin por padrão; ao editar, respeita o modo salvo
+    // (casos legados sem writing_mode caem em tradicional).
+    const [mode, setMode] = useState<CaseWritingMode>(
+        initial ? (initial.writing_mode ?? 'traditional') : 'gherkin',
+    );
     // Tipo do caso: automatizado = tem teste Maestro vinculado.
     const [tipo, setTipo] = useState<'manual' | 'automated'>(initial?.test_case_id ? 'automated' : 'manual');
     const [saving, setSaving] = useState(false);

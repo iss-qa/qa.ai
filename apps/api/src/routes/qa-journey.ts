@@ -7,6 +7,7 @@ import { listSheetTabs, previewSheet, type GoogleServiceAccountCreds } from '../
 import { getDecryptedCredentials, resolveDefaultOrgId } from '../services/org-integrations';
 import { runSheetSync, type SheetConfigRow } from '../services/qa-journey-sync';
 import { captureSnapshot, captureAllSnapshots } from '../services/qa-journey-snapshots';
+import { createBugFromCase, type JiraBugCase } from '../services/jira';
 
 const qaJourneyRoutes: FastifyPluginAsync = async (fastify) => {
 
@@ -274,6 +275,38 @@ const qaJourneyRoutes: FastifyPluginAsync = async (fastify) => {
                 }));
 
                 return { project_id: projectId, journeys: tree };
+            } catch (e) {
+                return handleError(reply, e);
+            }
+        },
+    );
+
+    // ============================================================
+    // Jira — abertura automatica de bug ao reprovar um caso
+    // ============================================================
+
+    // POST /qa-journey/cases/:caseId/jira-bug
+    // Body: { description?: string }
+    // Abre um bug no Jira com titulo = titulo do caso, prioridade, gherkin e
+    // (no estilo tradicional) os demais campos. A descricao detalhada do QA
+    // tambem entra na issue. Credenciais vem do ambiente (JIRA_*).
+    fastify.post<{ Params: { caseId: string }; Body: { description?: string } }>(
+        '/qa-journey/cases/:caseId/jira-bug',
+        async (request, reply) => {
+            const { caseId } = request.params;
+            const description = (request.body?.description || '').toString();
+
+            const { data: case_, error } = await supabase
+                .from('qa_journey_cases')
+                .select('id, external_id, title, writing_mode, description, gherkin, steps_summary, expected_result, priority, platform, evidence_url, last_run_status')
+                .eq('id', caseId)
+                .maybeSingle();
+            if (error) return handleError(reply, error);
+            if (!case_) return reply.status(404).send({ error: 'caso nao encontrado' });
+
+            try {
+                const bug = await createBugFromCase(case_ as JiraBugCase, description);
+                return bug;
             } catch (e) {
                 return handleError(reply, e);
             }

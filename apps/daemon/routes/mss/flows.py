@@ -206,6 +206,7 @@ async def mss_flow_status_sse(flowId: str = "", filepath: str = ""):
         step_index = 0
         flow_name = ""
 
+        test_task = None
         if flow_file_path and os.path.exists(flow_file_path):
             test_task = asyncio.create_task(
                 _run_maestro_test_file(udid, flow_file_path, flow_env, step_queue)
@@ -338,6 +339,17 @@ async def mss_flow_status_sse(flowId: str = "", filepath: str = ""):
                 ),
                 qamindStartLines=start_lines,
             )
+        finally:
+            # Se o cliente SSE desconectou (usuário navegou pra fora / fechou o
+            # editor), o gerador é cancelado mas o test_task seguiria rodando o
+            # Maestro no device — virava "execução sozinha". Cancela a tarefa
+            # para encerrar o run; o runner mata o subprocesso no próprio finally.
+            # Em conclusão normal o task já está done() → cancel é no-op.
+            if test_task is not None and not test_task.done():
+                test_task.cancel()
+                if state.mss_flows.get(flowId, {}).get("status") == "RUNNING":
+                    state.mss_flows[flowId]["status"] = "FAILED"
+                    state.mss_flows[flowId]["error"] = "Execução cancelada (cliente desconectou)"
 
     return StreamingResponse(
         generate(),

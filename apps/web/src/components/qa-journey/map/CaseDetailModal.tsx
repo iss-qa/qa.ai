@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import {
     AlertTriangle,
     ArrowLeft,
+    Bug,
     CheckCircle2,
     ChevronRight,
     ClipboardCheck,
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react';
 import { PRIORITY_OPTIONS, RUN_STATUS_DISPLAY, RUN_STATUS_OPTIONS } from '@/lib/qa-journey/constants';
 import { errorMessage, updateCase, uploadCaseEvidence, type TestCaseOption } from '@/lib/qa-journey/api';
+import { createJiraBugForCase, type CreatedJiraBug } from '@/lib/qa-journey/jira';
 import { GherkinView } from '@/components/qa-journey/GherkinEditor';
 import { loadSubflowRuns, type RunEvidence, type SubflowTestRun } from '@/lib/qa-journey/runs';
 import type { CaseRunStatus, QAJourneyCase, QAJourneySubflow } from '@/types/qa-journey';
@@ -50,7 +52,20 @@ export function CaseDetailModal({ subflow, case_, testCases, onBack, onClose, on
     // Cópia local para refletir o registro de execução na hora, mesmo se o
     // pai não repassar onCaseUpdated.
     const [current, setCurrent] = useState<QAJourneyCase>(case_);
-    useEffect(() => { setCurrent(case_); }, [case_]);
+
+    // Estado do fluxo "reprovou → abre bug no Jira".
+    const [failDescription, setFailDescription] = useState('');
+    const [creatingBug, setCreatingBug] = useState(false);
+    const [createdBug, setCreatedBug] = useState<CreatedJiraBug | null>(null);
+    const [bugError, setBugError] = useState<string | null>(null);
+
+    // Troca de caso → reseta tudo (cópia local + painel de bug).
+    useEffect(() => {
+        setCurrent(case_);
+        setFailDescription('');
+        setCreatedBug(null);
+        setBugError(null);
+    }, [case_]);
 
     // Automatizado = CASO com teste Maestro vinculado (test_case_id).
     const isAutomated = Boolean(current.test_case_id);
@@ -117,6 +132,22 @@ export function CaseDetailModal({ subflow, case_, testCases, onBack, onClose, on
             setStatusError(errorMessage(e));
         } finally {
             setSavingStatus(null);
+        }
+    };
+
+    // Abre o bug no Jira (backend Fastify) com os dados do caso + a descrição
+    // detalhada do problema. Só fica disponível depois de marcar FALHOU.
+    const openJiraBug = async () => {
+        if (creatingBug || createdBug) return;
+        setCreatingBug(true);
+        setBugError(null);
+        try {
+            const bug = await createJiraBugForCase(current.id, failDescription);
+            setCreatedBug(bug);
+        } catch (e) {
+            setBugError(errorMessage(e));
+        } finally {
+            setCreatingBug(false);
         }
     };
 
@@ -306,6 +337,59 @@ export function CaseDetailModal({ subflow, case_, testCases, onBack, onClose, on
                                 );
                             })}
                         </div>
+
+                        {/* Reprovou → descreva o problema e abra o bug no Jira.
+                            Título do cenário, prioridade, Gherkin (ou os campos
+                            do estilo tradicional) entram automaticamente. */}
+                        {current.last_run_status === 'fail' && (
+                            <div className="flex flex-col gap-2 rounded-lg border border-red-500/30 bg-red-500/[0.04] p-3">
+                                <div className="flex items-center gap-2">
+                                    <Bug className="w-4 h-4 text-red-500" />
+                                    <h4 className="text-xs font-bold text-red-500">Abrir bug no Jira</h4>
+                                </div>
+                                <p className="text-[11px] text-muted-foreground -mt-1">
+                                    Descreva o problema em detalhes. O título do cenário, a prioridade
+                                    {isGherkin ? ' e o cenário Gherkin' : ' e os campos do caso'} são incluídos automaticamente no card.
+                                </p>
+                                <textarea
+                                    value={failDescription}
+                                    onChange={e => setFailDescription(e.target.value)}
+                                    rows={4}
+                                    placeholder="Ex.: ao inserir um e-mail inválido, o botão Continuar permaneceu habilitado e nenhuma mensagem de erro foi exibida."
+                                    disabled={creatingBug || Boolean(createdBug)}
+                                    className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:opacity-60"
+                                />
+                                {createdBug ? (
+                                    <div className="flex items-center gap-1.5 text-[11px] text-green-500">
+                                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                        Bug criado:
+                                        <a
+                                            href={createdBug.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 font-bold text-brand hover:underline"
+                                        >
+                                            {createdBug.key} <ExternalLink className="w-3 h-3" />
+                                        </a>
+                                    </div>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={openJiraBug}
+                                        disabled={creatingBug}
+                                        className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-red-500/90 text-white hover:bg-red-500 transition-colors disabled:opacity-60"
+                                    >
+                                        {creatingBug
+                                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            : <Bug className="w-3.5 h-3.5" />}
+                                        {creatingBug ? 'Abrindo bug…' : 'Abrir bug no Jira'}
+                                    </button>
+                                )}
+                                {bugError && (
+                                    <p className="text-[11px] text-danger bg-danger/10 rounded px-2 py-1 whitespace-pre-wrap">{bugError}</p>
+                                )}
+                            </div>
+                        )}
 
                         {/* Evidência (imagem ou vídeo) */}
                         <div className="flex flex-col gap-2 pt-1">

@@ -31,6 +31,7 @@ import { ParticleBackground } from './ParticleBackground';
 import { SubflowModal } from './SubflowModal';
 import { CaseDetailModal } from './CaseDetailModal';
 import { JourneyHtmlModal } from './JourneyHtmlModal';
+import { HtmlDocModal } from './HtmlDocModal';
 import { MapSettingsPopover } from './MapSettingsPopover';
 import { useMapSettings } from './useMapSettings';
 import { animateNodesTo, collectDescendants, resolveCollisions } from './collision';
@@ -57,11 +58,14 @@ const NODE_TYPES: NodeTypes = {
 
 // Tamanhos default por tipo de node
 const JOURNEY_DEFAULT = { width: 240, height: 110 };
-const SUBFLOW_DEFAULT = { width: 220, height: 80 };
-const CASE_DEFAULT = { width: 200, height: 64 };
+const SUBFLOW_DEFAULT = { width: 260, height: 92 };
+const CASE_DEFAULT = { width: 230, height: 76 };
 // Carrega já no tamanho de leitura (≈ modal médio) — o usuário estica pelas
 // bordas ou clica em expandir para a visão quase tela cheia.
 const HTML_DOC_DEFAULT = { width: 880, height: 620 };
+// Prévia de documento de sub-fluxo: um pouco menor que a da jornada (são mais
+// numerosos no grafo). Também redimensionável/expansível.
+const SUBFLOW_HTML_DOC_DEFAULT = { width: 720, height: 520 };
 
 // Layout customizado pelo usuario (drag + resize), persistido em localStorage por projeto.
 type CustomLayout = Record<string, { x?: number; y?: number; width?: number; height?: number }>;
@@ -118,6 +122,8 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
     const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
     // Jornada cujo documento HTML anexado está aberto no modal.
     const [htmlJourneyId, setHtmlJourneyId] = useState<string | null>(null);
+    // Sub-fluxo cujo documento HTML anexado está aberto no modal.
+    const [htmlSubflowId, setHtmlSubflowId] = useState<string | null>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [mapSettings, updateMapSettings] = useMapSettings();
     // 'pan' = mãozinha (arrastar a tela); 'select' = ponteiro (caixa de
@@ -229,7 +235,10 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                     const htmlId = `html:${journey.id}`;
                     const hCustom = customLayout[htmlId];
                     const htmlData: HtmlDocNodeData = {
-                        journey,
+                        docId: journey.id,
+                        title: journey.title,
+                        html: journey.html_doc,
+                        color: journey.color || undefined,
                         onOpenFull: setHtmlJourneyId,
                     };
                     nodes.push({
@@ -256,6 +265,10 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                     });
                 }
 
+                // IDs dos subfluxos desta jornada — para validar parent_subflow_id
+                // (um pai órfão/fora da jornada cai de volta na raiz).
+                const subIds = new Set(sub.map(s => s.id));
+
                 sub.forEach(subflow => {
                     const cases = casesBySubflow[subflow.id] || [];
                     const subflowData: SubflowNodeData = {
@@ -265,24 +278,66 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                         onSelect: selectSubflow,
                     };
                     const sCustom = customLayout[subflow.id];
+                    const subW = sCustom?.width ?? SUBFLOW_DEFAULT.width;
                     nodes.push({
                         id: subflow.id,
                         type: 'subflow',
                         position: { x: 0, y: 0 },
                         data: subflowData,
-                        width: sCustom?.width ?? SUBFLOW_DEFAULT.width,
+                        width: subW,
                         height: sCustom?.height ?? SUBFLOW_DEFAULT.height,
-                        ...(sCustom?.width || sCustom?.height
-                            ? { style: { width: sCustom.width, height: sCustom.height } }
-                            : {}),
+                        // Largura SEMPRE fixa → o texto quebra (line-clamp) em vez de
+                        // esticar o card. Altura só quando o usuário redimensiona;
+                        // senão cresce com o conteúdo.
+                        style: { width: subW, ...(sCustom?.height ? { height: sCustom.height } : {}) },
                     });
+                    // Subfluxo filho liga ao PAI; raiz liga à jornada. Assim o
+                    // dagre (LR) posiciona o filho à direita do pai, não da jornada.
+                    const parentId = subflow.parent_subflow_id && subIds.has(subflow.parent_subflow_id)
+                        ? subflow.parent_subflow_id
+                        : null;
+                    const edgeSource = parentId || journey.id;
                     edges.push({
-                        id: `${journey.id}->${subflow.id}`,
-                        source: journey.id,
+                        id: `${edgeSource}->${subflow.id}`,
+                        source: edgeSource,
                         target: subflow.id,
                         animated: true,
-                        style: { stroke: journey.color || '#7c3aed', strokeWidth: 1.5, opacity: 0.6 },
+                        style: { stroke: journey.color || '#7c3aed', strokeWidth: 1.5, opacity: parentId ? 0.8 : 0.6 },
                     });
+
+                    // Documento HTML anexado ao sub-fluxo → "webview" filha (igual
+                    // ao da jornada). Sempre visível enquanto o sub-fluxo aparece;
+                    // arrastável/redimensionável e expansível em tela cheia.
+                    if (subflow.html_doc) {
+                        const subHtmlId = `html:sub:${subflow.id}`;
+                        const hCustom = customLayout[subHtmlId];
+                        const w = hCustom?.width ?? SUBFLOW_HTML_DOC_DEFAULT.width;
+                        const h = hCustom?.height ?? SUBFLOW_HTML_DOC_DEFAULT.height;
+                        const subHtmlData: HtmlDocNodeData = {
+                            docId: subflow.id,
+                            title: subflow.title,
+                            html: subflow.html_doc,
+                            color: journey.color || undefined,
+                            onOpenFull: setHtmlSubflowId,
+                        };
+                        nodes.push({
+                            id: subHtmlId,
+                            type: 'htmlDoc',
+                            position: { x: 0, y: 0 },
+                            data: subHtmlData,
+                            dragHandle: '.html-doc-drag',
+                            width: w,
+                            height: h,
+                            style: { width: w, height: h },
+                        });
+                        edges.push({
+                            id: `${subflow.id}->${subHtmlId}`,
+                            source: subflow.id,
+                            target: subHtmlId,
+                            animated: false,
+                            style: { stroke: journey.color || '#7c3aed', strokeWidth: 1.5, opacity: 0.5, strokeDasharray: '6 4' },
+                        });
+                    }
 
                     // 3º nível: ramo de casos de teste (quando o sub-fluxo está expandido)
                     if (expandedSubflows.has(subflow.id)) {
@@ -293,16 +348,15 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                                 onSelect: openCaseFromMap,
                             };
                             const cCustom = customLayout[c.id];
+                            const caseW = cCustom?.width ?? CASE_DEFAULT.width;
                             nodes.push({
                                 id: c.id,
                                 type: 'case',
                                 position: { x: 0, y: 0 },
                                 data: caseData,
-                                width: cCustom?.width ?? CASE_DEFAULT.width,
+                                width: caseW,
                                 height: cCustom?.height ?? CASE_DEFAULT.height,
-                                ...(cCustom?.width || cCustom?.height
-                                    ? { style: { width: cCustom.width, height: cCustom.height } }
-                                    : {}),
+                                style: { width: caseW, ...(cCustom?.height ? { height: cCustom.height } : {}) },
                             });
                             edges.push({
                                 id: `${subflow.id}->${c.id}`,
@@ -322,6 +376,35 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
 
         // Primeiro aplica dagre para todos
         const positioned = applyDagreLayout(nodes, edges, { direction: 'LR', rankSep: 150, nodeSep: 28 });
+
+        // Balanceia os casos de cada sub-fluxo: metade ACIMA, metade ABAIXO do
+        // pai (em vez de cascatear todos para baixo). O pai fica centralizado no
+        // "leque" de casos — ex.: 16 casos → 8 em cima, 8 embaixo.
+        const posById = new Map(positioned.map(n => [n.id, n]));
+        const caseChildrenOf = new Map<string, typeof positioned>();
+        for (const e of edges) {
+            const src = posById.get(e.source);
+            const tgt = posById.get(e.target);
+            if (src?.type === 'subflow' && tgt?.type === 'case') {
+                const arr = caseChildrenOf.get(e.source) || [];
+                arr.push(tgt);
+                caseChildrenOf.set(e.source, arr);
+            }
+        }
+        const CASE_GAP = 18;
+        for (const [subId, kids] of caseChildrenOf) {
+            const sub = posById.get(subId);
+            if (!sub || kids.length === 0) continue;
+            const subCenterY = sub.position.y + (sub.height ?? SUBFLOW_DEFAULT.height) / 2;
+            kids.sort((a, b) => a.position.y - b.position.y);  // preserva a ordem do dagre
+            const heights = kids.map(k => k.height ?? CASE_DEFAULT.height);
+            const totalH = heights.reduce((s, h) => s + h, 0) + CASE_GAP * (kids.length - 1);
+            let y = subCenterY - totalH / 2;
+            kids.forEach((k, i) => {
+                k.position = { ...k.position, y };   // mantém o x (rank) do dagre
+                y += heights[i] + CASE_GAP;
+            });
+        }
 
         // Sobrescreve posicoes customizadas pelo usuario (drag)
         const final = positioned.map(n => {
@@ -700,6 +783,23 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                             key={j.id}
                             journey={j}
                             onClose={() => setHtmlJourneyId(null)}
+                        />
+                    ) : null;
+                })()}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {htmlSubflowId && (() => {
+                    const s = Object.values(subflowsByJourney).flat().find(x => x.id === htmlSubflowId);
+                    const j = s ? journeys.find(x => x.id === s.journey_id) : null;
+                    return s?.html_doc ? (
+                        <HtmlDocModal
+                            key={s.id}
+                            title={s.title}
+                            subtitle={`Documento do sub-fluxo${j ? ` · ${j.title}` : ''}`}
+                            html={s.html_doc}
+                            accentColor={j?.color || undefined}
+                            onClose={() => setHtmlSubflowId(null)}
                         />
                     ) : null;
                 })()}

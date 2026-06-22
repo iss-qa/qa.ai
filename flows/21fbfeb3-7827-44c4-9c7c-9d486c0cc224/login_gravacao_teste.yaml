@@ -16,4 +16,4 @@ appId: br.com.foxbit.foxbitandroid
 - tapOn:
     id: "bt_login_continue"
 - tapOn:
-    id: "Tentar novamente"
+    id: "bt_login_continue"

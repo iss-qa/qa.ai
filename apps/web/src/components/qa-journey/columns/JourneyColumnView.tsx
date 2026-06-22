@@ -254,13 +254,11 @@ export function JourneyColumnView({
                             <AddRootButton onClick={() => setSubflowForm({ open: true, initial: null, defaultParentId: null })} />
                         </div>
                     ) : (
-                        <div className="flex gap-3 items-start min-w-min">
+                        <div className="flex flex-col gap-5 items-start min-w-min">
                             {tree.map(node => (
-                                <div key={node.subflow.id} className="w-60 shrink-0 flex flex-col gap-2">
-                                    <SubflowBlock node={node} casesBySubflow={casesBySubflow} cb={cb} />
-                                </div>
+                                <SubflowBlock key={node.subflow.id} node={node} casesBySubflow={casesBySubflow} cb={cb} />
                             ))}
-                            <div className="w-60 shrink-0">
+                            <div className="w-full sm:w-72">
                                 <AddRootButton onClick={() => setSubflowForm({ open: true, initial: null, defaultParentId: null })} />
                             </div>
                         </div>

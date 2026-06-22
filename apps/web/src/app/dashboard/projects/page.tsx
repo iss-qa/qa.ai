@@ -1,6 +1,6 @@
 'use client';
 
-import { Plus, LayoutGrid, Trash2, Edit2, X, Loader2, FolderOpen, FolderSearch, FlaskConical, Cloud, Folder } from 'lucide-react';
+import { Plus, LayoutGrid, Trash2, Edit2, X, Loader2, FolderOpen, FolderSearch, FlaskConical, Cloud, Folder, Route } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { pickWorkspaceDirectory } from '@/lib/workspace';
@@ -18,6 +18,7 @@ interface Project {
     workspace_type?: WorkspaceType | null;
     workspace_path?: string | null;
     test_count?: number;
+    journey_count?: number;
 }
 
 export default function ProjectsPage() {
@@ -56,6 +57,16 @@ export default function ProjectsPage() {
 
             if (error) throw error;
 
+            // Contagem de jornadas PUBLICADAS por projeto em 1 roundtrip (mesma
+            // técnica do hub de Jornadas). Se a tabela não existir, fica 0.
+            const journeyCounts: Record<string, number> = {};
+            const jr = await supabase.from('qa_journeys').select('project_id').eq('is_published', true);
+            if (!jr.error) {
+                for (const r of (jr.data || []) as { project_id: string }[]) {
+                    journeyCounts[r.project_id] = (journeyCounts[r.project_id] || 0) + 1;
+                }
+            }
+
             // Count tests per project from Supabase
             const projectsWithCounts = await Promise.all(
                 (data || []).map(async (project: Project) => {
@@ -63,8 +74,14 @@ export default function ProjectsPage() {
                         .from('test_cases')
                         .select('*', { count: 'exact', head: true })
                         .eq('project_id', project.id);
-                    return { ...project, test_count: count || 0 };
+                    return { ...project, test_count: count || 0, journey_count: journeyCounts[project.id] || 0 };
                 })
+            );
+
+            // Projetos com MAIS jornadas primeiro; depois, mais recentes.
+            projectsWithCounts.sort((a, b) =>
+                (b.journey_count || 0) - (a.journey_count || 0)
+                || new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
             );
 
             setProjects(projectsWithCounts);
@@ -184,19 +201,30 @@ export default function ProjectsPage() {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {projects.map((project) => (
+                    {projects.map((project) => {
+                        // Projetos com jornadas (> 1) ganham destaque roxo, igual ao hub de Jornadas.
+                        const hasJourneys = (project.journey_count || 0) > 1;
+                        return (
                         <Link
                             key={project.id}
                             href={`/dashboard/projects/${project.id}`}
-                            className="group relative bg-gradient-to-br from-card to-card rounded-2xl border border-border hover:border-brand/30 transition-all duration-300 overflow-hidden hover:shadow-[0_0_30px_rgba(74,144,217,0.08)]"
+                            className={`group relative rounded-2xl border transition-all duration-300 overflow-hidden ${
+                                hasJourneys
+                                    ? 'bg-violet-500/[0.05] border-violet-500/40 hover:border-violet-500/70 hover:shadow-[0_0_30px_rgba(139,92,246,0.12)]'
+                                    : 'bg-gradient-to-br from-card to-card border-border hover:border-brand/30 hover:shadow-[0_0_30px_rgba(74,144,217,0.08)]'
+                            }`}
                         >
                             {/* Subtle gradient accent on hover */}
-                            <div className="absolute inset-0 bg-gradient-to-br from-brand/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                            <div className={`absolute inset-0 bg-gradient-to-br ${hasJourneys ? 'from-violet-500/5' : 'from-brand/5'} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
 
                             <div className="relative p-6">
                                 {/* Top row: icon + status + actions */}
                                 <div className="flex items-center justify-between mb-5">
-                                    <div className="w-11 h-11 rounded-xl bg-foreground/[0.04] border border-border flex items-center justify-center text-muted-foreground group-hover:bg-brand/10 group-hover:text-brand group-hover:border-brand/20 transition-all duration-300">
+                                    <div className={`w-11 h-11 rounded-xl border flex items-center justify-center transition-all duration-300 ${
+                                        hasJourneys
+                                            ? 'bg-violet-500/15 text-violet-400 border-violet-500/20'
+                                            : 'bg-foreground/[0.04] border-border text-muted-foreground group-hover:bg-brand/10 group-hover:text-brand group-hover:border-brand/20'
+                                    }`}>
                                         <LayoutGrid className="w-5 h-5" />
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -237,6 +265,14 @@ export default function ProjectsPage() {
                                             <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground" />
                                             <span className="text-[11px] text-muted-foreground capitalize">{project.platform}</span>
                                         </div>
+                                        {(project.journey_count || 0) > 0 && (
+                                            <div className="flex items-center gap-1.5">
+                                                <Route className="w-3 h-3 text-violet-400" />
+                                                <span className="text-[11px] text-violet-400 font-semibold">
+                                                    {project.journey_count} {project.journey_count === 1 ? 'jornada' : 'jornadas'}
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
                                     <span className="text-[11px] text-brand font-bold opacity-0 group-hover:opacity-100 transition-opacity">
                                         Abrir →
@@ -244,7 +280,8 @@ export default function ProjectsPage() {
                                 </div>
                             </div>
                         </Link>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
 

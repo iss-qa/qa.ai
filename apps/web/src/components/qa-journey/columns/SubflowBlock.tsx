@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import {
-    CheckCircle2, ChevronRight, Circle, Clock, FileCode2, FileSpreadsheet,
+    ArrowRight, CheckCircle2, ChevronRight, Circle, Clock, CornerDownRight, FileCode2, FileSpreadsheet,
     GitBranch, MinusCircle, MoreHorizontal, Plus, Trash2, XCircle,
 } from 'lucide-react';
 import type { CaseRunStatus, QAJourneyCase } from '@/types/qa-journey';
@@ -24,44 +24,67 @@ export function SubflowBlock({
     node,
     casesBySubflow,
     depth = 0,
+    parentTitle,
     cb,
 }: {
     node: SubflowTreeNode;
     casesBySubflow: Record<string, QAJourneyCase[]>;
     depth?: number;
+    // Título do subfluxo pai — exibido no filho ("de [WEB] - Cadastro") para
+    // deixar explícito o vínculo de hierarquia.
+    parentTitle?: string;
     cb: SubflowBlockCallbacks;
 }) {
     const { subflow, children } = node;
-    const cases = casesBySubflow[subflow.id] || [];
-    // Tipo do subfluxo derivado dos casos: automatizado = caso com Maestro
-    // vinculado. Todos auto = "Automatizado"; alguns = "Parcial"; nenhum = "Manual".
-    const autoCount = cases.filter(c => c.test_case_id).length;
-    const badge = cases.length > 0 && autoCount === cases.length
+    const cases = casesBySubflow[subflow.id] || [];   // casos DIRETOS deste subfluxo
+    // Contagem ROLA OS FILHOS: o card do pai reflete os casos do próprio + de
+    // todos os descendentes (ex.: pai sem casos diretos, mas com um filho de 2
+    // casos, mostra "2 casos"). Badge idem (Auto/Parcial/Manual da subárvore).
+    const subtree = subtreeStats(node, casesBySubflow);
+    const totalCount = subtree.total;
+    const autoCount = subtree.auto;
+    const badge = totalCount > 0 && autoCount === totalCount
         ? { label: 'Automatizado', color: 'bg-green-500/20 text-green-500' }
         : autoCount > 0
             ? { label: 'Parcial', color: 'bg-yellow-500/20 text-yellow-500' }
             : { label: 'Manual', color: 'bg-blue-500/20 text-blue-400' };
     const [menuOpen, setMenuOpen] = useState(false);
     const closeMenu = () => setMenuOpen(false);
+    const isChild = depth > 0;
+    const hasChildren = children.length > 0;
 
     return (
-        <div className={depth > 0 ? 'border-l-2 border-border/70 pl-3' : ''}>
+        // Árvore HORIZONTAL: card à esquerda, filhos à direita (desktop) ligados
+        // por seta. No mobile vira vertical (card em cima, filhos abaixo com trilho).
+        <div className="flex flex-col sm:flex-row sm:items-start">
             {/* SEM overflow-hidden: o menu de ações precisa transbordar o card.
                 Chevron + 3 pontinhos ficam no RODAPÉ e o menu abre PARA CIMA
-                (bottom-full), então nunca é cortado. */}
-            <div className="bg-card border border-border rounded-xl flex flex-col min-h-[104px]">
+                (bottom-full), então nunca é cortado.
+                Filho (isChild): borda + leve fundo em brand e card mais largo
+                (sobra espaço à direita) para exibir melhor os títulos dos casos. */}
+            <div className={`bg-card border rounded-xl flex flex-col min-h-[104px] w-full shrink-0 ${isChild ? 'sm:w-80' : 'sm:w-72'} ${isChild ? 'border-brand/30 bg-brand/[0.03]' : 'border-border'}`}>
                 {/* Cabeçalho — título em linha própria; badge + contador embaixo. */}
                 <div className="px-2.5 pt-2.5 pb-1.5 flex flex-col gap-1">
                     <div className="flex items-center gap-2">
-                        <GitBranch className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        {isChild
+                            ? <CornerDownRight className="w-3.5 h-3.5 text-brand shrink-0" />
+                            : <GitBranch className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
                         <span className="font-semibold text-sm text-foreground truncate flex-1">{subflow.title}</span>
                     </div>
+                    {isChild && parentTitle && (
+                        <span className="text-[10px] text-brand/80 pl-[22px] truncate" title={`Subfluxo de ${parentTitle}`}>
+                            de {parentTitle}
+                        </span>
+                    )}
                     <div className="flex items-center gap-2 pl-[22px]">
                         <span className={`text-[9px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 ${badge.color}`}>
                             {badge.label}
                         </span>
-                        <span className="text-[11px] text-muted-foreground tabular-nums">
-                            {cases.length} {cases.length === 1 ? 'caso' : 'casos'}
+                        <span
+                            className="text-[11px] text-muted-foreground tabular-nums"
+                            title={hasChildren ? 'Inclui casos dos subfluxos filhos' : undefined}
+                        >
+                            {totalCount} {totalCount === 1 ? 'caso' : 'casos'}
                         </span>
                     </div>
                 </div>
@@ -123,22 +146,48 @@ export function SubflowBlock({
                 </div>
             </div>
 
-            {/* Subfluxos filhos (recursivo) */}
-            {children.length > 0 && (
-                <div className="flex flex-col gap-2 mt-2">
-                    {children.map(child => (
-                        <SubflowBlock
-                            key={child.subflow.id}
-                            node={child}
-                            casesBySubflow={casesBySubflow}
-                            depth={depth + 1}
-                            cb={cb}
-                        />
-                    ))}
+            {/* Subfluxos filhos (recursivo).
+                Desktop: seta horizontal em brand saindo do pai → coluna de filhos
+                  à direita (mais indentada).
+                Mobile: empilha abaixo, com trilho vertical em brand (pl + border-l). */}
+            {hasChildren && (
+                <div className="flex flex-col sm:flex-row sm:items-stretch mt-2 sm:mt-0">
+                    <div className="hidden sm:flex items-center self-stretch px-1.5 text-brand/60" aria-hidden>
+                        <ArrowRight className="w-5 h-5" />
+                    </div>
+                    <div className="flex flex-col gap-2 sm:gap-3 ml-3 sm:ml-0 pl-3 sm:pl-0 border-l-2 sm:border-l-0 border-l-brand/40">
+                        {children.map(child => (
+                            <SubflowBlock
+                                key={child.subflow.id}
+                                node={child}
+                                casesBySubflow={casesBySubflow}
+                                depth={depth + 1}
+                                parentTitle={subflow.title}
+                                cb={cb}
+                            />
+                        ))}
+                    </div>
                 </div>
             )}
         </div>
     );
+}
+
+// Soma os casos do subfluxo + de TODOS os descendentes (subárvore).
+// `auto` = casos com Maestro vinculado, para derivar o badge do pai.
+function subtreeStats(
+    node: SubflowTreeNode,
+    casesBySubflow: Record<string, QAJourneyCase[]>,
+): { total: number; auto: number } {
+    const own = casesBySubflow[node.subflow.id] || [];
+    let total = own.length;
+    let auto = own.filter(c => c.test_case_id).length;
+    for (const ch of node.children) {
+        const s = subtreeStats(ch, casesBySubflow);
+        total += s.total;
+        auto += s.auto;
+    }
+    return { total, auto };
 }
 
 function CaseRow({ case_, onClick, onRemove }: { case_: QAJourneyCase; onClick: () => void; onRemove: () => void }) {
@@ -157,7 +206,7 @@ function CaseRow({ case_, onClick, onRemove }: { case_: QAJourneyCase; onClick: 
             >
                 <div className="flex items-center gap-2">
                     <RunStatusIcon status={case_.last_run_status} />
-                    <span className="text-xs text-foreground truncate flex-1">{case_.title}</span>
+                    <span className="text-xs text-foreground line-clamp-2 flex-1">{case_.title}</span>
                     <span className={`text-[8px] font-bold uppercase rounded px-1 py-0.5 ${isAuto ? 'bg-green-500/15 text-green-500' : 'bg-blue-500/15 text-blue-400'}`}>
                         {isAuto ? 'Auto' : 'Manual'}
                     </span>

@@ -2,6 +2,8 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { SessionLogProvider } from '@/components/SessionLogProvider';
 import { ShellProvider } from './shell-context';
+import { ScheduleWatcher } from '@/components/notifications/ScheduleWatcher';
+import { ScheduleAlertModal } from '@/components/notifications/ScheduleAlertModal';
 
 export function PageWrapper({ children }: { children: React.ReactNode }) {
     return (
@@ -16,6 +18,9 @@ export function PageWrapper({ children }: { children: React.ReactNode }) {
                         </main>
                     </div>
                 </div>
+                {/* Notificações globais: observa agendamentos e exibe alertas. */}
+                <ScheduleWatcher />
+                <ScheduleAlertModal />
             </ShellProvider>
         </SessionLogProvider>
     );

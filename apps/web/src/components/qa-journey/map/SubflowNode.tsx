@@ -2,7 +2,7 @@
 
 import { memo } from 'react';
 import { Handle, NodeResizer, Position } from 'reactflow';
-import { CheckCircle2, GitBranch, Link2 } from 'lucide-react';
+import { CheckCircle2, FileCode2, GitBranch, Link2 } from 'lucide-react';
 import { AUTOMATION_STATUS_OPTIONS } from '@/lib/qa-journey/constants';
 import type { QAJourneySubflow } from '@/types/qa-journey';
 
@@ -42,9 +42,9 @@ export const SubflowNode = memo(function SubflowNode({ data, selected }: { data:
             <div className="flex items-start gap-2">
                 <GitBranch className="w-3.5 h-3.5 text-brand mt-0.5 shrink-0" />
                 <div className="flex-1 min-w-0">
-                    <div className="text-xs font-bold text-foreground truncate">{subflow.title}</div>
+                    <div className="text-xs font-bold text-foreground line-clamp-2 leading-snug">{subflow.title}</div>
                     {subflow.description && (
-                        <div className="text-[10px] text-muted-foreground truncate">{subflow.description}</div>
+                        <div className="text-[10px] text-muted-foreground line-clamp-3 leading-snug mt-0.5">{subflow.description}</div>
                     )}
                 </div>
             </div>
@@ -56,6 +56,11 @@ export const SubflowNode = memo(function SubflowNode({ data, selected }: { data:
                     </span>
                 )}
                 <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                    {subflow.html_doc && (
+                        <span className="inline-flex items-center gap-0.5 text-brand" title="Documento HTML anexado (prévia no mapa)">
+                            <FileCode2 className="w-2.5 h-2.5" />
+                        </span>
+                    )}
                     {subflow.test_case_id && (
                         <span className="inline-flex items-center gap-0.5 text-brand" title="Vinculado a um teste Maestro">
                             <Link2 className="w-2.5 h-2.5" />

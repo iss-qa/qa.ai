@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 
 import { SubflowFormModal } from '@/components/qa-journey/SubflowFormModal';
-import { descendantIds } from '@/components/qa-journey/columns/helpers';
+import { descendantIds, buildSubflowTree, type SubflowTreeNode } from '@/components/qa-journey/columns/helpers';
 import { CaseFormModal } from '@/components/qa-journey/CaseFormModal';
 import { ImportCasesModal } from '@/components/qa-journey/ImportCasesModal';
 import { DeleteConfirmModal } from '@/components/qa-journey/DeleteConfirmModal';
@@ -98,10 +98,21 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
         return () => { cancelled = true; };
     }, [journey?.project_id]);
 
-    const sortedSubflows = useMemo(
-        () => [...subflows].sort((a, b) => (a.sequence - b.sequence) || a.title.localeCompare(b.title)),
-        [subflows],
-    );
+    // Lista achatada em ORDEM DE ÁRVORE: cada filho (parent_subflow_id) vem logo
+    // após o pai, carregando seu `depth` para indentação. Antes a lista era plana
+    // (só ordenada por sequence), então um subfluxo filho aparecia como card de
+    // topo em vez de aninhado dentro do pai.
+    const orderedSubflows = useMemo(() => {
+        const out: { sub: QAJourneySubflow; depth: number }[] = [];
+        const walk = (nodes: SubflowTreeNode[], depth: number) => {
+            for (const n of nodes) {
+                out.push({ sub: n.subflow, depth });
+                if (n.children.length) walk(n.children, depth + 1);
+            }
+        };
+        walk(buildSubflowTree(subflows), 0);
+        return out;
+    }, [subflows]);
 
     const casesBySubflow = useMemo(() => {
         const map: Record<string, QAJourneyCase[]> = {};
@@ -111,6 +122,39 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
         }
         return map;
     }, [cases]);
+
+    // Total de casos da SUBÁRVORE (próprios + de todos os descendentes). O card
+    // do sub-fluxo pai soma os filhos — ex.: pai com 0 casos diretos mas filhos
+    // com 4+6+3 mostra o total, não "0 casos".
+    const subtreeCaseCount = useMemo(() => {
+        const childrenOf = new Map<string, string[]>();
+        for (const s of subflows) {
+            if (s.parent_subflow_id) {
+                (childrenOf.get(s.parent_subflow_id) || childrenOf.set(s.parent_subflow_id, []).get(s.parent_subflow_id)!).push(s.id);
+            }
+        }
+        const memo = new Map<string, number>();
+        const count = (id: string): number => {
+            if (memo.has(id)) return memo.get(id)!;
+            memo.set(id, 0);  // guarda contra ciclo
+            let total = (casesBySubflow[id] || []).length;
+            for (const childId of (childrenOf.get(id) || [])) total += count(childId);
+            memo.set(id, total);
+            return total;
+        };
+        const result: Record<string, number> = {};
+        for (const s of subflows) result[s.id] = count(s.id);
+        return result;
+    }, [subflows, casesBySubflow]);
+
+    // ID externo costuma ser longo (ex.: tc_cenario_front_..._001) e empurrava a
+    // tabela para fora, escondendo as ações. Exibimos um rótulo curto
+    // "TC_<nº final>" (id completo no tooltip).
+    const shortExternalId = (id: string): string => {
+        const m = id.match(/(\d+)\s*$/);
+        if (m) return `TC_${m[1]}`;
+        return id.length > 12 ? `${id.slice(0, 11)}…` : id;
+    };
 
     const toggleExpand = (id: string) => {
         setExpanded(prev => {
@@ -270,18 +314,23 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
 
             {/* Subflows list */}
             <div className="flex flex-col gap-3">
-                {sortedSubflows.length === 0 && (
+                {orderedSubflows.length === 0 && (
                     <div className="bg-card rounded-2xl shadow-sm border border-border p-8 text-center text-textSecondary text-sm">
                         Nenhum sub-fluxo cadastrado ainda. Clique em &quot;Novo Sub-fluxo&quot; para adicionar o primeiro.
                     </div>
                 )}
 
-                {sortedSubflows.map(sub => {
+                {orderedSubflows.map(({ sub, depth }) => {
                     const subCases = casesBySubflow[sub.id] || [];
+                    const totalCases = subtreeCaseCount[sub.id] ?? subCases.length;
                     const statusOpt = AUTOMATION_STATUS_OPTIONS.find(o => o.value === sub.automation_status);
                     const isOpen = expanded.has(sub.id);
                     return (
-                        <div key={sub.id} className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden">
+                        <div
+                            key={sub.id}
+                            style={depth > 0 ? { marginLeft: depth * 28 } : undefined}
+                            className={`bg-card rounded-2xl shadow-sm border overflow-hidden ${depth > 0 ? 'border-l-2 border-l-brand/40 border-border' : 'border-border'}`}
+                        >
                             <div className="flex items-center justify-between px-6 py-4 gap-4">
                                 <button
                                     onClick={() => toggleExpand(sub.id)}
@@ -305,8 +354,11 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                             <Link2 className="w-3 h-3" /> Maestro
                                         </span>
                                     )}
-                                    <span className="text-[10px] text-muted-foreground ml-auto">
-                                        {subCases.length} {subCases.length === 1 ? 'caso' : 'casos'}
+                                    <span
+                                        className="text-[10px] text-muted-foreground ml-auto"
+                                        title={totalCases !== subCases.length ? 'Inclui casos dos subfluxos filhos' : undefined}
+                                    >
+                                        {totalCases} {totalCases === 1 ? 'caso' : 'casos'}
                                     </span>
                                 </button>
 
@@ -375,13 +427,13 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                                             : 'hover:bg-accent';
                                                     return (
                                                         <tr key={c.id} className={`transition-colors ${rowTone}`}>
-                                                            <td className="px-6 py-2 text-[11px] font-mono text-muted-foreground">
-                                                                {c.external_id || '—'}
+                                                            <td className="px-6 py-2 text-[11px] font-mono text-muted-foreground w-20" title={c.external_id || undefined}>
+                                                                {c.external_id ? shortExternalId(c.external_id) : '—'}
                                                             </td>
                                                             <td className="px-6 py-2">
-                                                                <div className="flex items-center gap-2">
+                                                                <div className="flex items-center gap-2 min-w-0">
                                                                     <FileText className="w-3 h-3 text-muted-foreground shrink-0" />
-                                                                    <span className="text-foreground">{c.title}</span>
+                                                                    <span className="text-foreground whitespace-normal">{c.title}</span>
                                                                 </div>
                                                             </td>
                                                             <td className="px-6 py-2 text-[11px] text-muted-foreground">

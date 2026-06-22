@@ -4,9 +4,11 @@
 // Resumo executivo + lista de casos (filhos) já visível — sem cobrir o mapa
 // nem os filtros, como acontecia com o drawer lateral.
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronRight, FileText, GitBranch, Link2, X } from 'lucide-react';
+import { ChevronRight, FileCode2, FileText, GitBranch, Link2, X } from 'lucide-react';
 import { AUTOMATION_STATUS_OPTIONS, PRIORITY_OPTIONS, RUN_STATUS_DISPLAY, RUN_STATUS_OPTIONS } from '@/lib/qa-journey/constants';
+import { HtmlDocModal } from './HtmlDocModal';
 import type { QAJourney, QAJourneyCase, QAJourneySubflow } from '@/types/qa-journey';
 
 interface SubflowModalProps {
@@ -19,6 +21,7 @@ interface SubflowModalProps {
 
 export function SubflowModal({ journey, subflow, cases, onSelectCase, onClose }: SubflowModalProps) {
     const statusOpt = AUTOMATION_STATUS_OPTIONS.find(o => o.value === subflow.automation_status);
+    const [docOpen, setDocOpen] = useState(false);
 
     return (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
@@ -78,6 +81,22 @@ export function SubflowModal({ journey, subflow, cases, onSelectCase, onClose }:
                         </div>
                     )}
 
+                    {subflow.html_doc && (
+                        <button
+                            type="button"
+                            onClick={() => setDocOpen(true)}
+                            className="flex items-center justify-between gap-2 w-full bg-foreground/[0.02] border border-border rounded-lg p-3 text-left hover:border-brand/50 transition-colors group"
+                        >
+                            <span className="flex items-center gap-2 text-xs font-bold text-foreground">
+                                <FileCode2 className="w-4 h-4 text-brand" />
+                                Documento HTML anexado
+                            </span>
+                            <span className="text-[11px] text-muted-foreground group-hover:text-brand transition-colors flex items-center gap-1">
+                                Ver documento <ChevronRight className="w-3.5 h-3.5" />
+                            </span>
+                        </button>
+                    )}
+
                     {/* Casos (filhos) — visíveis de cara */}
                     <div className="flex flex-col gap-2">
                         <div className="flex items-center gap-2">
@@ -114,6 +133,16 @@ export function SubflowModal({ journey, subflow, cases, onSelectCase, onClose }:
                     </div>
                 </div>
             </motion.div>
+
+            {docOpen && subflow.html_doc && (
+                <HtmlDocModal
+                    title={subflow.title}
+                    subtitle={`Documento do sub-fluxo · ${journey.title}`}
+                    html={subflow.html_doc}
+                    accentColor={journey.color || undefined}
+                    onClose={() => setDocOpen(false)}
+                />
+            )}
         </div>
     );
 }

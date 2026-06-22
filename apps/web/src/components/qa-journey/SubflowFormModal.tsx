@@ -1,9 +1,10 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { FileCode2, GitBranch, Loader2, Trash2, Upload } from 'lucide-react';
+import { FileArchive, FileCode2, GitBranch, Loader2, Trash2, Upload } from 'lucide-react';
 import { ModalShell } from './ModalShell';
 import { AUTOMATION_STATUS_OPTIONS } from '@/lib/qa-journey/constants';
+import { readHtmlDocument } from '@/lib/qa-journey/html-bundle';
 import type { TestCaseOption } from '@/lib/qa-journey/api';
 import type { QAJourneySubflow, QAJourneySubflowDraft, AutomationStatus } from '@/types/qa-journey';
 
@@ -37,27 +38,36 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
     const [htmlEnabled, setHtmlEnabled] = useState(Boolean(initial?.html_doc));
     const [htmlDoc, setHtmlDoc] = useState<string | null>(initial?.html_doc ?? null);
     const [htmlFileName, setHtmlFileName] = useState<string | null>(initial?.html_doc ? 'documento atual' : null);
+    const [htmlAssetCount, setHtmlAssetCount] = useState(0);
     const [htmlError, setHtmlError] = useState<string | null>(null);
+    const [htmlLoading, setHtmlLoading] = useState(false);
     const htmlInputRef = useRef<HTMLInputElement>(null);
 
-    const handleHtmlFile = (file: File | undefined) => {
+    const handleHtmlFile = async (file: File | undefined) => {
         setHtmlError(null);
         if (!file) return;
-        if (file.size > 2 * 1024 * 1024) {
-            setHtmlError('Arquivo muito grande (máx. 2 MB). Remova imagens embutidas pesadas e tente de novo.');
+        // .zip é maior (HTML + anexos); HTML solto fica no limite anterior.
+        const maxRaw = file.name.toLowerCase().endsWith('.zip') ? 20 * 1024 * 1024 : 4 * 1024 * 1024;
+        if (file.size > maxRaw) {
+            setHtmlError(`Arquivo muito grande (máx. ${maxRaw / 1024 / 1024} MB).`);
             return;
         }
-        const reader = new FileReader();
-        reader.onload = () => {
-            setHtmlDoc(String(reader.result || ''));
-            setHtmlFileName(file.name);
-        };
-        reader.onerror = () => setHtmlError('Falha ao ler o arquivo.');
-        reader.readAsText(file);
+        setHtmlLoading(true);
+        try {
+            // Pacote .zip → HTML com imagens embutidas (data URI); .html → texto cru.
+            const doc = await readHtmlDocument(file);
+            setHtmlDoc(doc.html);
+            setHtmlFileName(doc.fileName);
+            setHtmlAssetCount(doc.assetCount);
+        } catch (e) {
+            setHtmlError(e instanceof Error ? e.message : 'Falha ao ler o arquivo.');
+        } finally {
+            setHtmlLoading(false);
+        }
     };
 
     const isEdit = Boolean(initial?.id);
-    const canSave = (draft.title || '').trim().length > 0 && !saving;
+    const canSave = (draft.title || '').trim().length > 0 && !saving && !htmlLoading;
 
     const submit = async () => {
         if (!canSave) return;
@@ -227,8 +237,10 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
                             <FileCode2 className="w-3.5 h-3.5 text-brand" /> Documento HTML
                         </span>
                         <span className="text-[11px] text-muted-foreground leading-snug">
-                            Importe um HTML formatado (ex.: planilha de testes estilizada). Ele será renderizado
-                            ao abrir o sub-fluxo no mapa — com cores, abas e interações preservadas.
+                            Importe um HTML formatado (ex.: planilha de testes estilizada) ou um{' '}
+                            <span className="font-semibold text-foreground">.zip</span> com o HTML + a pasta de anexos.
+                            No .zip as imagens são embutidas automaticamente, então prints e ícones aparecem ao
+                            abrir o sub-fluxo — com cores, abas e interações preservadas.
                         </span>
                     </div>
                 </div>
@@ -238,26 +250,29 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
                         <input
                             ref={htmlInputRef}
                             type="file"
-                            accept=".html,.htm,text/html"
+                            accept=".html,.htm,.zip,text/html,application/zip"
                             className="hidden"
-                            onChange={e => { handleHtmlFile(e.target.files?.[0]); e.target.value = ''; }}
+                            onChange={e => { void handleHtmlFile(e.target.files?.[0]); e.target.value = ''; }}
                         />
                         <button
                             type="button"
                             onClick={() => htmlInputRef.current?.click()}
-                            className="inline-flex items-center gap-1.5 text-xs font-bold text-brand border border-brand/30 rounded-lg px-3 py-1.5 hover:bg-brand/10 transition-colors"
+                            disabled={htmlLoading}
+                            className="inline-flex items-center gap-1.5 text-xs font-bold text-brand border border-brand/30 rounded-lg px-3 py-1.5 hover:bg-brand/10 disabled:opacity-50 transition-colors"
                         >
-                            <Upload className="w-3.5 h-3.5" />
-                            {htmlDoc ? 'Substituir arquivo' : 'Importar arquivo HTML'}
+                            {htmlLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                            {htmlLoading ? 'Processando…' : htmlDoc ? 'Substituir arquivo' : 'Importar HTML ou .zip'}
                         </button>
-                        {htmlDoc && (
+                        {htmlDoc && !htmlLoading && (
                             <>
-                                <span className="text-[11px] text-muted-foreground">
+                                <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                                    {htmlAssetCount > 0 && <FileArchive className="w-3 h-3 text-brand" />}
                                     {htmlFileName} · {(htmlDoc.length / 1024).toFixed(0)} KB
+                                    {htmlAssetCount > 0 && ` · ${htmlAssetCount} ${htmlAssetCount === 1 ? 'anexo embutido' : 'anexos embutidos'}`}
                                 </span>
                                 <button
                                     type="button"
-                                    onClick={() => { setHtmlDoc(null); setHtmlFileName(null); }}
+                                    onClick={() => { setHtmlDoc(null); setHtmlFileName(null); setHtmlAssetCount(0); }}
                                     className="inline-flex items-center gap-1 text-[11px] text-danger hover:underline"
                                 >
                                     <Trash2 className="w-3 h-3" /> Remover

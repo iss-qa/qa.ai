@@ -227,6 +227,11 @@ export default function TestEditorPage() {
     // SSE state for recording
     const recordingEsRef = useRef<EventSource | null>(null);
     const recordingUdidRef = useRef<string>('');
+    // SSE da EXECUÇÃO de teste (Maestro Studio Server). Guardado em ref para ser
+    // fechado no unmount e antes de cada novo run — senão um EventSource órfão
+    // sobrevive à navegação, o browser auto-reconecta e o daemon RE-EXECUTA o
+    // flow ao (re)conectar, fazendo testes antigos rodarem sozinhos no device.
+    const executionEsRef = useRef<EventSource | null>(null);
 
     // Pending inputText modal state
     const [pendingInputModal, setPendingInputModal] = useState<{
@@ -251,6 +256,12 @@ export default function TestEditorPage() {
             if (recordingEsRef.current) {
                 recordingEsRef.current.close();
                 recordingEsRef.current = null;
+            }
+            // Fecha o SSE de execução para não deixar um EventSource órfão que
+            // o browser reconecta sozinho (re-disparando o flow no daemon).
+            if (executionEsRef.current) {
+                executionEsRef.current.close();
+                executionEsRef.current = null;
             }
         };
     }, []);
@@ -967,6 +978,7 @@ export default function TestEditorPage() {
             setIsExecuting(false);
             setShowExecutionOverlay(false);
             try { es.close(); } catch {}
+            if (executionEsRef.current === es) executionEsRef.current = null;
             // Fire-and-forget Supabase update — don't block the UI. Defer one
             // tick so the setSteps closure has actually run and finalSteps is
             // populated with the corrected statuses.
@@ -996,7 +1008,16 @@ export default function TestEditorPage() {
         };
         let lastScrolledIdx = -1;
 
+        // Fecha qualquer execução anterior ainda viva antes de abrir uma nova —
+        // garante no máximo um EventSource de execução por vez (sem órfãos que
+        // reconectam e re-disparam flows).
+        if (executionEsRef.current) {
+            try { executionEsRef.current.close(); } catch {}
+            executionEsRef.current = null;
+        }
+
         const es = new EventSource(sseUrl);
+        executionEsRef.current = es;
 
         es.onmessage = (e) => {
             try {
@@ -1055,7 +1076,10 @@ export default function TestEditorPage() {
         es.onerror = () => {
             // Browser auto-reconnects on transient errors. Only escalate when
             // the flow already wrapped up — otherwise let the heartbeat resume.
-            if (finished) try { es.close(); } catch {}
+            if (finished) {
+                try { es.close(); } catch {}
+                if (executionEsRef.current === es) executionEsRef.current = null;
+            }
         };
 
         // Give the SSE handler a moment to connect and send the initial

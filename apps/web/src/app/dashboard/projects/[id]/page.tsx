@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { ArrowLeft, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, Upload, ScanSearch, Eye, Wand2, MoreVertical, Clapperboard, CalendarClock, Search, X, ChevronRight } from 'lucide-react';
+import { ArrowLeft, FlaskConical, Loader2, LayoutGrid, Edit2, Trash2, Upload, ScanSearch, Eye, Wand2, MoreVertical, Clapperboard, CalendarClock, Route, Search, X, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -40,6 +40,20 @@ export default function ProjectDetailPage() {
         const full = buildTestTree(tests, folders);
         return testSearch.trim() ? filterTestTree(full, testSearch) : full;
     }, [tests, folders, testSearch]);
+    // Execução MAIS RECENTE do projeto (maior last_run_at). Os cards STATUS e
+    // ÚLTIMA EXECUÇÃO derivam daqui — antes o STATUS usava `tests.some(failed)`
+    // ("qualquer teste que já falhou"), travando o projeto em "Falha" por causa
+    // de uma falha antiga mesmo após um lote recente ter passado.
+    const lastRun = useMemo(() => {
+        let latest: TestCase | null = null;
+        let latestMs = -Infinity;
+        for (const t of tests) {
+            if (!t.last_run_at) continue;
+            const ms = new Date(t.last_run_at).getTime();
+            if (!Number.isNaN(ms) && ms > latestMs) { latestMs = ms; latest = t; }
+        }
+        return latest;
+    }, [tests]);
     const [loading, setLoading] = useState(true);
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [formData, setFormData] = useState({ name: '', description: '', platform: 'android', status: 'Ativo', workspace_path: '' });
@@ -1049,7 +1063,7 @@ export default function ProjectDetailPage() {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <div className="bg-foreground/5 border border-border rounded-xl p-4">
                     <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">TOTAL TESTES</p>
                     <p className="text-2xl font-bold text-foreground mt-1">{tests.length}</p>
@@ -1061,24 +1075,21 @@ export default function ProjectDetailPage() {
                 <div className="bg-foreground/5 border border-border rounded-xl p-4">
                     <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">STATUS</p>
                     <p className={`text-2xl font-bold mt-1 ${
-                        tests.some(t => t.status === 'failed') ? 'text-red-400' :
-                        tests.some(t => t.status === 'passed') ? 'text-green-400' :
+                        lastRun?.status === 'failed' ? 'text-red-400' :
+                        lastRun?.status === 'passed' ? 'text-green-400' :
                         'text-muted-foreground'
                     }`}>
-                        {tests.some(t => t.status === 'failed') ? 'Falha' :
-                         tests.some(t => t.status === 'passed') ? 'Sucesso' :
+                        {lastRun?.status === 'failed' ? 'Falha' :
+                         lastRun?.status === 'passed' ? 'Sucesso' :
                          tests.length > 0 ? 'Pendente' : '—'}
                     </p>
                 </div>
                 <div className="bg-foreground/5 border border-border rounded-xl p-4">
                     <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">ÚLTIMA EXECUÇÃO</p>
                     <p className="text-2xl font-bold text-muted-foreground mt-1">
-                        {(() => {
-                            const lastRun = tests.find(t => t.last_run_at);
-                            return lastRun?.last_run_at
-                                ? new Date(lastRun.last_run_at).toLocaleDateString('pt-BR')
-                                : '—';
-                        })()}
+                        {lastRun?.last_run_at
+                            ? new Date(lastRun.last_run_at).toLocaleDateString('pt-BR')
+                            : '—'}
                     </p>
                 </div>
                 {/* Agendamentos / Execuções em lote — clicável */}
@@ -1102,6 +1113,21 @@ export default function ProjectDetailPage() {
                         <ChevronRight className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
                     </p>
                 </button>
+                {/* Jornadas — atalho para a tela de jornadas deste projeto */}
+                <Link
+                    href={`/dashboard/qa-journey?project=${projectId}`}
+                    className="bg-foreground/5 border border-border rounded-xl p-4 transition-colors hover:border-brand/50 hover:bg-foreground/[0.08] group"
+                    title="Abrir as jornadas de QA deste projeto"
+                >
+                    <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider flex items-center gap-1">
+                        <Route className="w-3 h-3" /> JORNADAS
+                    </p>
+                    <p className="text-2xl font-bold text-foreground mt-1">Ver</p>
+                    <p className="text-[11px] mt-0.5 inline-flex items-center gap-1 text-muted-foreground">
+                        mapa &amp; cards
+                        <ChevronRight className="w-3 h-3 group-hover:text-foreground" />
+                    </p>
+                </Link>
             </div>
 
             {/* Tests List */}

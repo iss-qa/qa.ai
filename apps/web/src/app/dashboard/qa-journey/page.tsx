@@ -268,6 +268,7 @@ export default function QAJourneyPublicPage() {
                     loading={projectsLoading}
                     onSelect={id => { setView(null); setSolo(null); setFocusJourneyId(null); setProjectId(id); }}
                     onToggleMode={handleToggleMode}
+                    onChanged={async () => { setProjects(await loadProjectsHub()); }}
                 />
             </div>
         );

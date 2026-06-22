@@ -1,18 +1,20 @@
 'use client';
 
-// Nó do mapa que renderiza o documento HTML da jornada como uma "webview":
-// aparece quando a jornada é expandida, em tamanho médio, arrastável pela
-// barra de título e redimensionável pelas bordas (conteúdo responsivo).
+// Nó do mapa que renderiza um documento HTML (de jornada OU sub-fluxo) como uma
+// "webview": aparece quando o nó pai é expandido, em tamanho médio, arrastável
+// pela barra de título e redimensionável pelas bordas (conteúdo responsivo).
 
 import { memo, useState } from 'react';
 import { Handle, NodeResizer, Position } from 'reactflow';
 import { FileCode2, Maximize2 } from 'lucide-react';
-import type { QAJourney } from '@/types/qa-journey';
 
 export interface HtmlDocNodeData {
-    journey: QAJourney;
+    docId: string;        // id do dono (journey.id ou subflow.id) — passado p/ onOpenFull
+    title: string;        // título exibido na barra ("Documento — {title}")
+    html: string;         // conteúdo HTML (self-contained quando veio de .zip)
+    color?: string;       // cor de acento (cor da jornada)
     // Abre o documento no modal de tela cheia.
-    onOpenFull: (journeyId: string) => void;
+    onOpenFull: (docId: string) => void;
 }
 
 export const HtmlDocNode = memo(function HtmlDocNode({
@@ -24,8 +26,8 @@ export const HtmlDocNode = memo(function HtmlDocNode({
     selected?: boolean;
     dragging?: boolean;
 }) {
-    const { journey, onOpenFull } = data;
-    const color = journey.color || '#7c3aed';
+    const { docId, title, html, onOpenFull } = data;
+    const color = data.color || '#7c3aed';
     const [resizing, setResizing] = useState(false);
 
     return (
@@ -56,11 +58,11 @@ export const HtmlDocNode = memo(function HtmlDocNode({
             <div className="html-doc-drag cursor-move flex items-center gap-2 px-3 py-2 border-b border-border bg-surface-muted/60 shrink-0 select-none">
                 <FileCode2 className="w-3.5 h-3.5 text-brand shrink-0" />
                 <span className="text-[11px] font-bold text-foreground truncate flex-1">
-                    Documento — {journey.title}
+                    Documento — {title}
                 </span>
                 <button
                     type="button"
-                    onClick={e => { e.stopPropagation(); onOpenFull(journey.id); }}
+                    onClick={e => { e.stopPropagation(); onOpenFull(docId); }}
                     className="nodrag p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                     title="Abrir em tela cheia"
                     aria-label="Abrir documento em tela cheia"
@@ -72,11 +74,11 @@ export const HtmlDocNode = memo(function HtmlDocNode({
             {/* O iframe engole eventos de mouse — desliga pointer-events durante
                 drag/resize para a interação do React Flow não travar no meio. */}
             <iframe
-                srcDoc={journey.html_doc || ''}
+                srcDoc={html || ''}
                 sandbox="allow-scripts"
                 className="nodrag nowheel flex-1 w-full bg-white"
                 style={{ pointerEvents: dragging || resizing ? 'none' : 'auto' }}
-                title={`Documento HTML — ${journey.title}`}
+                title={`Documento HTML — ${title}`}
             />
         </div>
     );

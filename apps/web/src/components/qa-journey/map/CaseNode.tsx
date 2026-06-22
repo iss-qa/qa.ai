@@ -35,9 +35,9 @@ export const CaseNode = memo(function CaseNode({ data }: { data: CaseNodeData })
                 <FileText className="w-3 h-3 text-muted-foreground mt-0.5 shrink-0" />
                 <div className="flex-1 min-w-0">
                     {case_.external_id && (
-                        <div className="text-[9px] font-mono text-muted-foreground leading-none mb-0.5">{case_.external_id}</div>
+                        <div className="text-[9px] font-mono text-muted-foreground truncate leading-none mb-0.5" title={case_.external_id}>{case_.external_id}</div>
                     )}
-                    <div className="text-[11px] font-bold text-foreground truncate leading-tight">{case_.title}</div>
+                    <div className="text-[11px] font-bold text-foreground line-clamp-2 leading-tight">{case_.title}</div>
                 </div>
             </div>
 

@@ -792,6 +792,12 @@ async def _do_run_maestro_test(
     except Exception as e:
         return False, str(e)
     finally:
+        # Se a tarefa foi cancelada (cliente SSE desconectou), `proc` ainda está
+        # vivo (returncode None) — mata para o Maestro não continuar dirigindo o
+        # device sozinho. Em sucesso/timeout returncode já está setado → no-op.
+        if proc is not None and proc.returncode is None:
+            try: proc.kill()
+            except Exception: pass
         state.maestro_test_active.clear()
         # Selectively release Maestro's ADB forwards. We CANNOT use
         # `adb forward --remove-all` here: it would also drop the scrcpy
