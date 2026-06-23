@@ -33,6 +33,15 @@ export interface RepoSpec {
     name: string;
 }
 
+export interface WebConfigSummary {
+    project_id: string;
+    project_name: string;
+    repo_owner: string;
+    repo_name: string;
+    default_branch: string;
+    specs_path: string;
+}
+
 export type WebRunStatus = 'queued' | 'running' | 'passed' | 'failed' | 'error' | 'cancelled';
 
 export interface WebRun {

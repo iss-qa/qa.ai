@@ -121,6 +121,28 @@ export interface RepoSpec {
 }
 
 /**
+ * Lê o conteúdo de um arquivo do repositório (GitHub Contents API).
+ * Retorna o texto decodificado (UTF-8) ou null se não encontrado.
+ */
+export async function getFileContent(
+    token: string,
+    p: RepoRef & { path: string; ref: string },
+): Promise<string | null> {
+    const res = await ghFetch(
+        token,
+        `/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path)}?ref=${encodeURIComponent(p.ref)}`,
+    );
+    if (res.status === 404) return null;
+    if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(`GitHub contents falhou (HTTP ${res.status}): ${txt.slice(0, 200)}`);
+    }
+    const body = await res.json().catch(() => ({})) as { content?: string; encoding?: string };
+    if (!body.content || body.encoding !== 'base64') return null;
+    return Buffer.from(body.content.replace(/\n/g, ''), 'base64').toString('utf-8');
+}
+
+/**
  * Lista specs do repositório (arquivos *.spec.ts / *.spec.js / *.test.ts) sob
  * specsPath, usando a Git Trees API recursiva (1 chamada). Filtra no cliente.
  */

@@ -23,6 +23,7 @@ import {
     findLatestRun,
     getRun,
     listSpecs,
+    getFileContent,
 } from '../services/github-actions';
 import {
     parsePlaywrightJson,
@@ -77,6 +78,32 @@ const webRunsRoutes: FastifyPluginAsync = async (fastify) => {
     // ============================================================
     // Config do projeto Web (repo + workflow + token de ingestão)
     // ============================================================
+
+    // GET /web-configs — lista todos os projetos que têm repositório configurado.
+    // Usado pelo formulário de caso de Jornada para o picker de projeto→spec.
+    fastify.get('/web-configs', async (_request, reply) => {
+        try {
+            const { data, error } = await supabase
+                .from('web_test_configs')
+                .select('project_id, repo_owner, repo_name, default_branch, specs_path, projects(name)');
+            if (error) throw error;
+            return {
+                configs: (data || []).map((c) => {
+                    const proj = c.projects as { name?: string } | null;
+                    return {
+                        project_id: c.project_id as string,
+                        project_name: proj?.name || (c.repo_name as string),
+                        repo_owner: c.repo_owner as string,
+                        repo_name: c.repo_name as string,
+                        default_branch: c.default_branch as string,
+                        specs_path: c.specs_path as string,
+                    };
+                }),
+            };
+        } catch (e) {
+            return reply.status(500).send({ error: 'list_configs_failed', detail: msg(e) });
+        }
+    });
 
     // GET /web-config?projectId=...
     fastify.get('/web-config', async (request, reply) => {
@@ -144,6 +171,26 @@ const webRunsRoutes: FastifyPluginAsync = async (fastify) => {
     // ============================================================
     // Specs do repositório
     // ============================================================
+
+    // GET /web-runs/spec-content?projectId=...&path=...&ref=optional
+    // Retorna o conteúdo texto do arquivo de spec (para visualização no modal).
+    fastify.get('/web-runs/spec-content', async (request, reply) => {
+        const { projectId, path, ref } = request.query as { projectId?: string; path?: string; ref?: string };
+        if (!projectId || !path) return reply.status(400).send({ error: 'projectId e path são obrigatórios' });
+        try {
+            const c = await getConfig(projectId);
+            if (!c) return reply.status(404).send({ error: 'config_missing' });
+            const token = await resolveGitHubToken();
+            const content = await getFileContent(token, {
+                owner: c.repo_owner, repo: c.repo_name,
+                path, ref: ref || c.default_branch,
+            });
+            if (content === null) return reply.status(404).send({ error: 'file_not_found' });
+            return { content, path, ref: ref || c.default_branch };
+        } catch (e) {
+            return reply.status(500).send({ error: 'get_content_failed', detail: msg(e) });
+        }
+    });
 
     // GET /web-runs/specs?projectId=...&ref=optional
     fastify.get('/web-runs/specs', async (request, reply) => {
@@ -341,6 +388,93 @@ const webRunsRoutes: FastifyPluginAsync = async (fastify) => {
             return { run, results: results || [] };
         } catch (e) {
             return reply.status(500).send({ error: 'get_run_failed', detail: msg(e) });
+        }
+    });
+
+    // ============================================================
+    // Agendamentos Web (web_test_schedules)
+    // ============================================================
+
+    // GET /web-schedules?projectId=...
+    fastify.get('/web-schedules', async (request, reply) => {
+        const { projectId } = request.query as { projectId?: string };
+        if (!projectId) return reply.status(400).send({ error: 'projectId obrigatório' });
+        try {
+            const { data, error } = await supabase
+                .from('web_test_schedules')
+                .select('*')
+                .eq('project_id', projectId)
+                .order('created_at', { ascending: true });
+            if (error) throw error;
+            return { schedules: data || [] };
+        } catch (e) {
+            return reply.status(500).send({ error: 'list_schedules_failed', detail: msg(e) });
+        }
+    });
+
+    // POST /web-schedules
+    fastify.post('/web-schedules', async (request, reply) => {
+        const body = request.body as {
+            projectId?: string; name?: string; specs?: string[];
+            branch?: string; cron?: string; timezone?: string;
+        };
+        if (!body?.projectId || !body.name || !body.cron) {
+            return reply.status(400).send({ error: 'projectId, name e cron são obrigatórios' });
+        }
+        try {
+            const { data, error } = await supabase
+                .from('web_test_schedules')
+                .insert({
+                    project_id: body.projectId,
+                    name: body.name.trim(),
+                    specs: body.specs || [],
+                    branch: (body.branch || 'main').trim(),
+                    cron: body.cron.trim(),
+                    timezone: (body.timezone || 'America/Sao_Paulo').trim(),
+                    is_active: true,
+                })
+                .select('*')
+                .single();
+            if (error) throw error;
+            return { schedule: data };
+        } catch (e) {
+            return reply.status(400).send({ error: 'create_schedule_failed', detail: msg(e) });
+        }
+    });
+
+    // PATCH /web-schedules/:id
+    fastify.patch<{ Params: { id: string } }>('/web-schedules/:id', async (request, reply) => {
+        const id = request.params.id;
+        const body = request.body as {
+            name?: string; specs?: string[]; branch?: string;
+            cron?: string; timezone?: string; is_active?: boolean;
+        };
+        try {
+            const update: Record<string, unknown> = {};
+            if (body.name !== undefined) update.name = body.name.trim();
+            if (body.specs !== undefined) update.specs = body.specs;
+            if (body.branch !== undefined) update.branch = body.branch.trim();
+            if (body.cron !== undefined) update.cron = body.cron.trim();
+            if (body.timezone !== undefined) update.timezone = body.timezone.trim();
+            if (body.is_active !== undefined) update.is_active = body.is_active;
+            const { data, error } = await supabase
+                .from('web_test_schedules').update(update).eq('id', id).select('*').single();
+            if (error) throw error;
+            return { schedule: data };
+        } catch (e) {
+            return reply.status(400).send({ error: 'update_schedule_failed', detail: msg(e) });
+        }
+    });
+
+    // DELETE /web-schedules/:id
+    fastify.delete<{ Params: { id: string } }>('/web-schedules/:id', async (request, reply) => {
+        const id = request.params.id;
+        try {
+            const { error } = await supabase.from('web_test_schedules').delete().eq('id', id);
+            if (error) throw error;
+            return { ok: true };
+        } catch (e) {
+            return reply.status(500).send({ error: 'delete_schedule_failed', detail: msg(e) });
         }
     });
 };

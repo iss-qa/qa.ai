@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { Plus, Search, Filter, Play, Loader2, Wand2 } from 'lucide-react';
+import { Plus, Search, Filter, Play, Loader2, Wand2, Globe, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 
@@ -13,6 +13,21 @@ type TestRow = {
     created_at: string | null;
     status: string | null;
     projects?: { name: string | null; platform: string | null } | null;
+    // campos extras para testes Web
+    _type?: 'mobile' | 'web';
+    _spec_path?: string;
+    _gh_run_url?: string | null;
+    _run_status?: string | null;
+};
+
+// Testes Web: agrupados por spec + projeto a partir de web_test_runs.
+type WebSpecRow = {
+    spec: string | null;
+    project_id: string;
+    project_name: string;
+    last_status: string | null;
+    last_run_at: string | null;
+    gh_run_url: string | null;
 };
 
 function formatLastRun(iso: string | null): string {
@@ -38,8 +53,14 @@ function formatLastRun(iso: string | null): string {
 }
 
 function statusBadge(status: string | null): { label: string; classes: string } {
-    if (status === 'passed') return { label: 'Sucesso', classes: 'bg-success/10 text-success' };
-    if (status === 'failed') return { label: 'Falha', classes: 'bg-danger/10 text-danger' };
+    if (status === 'passed' || status === 'pass') return { label: 'Sucesso', classes: 'bg-success/10 text-success' };
+    if (status === 'failed' || status === 'fail') return { label: 'Falha', classes: 'bg-danger/10 text-danger' };
+    if (status === 'flaky') return { label: 'Flaky', classes: 'bg-warning/10 text-warning' };
+    if (status === 'skipped') return { label: 'Pulado', classes: 'bg-muted text-muted-foreground' };
+    if (status === 'running') return { label: 'Rodando', classes: 'bg-brand/10 text-brand' };
+    if (status === 'queued') return { label: 'Na fila', classes: 'bg-muted text-muted-foreground' };
+    if (status === 'error') return { label: 'Erro', classes: 'bg-danger/10 text-danger' };
+    if (status === 'cancelled') return { label: 'Cancelado', classes: 'bg-muted text-muted-foreground' };
     return { label: 'Pendente', classes: 'bg-muted text-muted-foreground' };
 }
 
@@ -48,24 +69,74 @@ export default function TestsPage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [projectFilter, setProjectFilter] = useState('');
+    const [platformFilter, setPlatformFilter] = useState<'all' | 'mobile' | 'web'>('all');
 
     useEffect(() => {
         let cancelled = false;
         (async () => {
-            // Mais recentes sempre no topo: por última execução; testes nunca
-            // executados vão para o fim, ordenados pela criação mais recente.
-            const { data, error } = await supabase
+            // Testes Mobile (Maestro — test_cases)
+            const { data: mobileData } = await supabase
                 .from('test_cases')
                 .select('id, name, project_id, last_run_at, created_at, status, projects:project_id ( name, platform )')
                 .order('last_run_at', { ascending: false, nullsFirst: false })
                 .order('created_at', { ascending: false });
-            if (cancelled) return;
-            if (error) {
-                console.error('Failed to load test_cases:', error);
-                setTests([]);
-            } else {
-                setTests((data as unknown as TestRow[]) || []);
+
+            const mobileRows: TestRow[] = ((mobileData as unknown as TestRow[]) || []).map(r => ({
+                ...r, _type: 'mobile' as const,
+            }));
+
+            // Testes Web — lê web_test_runs diretamente (sempre populado após trigger,
+            // independente de a ingestão de resultados ter ocorrido).
+            // Agrupa por spec+project_id → um entry por spec file distinto.
+            // Runs com spec=null representam a suite completa do projeto.
+            const { data: webRunsData } = await supabase
+                .from('web_test_runs')
+                .select('id, project_id, status, spec, gh_run_url, ended_at, created_at, projects(name)')
+                .order('created_at', { ascending: false })
+                .limit(500);
+
+            const webMap = new Map<string, WebSpecRow>();
+            for (const run of (webRunsData as unknown as Array<{
+                id: string;
+                project_id: string;
+                status: string | null;
+                spec: string | null;
+                gh_run_url: string | null;
+                ended_at: string | null;
+                created_at: string;
+                projects: { name: string } | null;
+            }>) || []) {
+                if (!run.project_id) continue;
+                const key = `${run.project_id}::${run.spec ?? '__suite__'}`;
+                if (!webMap.has(key)) {
+                    webMap.set(key, {
+                        spec: run.spec,
+                        project_id: run.project_id,
+                        project_name: run.projects?.name || run.project_id,
+                        last_status: run.status,
+                        last_run_at: run.ended_at || run.created_at,
+                        gh_run_url: run.gh_run_url,
+                    });
+                }
             }
+
+            const webRows: TestRow[] = Array.from(webMap.values()).map(w => ({
+                id: `web::${w.project_id}::${encodeURIComponent(w.spec ?? '__suite__')}`,
+                name: w.spec ? (w.spec.split('/').pop()?.replace(/\.spec\.ts$/, '') || w.spec) : 'Suite completa',
+                project_id: w.project_id,
+                last_run_at: w.last_run_at,
+                created_at: null,
+                status: w.last_status,
+                projects: { name: w.project_name, platform: 'web' },
+                _type: 'web' as const,
+                _spec_path: w.spec || undefined,
+                _gh_run_url: w.gh_run_url,
+                _run_status: w.last_status,
+            }));
+
+            if (cancelled) return;
+            // Mobile primeiro, depois Web
+            setTests([...mobileRows, ...webRows]);
             setLoading(false);
         })();
         return () => { cancelled = true; };
@@ -86,13 +157,16 @@ export default function TestsPage() {
         const q = search.trim().toLowerCase();
         return tests.filter(t => {
             if (projectFilter && t.project_id !== projectFilter) return false;
+            if (platformFilter === 'mobile' && t._type === 'web') return false;
+            if (platformFilter === 'web' && t._type !== 'web') return false;
             if (!q) return true;
             return (
                 (t.name || '').toLowerCase().includes(q) ||
-                (t.projects?.name || '').toLowerCase().includes(q)
+                (t.projects?.name || '').toLowerCase().includes(q) ||
+                (t._spec_path || '').toLowerCase().includes(q)
             );
         });
-    }, [tests, search, projectFilter]);
+    }, [tests, search, projectFilter, platformFilter]);
 
     return (
         <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto flex flex-col gap-8">
@@ -120,9 +194,15 @@ export default function TestsPage() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                         <Filter className="w-4 h-4 text-muted-foreground hidden sm:block" />
-                        <label htmlFor="tests-project-filter" className="text-xs font-bold text-muted-foreground uppercase tracking-wider hidden sm:block">
-                            Projeto
-                        </label>
+                        {/* Filtro plataforma */}
+                        <div className="inline-flex bg-foreground/5 border border-border rounded-lg p-0.5 gap-0.5">
+                            {(['all', 'mobile', 'web'] as const).map(p => (
+                                <button key={p} onClick={() => setPlatformFilter(p)}
+                                    className={`px-2.5 py-1 text-xs font-bold rounded-md transition-colors ${platformFilter === p ? 'bg-brand/15 text-brand' : 'text-muted-foreground hover:text-foreground'}`}>
+                                    {p === 'all' ? 'Todos' : p === 'mobile' ? 'Mobile' : 'Web'}
+                                </button>
+                            ))}
+                        </div>
                         <select
                             id="tests-project-filter"
                             value={projectFilter}
@@ -169,13 +249,21 @@ export default function TestsPage() {
                                 const badge = statusBadge(test.status);
                                 const projName = test.projects?.name || '—';
                                 const platform = test.projects?.platform || '—';
+                                const isWeb = test._type === 'web';
                                 return (
                                     <tr key={test.id} className="hover:bg-accent transition-colors">
-                                        <td className="px-6 py-4 font-bold text-foreground">{test.name}</td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col gap-0.5">
+                                                <span className="font-bold text-foreground">{test.name}</span>
+                                                {isWeb && test._spec_path && (
+                                                    <span className="text-[10px] text-muted-foreground font-mono">{test._spec_path}</span>
+                                                )}
+                                            </div>
+                                        </td>
                                         <td className="px-6 py-4">{projName}</td>
                                         <td className="px-6 py-4">
-                                            <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground font-medium text-[10px] uppercase">
-                                                {platform}
+                                            <span className={`px-2 py-0.5 rounded font-medium text-[10px] uppercase ${isWeb ? 'bg-brand/15 text-brand' : 'bg-muted text-muted-foreground'}`}>
+                                                {isWeb ? 'Web' : platform}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-xs">{formatLastRun(test.last_run_at)}</td>
@@ -186,6 +274,24 @@ export default function TestsPage() {
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
+                                                {/* Ações Web */}
+                                                {isWeb ? (
+                                                    <>
+                                                        {test._gh_run_url && (
+                                                            <a href={test._gh_run_url} target="_blank" rel="noreferrer"
+                                                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-brand/10 hover:bg-brand/20 text-brand rounded-lg transition-colors border border-brand/20 text-xs font-bold">
+                                                                <ExternalLink className="w-3.5 h-3.5" /> GitHub
+                                                            </a>
+                                                        )}
+                                                        {test.project_id && (
+                                                            <Link href={`/dashboard/projects/${test.project_id}`}
+                                                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-foreground/5 hover:bg-foreground/10 text-muted-foreground hover:text-foreground rounded-lg transition-colors border border-border text-xs font-bold">
+                                                                <Globe className="w-3.5 h-3.5" /> Projeto
+                                                            </Link>
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                <>
                                                 <Link
                                                     href={`/dashboard/tests/editor?testId=${test.id}`}
                                                     className="p-2 hover:bg-brand/10 text-brand rounded-lg transition-colors"
@@ -210,6 +316,8 @@ export default function TestsPage() {
                                                         <Wand2 className="w-3.5 h-3.5" />
                                                         Studio
                                                     </span>
+                                                )}
+                                                </>
                                                 )}
                                             </div>
                                         </td>

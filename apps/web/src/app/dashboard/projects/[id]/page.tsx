@@ -21,6 +21,7 @@ import { MaestroStudioModal } from './_components/MaestroStudioModal';
 import { SaveAsTestModal } from './_components/SaveAsTestModal';
 import { EditProjectModal } from './_components/EditProjectModal';
 import { WebProjectPanel } from './_components/web/WebProjectPanel';
+import { WebScheduleModal } from './_components/web/WebScheduleModal';
 import { isWebPlatform } from '@/lib/platform';
 
 export default function ProjectDetailPage() {
@@ -33,6 +34,8 @@ export default function ProjectDetailPage() {
     // Web (Playwright via GitHub Actions) tem fluxo distinto do mobile (Maestro):
     // sem Importar/Criar/Gravar; em vez disso, conectar repo + rodar via CI.
     const isWeb = isWebPlatform(project?.platform);
+    // Último run web — alimenta os cards do header quando isWeb.
+    const [webLatestRun, setWebLatestRun] = useState<import('./_components/web/web-types').WebRun | null>(null);
     // Espelha o project em ref para handlers (postMessage) lerem o valor atual
     // sem recriar o listener nem capturar closure stale.
     const projectRef = useRef<Project | null>(null);
@@ -391,7 +394,11 @@ export default function ProjectDetailPage() {
     // Resumo p/ o card de Agendamentos (qtd ativa + desfecho do último lote).
     const [scheduleCount, setScheduleCount] = useState<number | null>(null);
     const [lastBatch, setLastBatch] = useState<{ status: string; passed_tests?: number; failed_tests?: number; total_tests?: number } | null>(null);
+    // Agendamentos Web (web_test_schedules) — usado quando isWeb.
+    const [webScheduleCount, setWebScheduleCount] = useState<number | null>(null);
+    const [webScheduleOpen, setWebScheduleOpen] = useState(false);
     const loadScheduleSummary = useCallback(async () => {
+        // Agendamentos Mobile (daemon)
         const D = process.env.NEXT_PUBLIC_DAEMON_URL || 'http://localhost:8001';
         try {
             const [sRes, bRes] = await Promise.all([
@@ -403,6 +410,16 @@ export default function ProjectDetailPage() {
             const b = await bRes.json().catch(() => []);
             if (bRes.ok && Array.isArray(b) && b.length) setLastBatch(b[0] ?? null);
         } catch { /* daemon offline */ }
+        // Agendamentos Web (API Fastify — service_role garante acesso)
+        try {
+            const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+            const res = await fetch(`${API}/web-schedules?projectId=${projectId}`);
+            if (res.ok) {
+                const body = await res.json().catch(() => ({ schedules: [] })) as { schedules?: { is_active?: boolean }[] };
+                const active = (body.schedules || []).filter((s) => s.is_active !== false).length;
+                setWebScheduleCount(active);
+            }
+        } catch { /* API offline */ }
     }, [projectId]);
 
     // Dispara a execução em lote dos testes selecionados na árvore.
@@ -1071,7 +1088,16 @@ export default function ProjectDetailPage() {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <div className="bg-foreground/5 border border-border rounded-xl p-4">
                     <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">TOTAL TESTES</p>
-                    <p className="text-2xl font-bold text-foreground mt-1">{tests.length}</p>
+                    <p className="text-2xl font-bold text-foreground mt-1">
+                        {isWeb ? (webLatestRun?.total ?? '—') : tests.length}
+                    </p>
+                    {isWeb && webLatestRun && webLatestRun.total > 0 && (
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                            <span className="text-success">{webLatestRun.passed}✓</span>
+                            {webLatestRun.failed > 0 && <span className="text-danger ml-1">{webLatestRun.failed}✗</span>}
+                            {webLatestRun.flaky > 0 && <span className="text-warning ml-1">{webLatestRun.flaky}~</span>}
+                        </p>
+                    )}
                 </div>
                 <div className="bg-foreground/5 border border-border rounded-xl p-4">
                     <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">PLATAFORMA</p>
@@ -1079,41 +1105,65 @@ export default function ProjectDetailPage() {
                 </div>
                 <div className="bg-foreground/5 border border-border rounded-xl p-4">
                     <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">STATUS</p>
-                    <p className={`text-2xl font-bold mt-1 ${
-                        lastRun?.status === 'failed' ? 'text-red-400' :
-                        lastRun?.status === 'passed' ? 'text-green-400' :
-                        'text-muted-foreground'
-                    }`}>
-                        {lastRun?.status === 'failed' ? 'Falha' :
-                         lastRun?.status === 'passed' ? 'Sucesso' :
-                         tests.length > 0 ? 'Pendente' : '—'}
-                    </p>
+                    {isWeb ? (
+                        <p className={`text-2xl font-bold mt-1 ${
+                            webLatestRun?.status === 'failed' || webLatestRun?.status === 'error' ? 'text-danger' :
+                            webLatestRun?.status === 'passed' ? 'text-success' :
+                            webLatestRun?.status === 'running' || webLatestRun?.status === 'queued' ? 'text-brand' :
+                            'text-muted-foreground'
+                        }`}>
+                            {webLatestRun?.status === 'passed' ? 'Passou' :
+                             webLatestRun?.status === 'failed' ? 'Falhou' :
+                             webLatestRun?.status === 'running' ? 'Rodando' :
+                             webLatestRun?.status === 'queued' ? 'Na fila' :
+                             webLatestRun?.status === 'error' ? 'Erro' :
+                             webLatestRun?.status === 'cancelled' ? 'Cancelado' : '—'}
+                        </p>
+                    ) : (
+                        <p className={`text-2xl font-bold mt-1 ${
+                            lastRun?.status === 'failed' ? 'text-red-400' :
+                            lastRun?.status === 'passed' ? 'text-green-400' :
+                            'text-muted-foreground'
+                        }`}>
+                            {lastRun?.status === 'failed' ? 'Falha' :
+                             lastRun?.status === 'passed' ? 'Sucesso' :
+                             tests.length > 0 ? 'Pendente' : '—'}
+                        </p>
+                    )}
                 </div>
                 <div className="bg-foreground/5 border border-border rounded-xl p-4">
                     <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">ÚLTIMA EXECUÇÃO</p>
                     <p className="text-2xl font-bold text-muted-foreground mt-1">
-                        {lastRun?.last_run_at
-                            ? new Date(lastRun.last_run_at).toLocaleDateString('pt-BR')
-                            : '—'}
+                        {isWeb
+                            ? (webLatestRun?.ended_at ?? webLatestRun?.created_at
+                                ? new Date((webLatestRun?.ended_at ?? webLatestRun?.created_at)!).toLocaleDateString('pt-BR')
+                                : '—')
+                            : (lastRun?.last_run_at
+                                ? new Date(lastRun.last_run_at).toLocaleDateString('pt-BR')
+                                : '—')}
                     </p>
                 </div>
-                {/* Agendamentos / Execuções em lote — clicável */}
+                {/* Agendamentos — Web abre WebScheduleModal; Mobile abre SchedulesModal */}
                 <button
-                    onClick={() => { setScheduleTestIds(null); setSchedulesOpen(true); }}
+                    onClick={() => isWeb ? setWebScheduleOpen(true) : (setScheduleTestIds(null), setSchedulesOpen(true))}
                     className="bg-foreground/5 border border-border rounded-xl p-4 text-left transition-colors hover:border-brand/50 hover:bg-foreground/[0.08] group"
-                    title="Ver agendamentos e resultados das execuções em lote"
+                    title={isWeb ? 'Ver agendamentos de testes Web' : 'Ver agendamentos e resultados das execuções em lote'}
                 >
                     <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider flex items-center gap-1">
                         <CalendarClock className="w-3 h-3" /> AGENDAMENTOS
                     </p>
-                    <p className="text-2xl font-bold text-foreground mt-1">{scheduleCount ?? '—'}</p>
+                    <p className="text-2xl font-bold text-foreground mt-1">
+                        {isWeb ? (webScheduleCount ?? '—') : (scheduleCount ?? '—')}
+                    </p>
                     <p className="text-[11px] mt-0.5 inline-flex items-center gap-1">
-                        {lastBatch ? (() => {
+                        {!isWeb && lastBatch ? (() => {
                             const { label, tone } = batchOutcome(lastBatch);
                             const color = tone === 'success' ? 'text-green-400' : tone === 'warning' ? 'text-amber-400' : tone === 'danger' ? 'text-red-400' : tone === 'running' ? 'text-brand' : 'text-muted-foreground';
                             return <span className={color}>último lote: {label}</span>;
                         })() : (
-                            <span className="text-muted-foreground">ver execuções</span>
+                            <span className="text-muted-foreground">
+                                {isWeb ? 'gerenciar' : 'ver execuções'}
+                            </span>
                         )}
                         <ChevronRight className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
                     </p>
@@ -1254,7 +1304,7 @@ export default function ProjectDetailPage() {
 
                 {isWeb ? (
                     <div className="p-4">
-                        <WebProjectPanel projectId={projectId} />
+                        <WebProjectPanel projectId={projectId} onLatestRunChange={setWebLatestRun} />
                     </div>
                 ) : (
                 <ProjectTestsList
@@ -1289,6 +1339,13 @@ export default function ProjectDetailPage() {
                     deviceUdid={availableDeviceUdid || connectedDevice?.udid || null}
                     pendingTestIds={scheduleTestIds}
                     onClose={() => { setSchedulesOpen(false); setScheduleTestIds(null); loadScheduleSummary(); }}
+                />
+            )}
+
+            {webScheduleOpen && (
+                <WebScheduleModal
+                    projectId={projectId}
+                    onClose={() => { setWebScheduleOpen(false); loadScheduleSummary(); }}
                 />
             )}
 

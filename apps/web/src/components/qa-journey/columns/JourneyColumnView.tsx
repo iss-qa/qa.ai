@@ -309,6 +309,7 @@ export function JourneyColumnView({
                     initial={caseForm.initial}
                     testCases={testCases}
                     siblingCount={(casesBySubflow[caseForm.subflowId] || []).length}
+                    projectId={projectId}
                     onClose={() => setCaseForm({ open: false, subflowId: '', initial: null })}
                     onSave={saveCase}
                 />

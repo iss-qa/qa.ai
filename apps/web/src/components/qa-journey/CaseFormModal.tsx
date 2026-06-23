@@ -1,7 +1,9 @@
 'use client';
 
-import { useMemo, useState, type ComponentType } from 'react';
-import { Bell, FileText, FlaskConical, Loader2, Sparkles, ListChecks, FileCode2 } from 'lucide-react';
+import { useEffect, useMemo, useState, type ComponentType } from 'react';
+import { Bell, FileText, FlaskConical, Loader2, Sparkles, ListChecks, FileCode2, ChevronDown } from 'lucide-react';
+import { listAllWebConfigs, listWebSpecs } from '@/app/dashboard/projects/[id]/_components/web/web-api';
+import type { RepoSpec, WebConfigSummary } from '@/app/dashboard/projects/[id]/_components/web/web-types';
 import { ModalShell } from './ModalShell';
 import { GherkinEditor } from './GherkinEditor';
 import { TestTreePicker } from './TestTreePicker';
@@ -20,6 +22,8 @@ interface CaseFormModalProps {
     // Nº de casos já existentes no sub-fluxo — usado para gerar o ID externo
     // automático no modo Gherkin (tc_<funcionalidade>_NNN).
     siblingCount?: number;
+    // ID do projeto — necessário para carregar specs Playwright (web).
+    projectId?: string;
     onClose: () => void;
     onSave: (draft: QAJourneyCaseDraft) => Promise<void>;
 }
@@ -41,7 +45,7 @@ Funcionalidade: Login no aplicativo
     Então devo ver a mensagem "Olá!"`;
 
 export function CaseFormModal({
-    subflowId, subflowTitle, initial, testCases = [], siblingCount = 0, onClose, onSave,
+    subflowId, subflowTitle, initial, testCases = [], siblingCount = 0, projectId, onClose, onSave,
 }: CaseFormModalProps) {
     const [draft, setDraft] = useState<QAJourneyCaseDraft>(() => ({
         subflow_id: subflowId,
@@ -54,9 +58,9 @@ export function CaseFormModal({
         priority: initial?.priority ?? 'medium',
         last_run_status: initial?.last_run_status ?? null,
         test_case_id: initial?.test_case_id ?? null,
-        // undefined = campo não tocado (não vai no payload — compatível com
-        // banco sem a migration 009 da coluna platform).
-        platform: initial?.platform ?? undefined,
+        // Sem opção "Não definida" — sempre uma das três (Web/Mobile/API).
+        // Novo caso abre em Web por padrão; edição respeita o valor salvo.
+        platform: initial?.platform ?? PLATFORM_OPTIONS[0],
         // Alerta de automação + refs Playwright (migration 022). undefined =
         // não tocado; só vai ao payload quando o usuário mexer.
         automation_alert_days: initial?.automation_alert_days ?? undefined,
@@ -80,6 +84,45 @@ export function CaseFormModal({
 
     // Plataforma Web não usa Maestro — usa referência Playwright.
     const isWeb = (draft.platform || '').trim().toLowerCase() === 'web';
+
+    // Projetos web com repositório configurado (picker de projeto).
+    const [webProjects, setWebProjects] = useState<WebConfigSummary[]>([]);
+    const [webProjectsLoading, setWebProjectsLoading] = useState(false);
+    useEffect(() => {
+        if (!isWeb || tipo !== 'automated') return;
+        setWebProjectsLoading(true);
+        listAllWebConfigs()
+            .then(({ configs }) => setWebProjects(configs))
+            .catch(() => setWebProjects([]))
+            .finally(() => setWebProjectsLoading(false));
+    }, [isWeb, tipo]);
+
+    // Projeto selecionado no picker — inicializa com o projeto atual (se tiver config).
+    // Usamos playwright_repo para armazenar "owner/repo" do projeto selecionado.
+    const [selectedWebProjectId, setSelectedWebProjectId] = useState<string>(() => projectId || '');
+
+    // Quando os projetos carregam, garante que o projeto atual seja selecionado (se disponível).
+    useEffect(() => {
+        if (!projectId || webProjects.length === 0) return;
+        const found = webProjects.find(p => p.project_id === projectId);
+        if (found) setSelectedWebProjectId(found.project_id);
+        else if (!selectedWebProjectId) setSelectedWebProjectId(webProjects[0].project_id);
+    }, [webProjects, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const selectedProject = webProjects.find(p => p.project_id === selectedWebProjectId) ?? null;
+
+    // Specs do projeto selecionado.
+    const [specs, setSpecs] = useState<RepoSpec[]>([]);
+    const [specsLoading, setSpecsLoading] = useState(false);
+    useEffect(() => {
+        if (!isWeb || tipo !== 'automated' || !selectedWebProjectId) return;
+        setSpecs([]);
+        setSpecsLoading(true);
+        listWebSpecs(selectedWebProjectId)
+            .then(({ specs }) => setSpecs(specs))
+            .catch(() => setSpecs([]))
+            .finally(() => setSpecsLoading(false));
+    }, [isWeb, tipo, selectedWebProjectId]);
 
     const isEdit = Boolean(initial?.id);
     const canSave = (draft.title || '').trim().length > 0 && !saving;
@@ -192,34 +235,83 @@ export function CaseFormModal({
         isWeb ? (
             <div className="flex flex-col gap-1.5">
                 <Label>Teste Automatizado vinculado (Playwright)</Label>
-                <div className="flex flex-col gap-2 border border-border rounded-lg p-3 bg-foreground/[0.02]">
+                <div className="flex flex-col gap-3 border border-border rounded-lg p-3 bg-foreground/[0.02]">
                     <div className="flex items-center gap-1.5 text-[11px] font-bold text-brand">
                         <FlaskConical className="w-3.5 h-3.5" /> Playwright (Web)
                     </div>
-                    <input
-                        type="text"
-                        value={draft.playwright_path || ''}
-                        onChange={e => setDraft({ ...draft, playwright_path: e.target.value })}
-                        placeholder="Pasta do projeto — ex.: /Users/voce/web-tests"
-                        className={inputClass}
-                    />
-                    <input
-                        type="text"
-                        value={draft.playwright_repo || ''}
-                        onChange={e => setDraft({ ...draft, playwright_repo: e.target.value })}
-                        placeholder="Repositório git — ex.: github.com/foxbit-group/web-tests"
-                        className={inputClass}
-                    />
-                    <input
-                        type="text"
-                        value={draft.playwright_spec || ''}
-                        onChange={e => setDraft({ ...draft, playwright_spec: e.target.value })}
-                        placeholder="Arquivo/spec (opcional) — ex.: tests/login.spec.ts"
-                        className={inputClass}
-                    />
+
+                    {/* 1. Selecionar projeto */}
+                    <div className="flex flex-col gap-1">
+                        <span className="text-[11px] text-muted-foreground font-medium">Projeto</span>
+                        {webProjectsLoading ? (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando projetos…
+                            </div>
+                        ) : webProjects.length === 0 ? (
+                            <p className="text-[11px] text-warning">Nenhum projeto Web com repositório configurado. Configure em Configurar → Conectar Repositório.</p>
+                        ) : (
+                            <div className="relative">
+                                <select
+                                    value={selectedWebProjectId}
+                                    onChange={e => {
+                                        setSelectedWebProjectId(e.target.value);
+                                        setDraft(d => ({ ...d, playwright_spec: null }));
+                                    }}
+                                    className={`${inputClass} w-full appearance-none pr-8`}
+                                >
+                                    <option value="">— Selecionar projeto —</option>
+                                    {webProjects.map(p => (
+                                        <option key={p.project_id} value={p.project_id}>
+                                            {p.project_name} · {p.repo_owner}/{p.repo_name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 2. Selecionar spec (apenas quando projeto selecionado) */}
+                    {selectedWebProjectId && (
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[11px] text-muted-foreground font-medium">Spec</span>
+                            {specsLoading ? (
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando specs…
+                                </div>
+                            ) : specs.length > 0 ? (
+                                <div className="relative">
+                                    <select
+                                        value={draft.playwright_spec || ''}
+                                        onChange={e => {
+                                            const spec = e.target.value || null;
+                                            const repo = selectedProject
+                                                ? `${selectedProject.repo_owner}/${selectedProject.repo_name}`
+                                                : null;
+                                            setDraft(d => ({ ...d, playwright_spec: spec, playwright_repo: repo }));
+                                        }}
+                                        className={`${inputClass} w-full appearance-none pr-8`}
+                                    >
+                                        <option value="">— Selecionar spec —</option>
+                                        {specs.map(s => (
+                                            <option key={s.path} value={s.path}>{s.name} · {s.path}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="w-3.5 h-3.5 text-muted-foreground pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
+                                </div>
+                            ) : (
+                                <p className="text-[11px] text-muted-foreground">
+                                    Nenhum spec encontrado neste repositório. Verifique a pasta configurada ou rode os testes ao menos uma vez.
+                                </p>
+                            )}
+                            {draft.playwright_spec && (
+                                <p className="text-[10px] text-success font-mono">✓ {draft.playwright_spec}</p>
+                            )}
+                        </div>
+                    )}
                 </div>
                 <p className="text-[10px] text-muted-foreground">
-                    Web usa Playwright. Informe a pasta do projeto e/ou o repositório git onde o teste vive. Sem referência, o caso conta como manual.
+                    Selecione o projeto e a spec Playwright para vincular. Os resultados do CI atualizarão este caso automaticamente.
                 </p>
             </div>
         ) : (
@@ -288,22 +380,22 @@ export function CaseFormModal({
         </div>
     );
 
-    const platformValue = draft.platform ?? '';
-    const hasCustomPlatform = Boolean(platformValue) && !PLATFORM_OPTIONS.includes(platformValue);
+    // Plataforma: sem opção "Não definida" — sempre uma das três.
+    const platformValue = draft.platform || PLATFORM_OPTIONS[0];
+    const hasCustomPlatform = Boolean(draft.platform) && !PLATFORM_OPTIONS.includes(draft.platform!);
     const metaGridBlock = (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="flex flex-col gap-1.5">
                 <Label>Plataforma</Label>
                 <select
                     value={platformValue}
-                    onChange={e => setDraft({ ...draft, platform: e.target.value || null })}
+                    onChange={e => setDraft({ ...draft, platform: e.target.value })}
                     className={inputClass}
                 >
-                    <option value="">— Não definida —</option>
                     {PLATFORM_OPTIONS.map(p => (
                         <option key={p} value={p}>{p}</option>
                     ))}
-                    {hasCustomPlatform && <option value={platformValue}>{platformValue}</option>}
+                    {hasCustomPlatform && <option value={draft.platform!}>{draft.platform}</option>}
                 </select>
             </div>
             <div className="flex flex-col gap-1.5">

@@ -1,18 +1,30 @@
 'use client';
 
-import { useState } from 'react';
-import { Loader2, Github, Play, Settings, FileCode2, ListChecks, Link2Off } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Loader2, Github, Play, Settings, FileCode2, ListChecks, Link2Off, BarChart3 } from 'lucide-react';
 import { useWebTesting } from './useWebTesting';
 import { WebConnectRepoModal } from './WebConnectRepoModal';
 import { WebRunModal } from './WebRunModal';
 import { WebRunsList } from './WebRunsList';
 import { WebRunDetailModal } from './WebRunDetailModal';
 import { WebSpecsList } from './WebSpecsList';
+import { WebResultsReport } from './WebResultsReport';
 
-type Tab = 'runs' | 'specs';
+type Tab = 'runs' | 'specs' | 'results';
 
-export function WebProjectPanel({ projectId }: { projectId: string }) {
+export function WebProjectPanel({ projectId, onLatestRunChange }: {
+    projectId: string;
+    onLatestRunChange?: (run: import('./web-types').WebRun | null) => void;
+}) {
     const { config, runs, loading, error, refreshConfig, trigger } = useWebTesting(projectId);
+
+    // Notifica o pai quando o run mais recente muda (para os cards do header).
+    const latestRun = runs[0] ?? null;
+    const latestRunRef = useRef<import('./web-types').WebRun | null>(null);
+    if (latestRun !== latestRunRef.current) {
+        latestRunRef.current = latestRun;
+        onLatestRunChange?.(latestRun);
+    }
     const [tab, setTab] = useState<Tab>('runs');
     const [connectOpen, setConnectOpen] = useState(false);
     const [runOpen, setRunOpen] = useState(false);
@@ -74,6 +86,7 @@ export function WebProjectPanel({ projectId }: { projectId: string }) {
             <div className="flex items-center gap-1 border-b border-border">
                 <TabButton active={tab === 'runs'} onClick={() => setTab('runs')} icon={<ListChecks className="w-3.5 h-3.5" />} label="Execuções" />
                 <TabButton active={tab === 'specs'} onClick={() => setTab('specs')} icon={<FileCode2 className="w-3.5 h-3.5" />} label="Specs" />
+                <TabButton active={tab === 'results'} onClick={() => setTab('results')} icon={<BarChart3 className="w-3.5 h-3.5" />} label="Results" />
             </div>
 
             {error && <p className="text-xs text-danger bg-danger/10 border border-danger/30 rounded-lg p-3">{error}</p>}
@@ -82,8 +95,10 @@ export function WebProjectPanel({ projectId }: { projectId: string }) {
                 <div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin" /></div>
             ) : tab === 'runs' ? (
                 <WebRunsList runs={runs} onOpen={setDetailRunId} />
+            ) : tab === 'specs' ? (
+                <WebSpecsList projectId={projectId} config={config} onRunSpec={openRunModal} />
             ) : (
-                <WebSpecsList projectId={projectId} onRunSpec={openRunModal} />
+                <WebResultsReport projectId={projectId} runs={runs} />
             )}
 
             {connectOpen && <WebConnectRepoModal projectId={projectId} config={config} onClose={() => setConnectOpen(false)} onSaved={refreshConfig} />}

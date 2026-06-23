@@ -2,7 +2,7 @@
 // estas funções extraem a mensagem `detail` do corpo de erro da API.
 
 import type {
-    WebConfig, WebConfigInput, SaveConfigResponse, RepoSpec, WebRun, WebResult,
+    WebConfig, WebConfigInput, SaveConfigResponse, RepoSpec, WebRun, WebResult, WebConfigSummary,
 } from './web-types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -45,6 +45,16 @@ export function getWebConfig(projectId: string) {
 
 export function saveWebConfig(input: WebConfigInput) {
     return call<SaveConfigResponse>('/web-config', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function listAllWebConfigs() {
+    return call<{ configs: WebConfigSummary[] }>('/web-configs');
+}
+
+export function getSpecContent(projectId: string, path: string, ref?: string) {
+    const q = new URLSearchParams({ projectId, path });
+    if (ref) q.set('ref', ref);
+    return call<{ content: string; path: string; ref: string }>(`/web-runs/spec-content?${q.toString()}`);
 }
 
 export function listWebSpecs(projectId: string, ref?: string) {
