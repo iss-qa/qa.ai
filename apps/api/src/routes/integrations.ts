@@ -8,16 +8,18 @@ import {
     listIntegrations,
     resolveDefaultOrgId,
     saveGoogleSheetsIntegration,
+    saveGitHubIntegration,
     saveJiraIntegration,
     saveSlackIntegration,
     testIntegration,
+    type GitHubCredentials,
     type GoogleSheetsCredentials,
     type IntegrationProvider,
     type JiraCredentials,
     type SlackCredentials,
 } from '../services/org-integrations';
 
-const VALID_PROVIDERS = new Set(['google_sheets', 'jira', 'slack']);
+const VALID_PROVIDERS = new Set(['google_sheets', 'jira', 'slack', 'github']);
 import { isEncryptionConfigured, encryptionConfigError } from '../services/encryption';
 
 const integrationsRoutes: FastifyPluginAsync = async (fastify) => {
@@ -96,6 +98,25 @@ const integrationsRoutes: FastifyPluginAsync = async (fastify) => {
             }
             const orgId = await resolveDefaultOrgId();
             const saved = await saveSlackIntegration(orgId, creds);
+            return { integration: saved };
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            return reply.status(400).send({ error: 'save_failed', detail: msg });
+        }
+    });
+
+    // POST /integrations/github - salva ou atualiza
+    // Body: { credentials: { token } }
+    fastify.post('/integrations/github', async (request, reply) => {
+        if (!requireEncryption(reply)) return;
+        try {
+            const body = request.body as { credentials?: GitHubCredentials };
+            const creds = body?.credentials;
+            if (!creds || typeof creds !== 'object') {
+                return reply.status(400).send({ error: 'invalid_body', detail: 'credentials obrigatorio' });
+            }
+            const orgId = await resolveDefaultOrgId();
+            const saved = await saveGitHubIntegration(orgId, creds);
             return { integration: saved };
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);

@@ -7,6 +7,7 @@ import type {
     IntegrationTestResult,
     JiraCredentialsInput,
     SlackCredentialsInput,
+    GitHubCredentialsInput,
     IntegrationProvider,
 } from '@/types/integrations';
 
@@ -64,6 +65,16 @@ export async function saveJiraCredentials(creds: JiraCredentialsInput): Promise<
 
 export async function saveSlackCredentials(creds: SlackCredentialsInput): Promise<IntegrationRecord> {
     const res = await safeFetch(`${API_URL}/integrations/slack`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credentials: creds }),
+    });
+    const body = await handleResponse<{ integration: IntegrationRecord }>(res);
+    return body.integration;
+}
+
+export async function saveGitHubCredentials(creds: GitHubCredentialsInput): Promise<IntegrationRecord> {
+    const res = await safeFetch(`${API_URL}/integrations/github`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ credentials: creds }),

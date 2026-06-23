@@ -1,7 +1,7 @@
 // Tipos espelhando o schema de org_integrations.
 // Credenciais NUNCA voltam para o cliente - so metadata.
 
-export type IntegrationProvider = 'google_sheets' | 'jira' | 'slack';
+export type IntegrationProvider = 'google_sheets' | 'jira' | 'slack' | 'github';
 
 export interface IntegrationRecord {
     id: string;
@@ -34,6 +34,13 @@ export interface SlackMetadata {
     default_channel?: string | null;
 }
 
+// Metadados especificos do GitHub (mostrados na UI — nunca o token)
+export interface GitHubMetadata {
+    login?: string;
+    scopes?: string | null;
+    token_masked?: string;
+}
+
 // Inputs (so o que o cliente envia, sem dados sensiveis vindos do servidor)
 export interface GoogleSheetsCredentialsInput {
     client_email: string;
@@ -51,6 +58,10 @@ export interface JiraCredentialsInput {
 export interface SlackCredentialsInput {
     webhook_url: string;
     default_channel?: string;
+}
+
+export interface GitHubCredentialsInput {
+    token: string;
 }
 
 export interface IntegrationTestResult {

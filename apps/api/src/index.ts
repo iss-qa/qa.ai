@@ -11,6 +11,7 @@ import billingRoutes from './routes/billing';
 import runRoutes from './routes/runs';
 import integrationsRoutes from './routes/integrations';
 import qaJourneyRoutes from './routes/qa-journey';
+import webRunsRoutes from './routes/web-runs';
 import { registerCronJobs } from './services/cron';
 
 const server = Fastify({ logger: true });
@@ -25,6 +26,7 @@ async function main() {
     await server.register(runRoutes);
     await server.register(integrationsRoutes);
     await server.register(qaJourneyRoutes);
+    await server.register(webRunsRoutes);
 
     try {
         const port = Number(process.env.PORT) || 3001;

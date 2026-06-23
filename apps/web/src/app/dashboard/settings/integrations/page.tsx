@@ -5,6 +5,7 @@ import {
     CheckCircle2,
     ExternalLink,
     FileSpreadsheet,
+    Github,
     Loader2,
     MessageSquare,
     Plug,
@@ -17,6 +18,7 @@ import {
 import { GoogleSheetsIntegrationModal } from '@/components/settings/GoogleSheetsIntegrationModal';
 import { JiraIntegrationModal } from '@/components/settings/JiraIntegrationModal';
 import { SlackIntegrationModal } from '@/components/settings/SlackIntegrationModal';
+import { GitHubIntegrationModal } from '@/components/settings/GitHubIntegrationModal';
 import { DeleteConfirmModal } from '@/components/qa-journey/DeleteConfirmModal';
 import {
     deleteIntegration,
@@ -25,6 +27,7 @@ import {
 } from '@/lib/integrations/api';
 import type {
     GoogleSheetsMetadata,
+    GitHubMetadata,
     IntegrationProvider,
     IntegrationRecord,
     IntegrationTestResult,
@@ -36,6 +39,7 @@ const PROVIDER_LABELS: Record<IntegrationProvider, string> = {
     google_sheets: 'Google Sheets',
     jira: 'Jira',
     slack: 'Slack',
+    github: 'GitHub',
 };
 
 export default function IntegrationsSettingsPage() {
@@ -46,6 +50,7 @@ export default function IntegrationsSettingsPage() {
     const [editingGoogle, setEditingGoogle] = useState(false);
     const [editingJira, setEditingJira] = useState(false);
     const [editingSlack, setEditingSlack] = useState(false);
+    const [editingGitHub, setEditingGitHub] = useState(false);
 
     const [deleting, setDeleting] = useState<IntegrationProvider | null>(null);
     const [testing, setTesting] = useState<IntegrationProvider | null>(null);
@@ -68,6 +73,7 @@ export default function IntegrationsSettingsPage() {
     const google = integrations.find(i => i.provider === 'google_sheets') || null;
     const jira = integrations.find(i => i.provider === 'jira') || null;
     const slack = integrations.find(i => i.provider === 'slack') || null;
+    const github = integrations.find(i => i.provider === 'github') || null;
 
     const handleTest = async (provider: IntegrationProvider) => {
         setTesting(provider);
@@ -167,6 +173,20 @@ export default function IntegrationsSettingsPage() {
                         isTesting={testing === 'slack'}
                         docsHref="https://api.slack.com/messaging/webhooks"
                     />
+
+                    <IntegrationCard
+                        icon={<Github className="w-5 h-5 text-foreground" />}
+                        title="GitHub"
+                        description="Dispara testes Playwright (projetos Web) via GitHub Actions e lista os specs do repositório."
+                        record={github}
+                        metadataView={github ? renderGitHubMetadata(github.metadata as GitHubMetadata) : null}
+                        testResult={testResult['github']}
+                        onConfigure={() => setEditingGitHub(true)}
+                        onTest={() => handleTest('github')}
+                        onDelete={() => setDeleting('github')}
+                        isTesting={testing === 'github'}
+                        docsHref="https://github.com/settings/tokens"
+                    />
                 </div>
             )}
 
@@ -198,6 +218,16 @@ export default function IntegrationsSettingsPage() {
                     onSaved={(rec) => {
                         setIntegrations(prev => upsertIn(prev, rec));
                         setEditingSlack(false);
+                    }}
+                />
+            )}
+
+            {editingGitHub && (
+                <GitHubIntegrationModal
+                    onClose={() => setEditingGitHub(false)}
+                    onSaved={(rec) => {
+                        setIntegrations(prev => upsertIn(prev, rec));
+                        setEditingGitHub(false);
                     }}
                 />
             )}
@@ -254,6 +284,16 @@ function renderSlackMetadata(m: SlackMetadata) {
             {m.default_channel && (
                 <div><span className="text-muted-foreground">Canal:</span> <span className="font-mono text-foreground">#{m.default_channel}</span></div>
             )}
+        </div>
+    );
+}
+
+function renderGitHubMetadata(m: GitHubMetadata) {
+    return (
+        <div className="flex flex-col gap-1 text-xs">
+            {m.login && (<div><span className="text-muted-foreground">Conta:</span> <span className="font-mono text-foreground">{m.login}</span></div>)}
+            {m.token_masked && (<div><span className="text-muted-foreground">Token:</span> <span className="font-mono text-foreground">{m.token_masked}</span></div>)}
+            {m.scopes && (<div><span className="text-muted-foreground">Escopos:</span> <span className="font-mono text-foreground break-all">{m.scopes}</span></div>)}
         </div>
     );
 }

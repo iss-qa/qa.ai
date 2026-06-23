@@ -20,6 +20,8 @@ import { ScannerModal } from './_components/ScannerModal';
 import { MaestroStudioModal } from './_components/MaestroStudioModal';
 import { SaveAsTestModal } from './_components/SaveAsTestModal';
 import { EditProjectModal } from './_components/EditProjectModal';
+import { WebProjectPanel } from './_components/web/WebProjectPanel';
+import { isWebPlatform } from '@/lib/platform';
 
 export default function ProjectDetailPage() {
     const params = useParams();
@@ -28,6 +30,9 @@ export default function ProjectDetailPage() {
     const projectId = params.id as string;
 
     const [project, setProject] = useState<Project | null>(null);
+    // Web (Playwright via GitHub Actions) tem fluxo distinto do mobile (Maestro):
+    // sem Importar/Criar/Gravar; em vez disso, conectar repo + rodar via CI.
+    const isWeb = isWebPlatform(project?.platform);
     // Espelha o project em ref para handlers (postMessage) lerem o valor atual
     // sem recriar o listener nem capturar closure stale.
     const projectRef = useRef<Project | null>(null);
@@ -1134,7 +1139,8 @@ export default function ProjectDetailPage() {
             <div className="bg-foreground/5 border border-border rounded-2xl overflow-hidden">
                 <div className="p-4 border-b border-border flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        {/* Kebab menu (left) — secondary actions: scanner / map / import YAML */}
+                        {/* Kebab menu (left) — secondary actions: scanner / map / import YAML (mobile only) */}
+                        {!isWeb && (
                         <div className="relative" ref={moreMenuRef}>
                             <button
                                 onClick={() => setShowMoreMenu(v => !v)}
@@ -1194,11 +1200,13 @@ export default function ProjectDetailPage() {
                                 </div>
                             )}
                         </div>
+                        )}
                         <span className="text-sm font-bold text-foreground flex items-center gap-2">
                             <FlaskConical className="w-4 h-4 text-brand" />
-                            Testes do Projeto ({tests.length})
+                            {isWeb ? 'Testes Web' : `Testes do Projeto (${tests.length})`}
                         </span>
                     </div>
+                    {!isWeb && (
                     <div className="flex items-center gap-2">
                         <div className="relative">
                             <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -1241,8 +1249,14 @@ export default function ProjectDetailPage() {
                             <Clapperboard className="w-3.5 h-3.5" /> Gravar Teste
                         </Link>
                     </div>
+                    )}
                 </div>
 
+                {isWeb ? (
+                    <div className="p-4">
+                        <WebProjectPanel projectId={projectId} />
+                    </div>
+                ) : (
                 <ProjectTestsList
                     projectId={projectId}
                     tree={testTree}
@@ -1258,6 +1272,7 @@ export default function ProjectDetailPage() {
                     onRunBatch={handleRunBatch}
                     onScheduleBatch={(ids) => { setScheduleTestIds(ids); setSchedulesOpen(true); }}
                 />
+                )}
             </div>
 
             {batchRunId && (

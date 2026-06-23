@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import {
-    ArrowRight, CheckCircle2, ChevronRight, Circle, Clock, CornerDownRight, FileCode2, FileSpreadsheet,
+    ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Circle, Clock, CornerDownRight, FileCode2, FileSpreadsheet,
     GitBranch, MinusCircle, MoreHorizontal, Plus, Trash2, XCircle,
 } from 'lucide-react';
 import type { CaseRunStatus, QAJourneyCase } from '@/types/qa-journey';
@@ -50,6 +50,8 @@ export function SubflowBlock({
             : { label: 'Manual', color: 'bg-blue-500/20 text-blue-400' };
     const [menuOpen, setMenuOpen] = useState(false);
     const closeMenu = () => setMenuOpen(false);
+    // Recolher/expandir o corpo do card (casos ou documento).
+    const [collapsed, setCollapsed] = useState(false);
     const isChild = depth > 0;
     const hasChildren = children.length > 0;
     // Sub-fluxo de documento (HTML anexado): sem badge/contagem/casos —
@@ -76,6 +78,16 @@ export function SubflowBlock({
                             ? <CornerDownRight className="w-3.5 h-3.5 text-brand shrink-0" />
                             : <GitBranch className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
                         <span className="font-semibold text-sm text-foreground truncate flex-1">{subflow.title}</span>
+                        <button
+                            type="button"
+                            onClick={() => setCollapsed(v => !v)}
+                            title={collapsed ? 'Expandir' : 'Recolher'}
+                            aria-label={collapsed ? 'Expandir' : 'Recolher'}
+                            aria-expanded={!collapsed}
+                            className="p-1 -mr-1 text-muted-foreground hover:text-foreground hover:bg-foreground/10 rounded-md transition-colors shrink-0"
+                        >
+                            <ChevronDown className={`w-4 h-4 transition-transform ${collapsed ? '-rotate-90' : ''}`} />
+                        </button>
                     </div>
                     {isChild && parentTitle && (
                         <span className="text-[10px] text-brand/80 pl-[22px] truncate" title={`Subfluxo de ${parentTitle}`}>
@@ -103,8 +115,9 @@ export function SubflowBlock({
                     </div>
                 </div>
 
-                {/* Corpo: documento (modo documento) OU casos do subfluxo. */}
-                {isDoc ? (
+                {/* Corpo: documento (modo documento) OU casos do subfluxo.
+                    Oculto quando o card está recolhido. */}
+                {collapsed ? null : isDoc ? (
                     <div className="px-2.5 pb-2">
                         <button
                             type="button"

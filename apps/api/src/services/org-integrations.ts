@@ -6,7 +6,7 @@ import { supabase } from '../plugins/supabase';
 import { decryptJson, encryptJson } from './encryption';
 import { listSheetTabs, type GoogleServiceAccountCreds } from './google-sheets';
 
-export type IntegrationProvider = 'google_sheets' | 'jira' | 'slack';
+export type IntegrationProvider = 'google_sheets' | 'jira' | 'slack' | 'github';
 
 export interface GoogleSheetsCredentials {
     client_email: string;
@@ -24,6 +24,10 @@ export interface JiraCredentials {
 export interface SlackCredentials {
     webhook_url: string;        // Incoming Webhook (https://hooks.slack.com/services/...)
     default_channel?: string;   // informativo — o canal real é fixado no webhook
+}
+
+export interface GitHubCredentials {
+    token: string;              // PAT clássico ou fine-grained (escopos: actions:write + contents:read)
 }
 
 // Metadados visiveis na UI (nunca incluem segredos)
@@ -146,6 +150,42 @@ export async function saveSlackIntegration(
     return upsertIntegration(orgId, 'slack', cipher, metadata);
 }
 
+export async function saveGitHubIntegration(
+    orgId: string,
+    creds: GitHubCredentials,
+): Promise<OrgIntegrationRecord> {
+    const token = (creds.token || '').trim();
+    if (!token) {
+        throw new Error('GitHub: token é obrigatório');
+    }
+    // Valida o token e captura o login para metadata (sem expor o segredo).
+    const res = await fetch('https://api.github.com/user', {
+        headers: githubHeaders(token),
+    });
+    if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(`GitHub recusou o token (HTTP ${res.status}): ${txt.slice(0, 200)}`);
+    }
+    const body = await res.json().catch(() => ({})) as { login?: string };
+    const scopes = res.headers.get('x-oauth-scopes') || '';
+    const cipher = encryptJson({ token });
+    const metadata = {
+        login: body.login || null,
+        scopes: scopes || null,
+        token_masked: `…${token.slice(-4)}`,
+    };
+    return upsertIntegration(orgId, 'github', cipher, metadata);
+}
+
+export function githubHeaders(token: string): Record<string, string> {
+    return {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'QAMind',
+    };
+}
+
 async function upsertIntegration(
     orgId: string,
     provider: IntegrationProvider,
@@ -199,6 +239,8 @@ export async function testIntegration(
             result = await testGoogleSheets(orgId);
         } else if (provider === 'slack') {
             result = await testSlack(orgId);
+        } else if (provider === 'github') {
+            result = await testGitHub(orgId);
         } else {
             result = await testJira(orgId);
         }
@@ -254,6 +296,18 @@ async function testSlack(orgId: string): Promise<TestResult> {
         ok: true,
         detail: `Mensagem de teste enviada${creds.default_channel ? ` para #${creds.default_channel}` : ''}.`,
     };
+}
+
+async function testGitHub(orgId: string): Promise<TestResult> {
+    const creds = await getDecryptedCredentials<GitHubCredentials>(orgId, 'github');
+    if (!creds) return { ok: false, detail: 'Integração GitHub não configurada' };
+    const res = await fetch('https://api.github.com/user', { headers: githubHeaders(creds.token) });
+    if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        return { ok: false, detail: `GitHub respondeu HTTP ${res.status}: ${txt.slice(0, 200)}` };
+    }
+    const body = await res.json().catch(() => ({})) as { login?: string };
+    return { ok: true, detail: `Autenticado como ${body.login || 'usuário GitHub'}` };
 }
 
 async function testJira(orgId: string): Promise<TestResult> {
