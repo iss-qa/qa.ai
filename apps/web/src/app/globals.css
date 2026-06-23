@@ -130,6 +130,20 @@
   html.dark {
     color-scheme: dark;
   }
+
+  /* <select> nativos não herdam color-scheme automaticamente em todos os
+     browsers. Forçamos aqui para que o dropdown popup (OS popup) também
+     responda ao tema da aplicação, evitando o popup branco em dark mode. */
+  html.dark select {
+    color-scheme: dark;
+    background-color: rgb(var(--card));
+    color: rgb(var(--foreground));
+  }
+
+  html.dark select option {
+    background-color: rgb(var(--card));
+    color: rgb(var(--foreground));
+  }
 }
 
 /* Modo impressão (Relatórios → Exportar PDF): esconde o shell do app e

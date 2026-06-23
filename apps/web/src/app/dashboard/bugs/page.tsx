@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { FileText, Bug, Search, Filter, Loader2, Plus, X, Link2, Paperclip, Trash2, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { FileText, Bug, Search, Loader2, Plus, X, Link2, Paperclip, Trash2, AlertTriangle, ChevronLeft, ChevronRight, ExternalLink, GitBranch, User } from 'lucide-react';
 import { useQueryState } from 'nuqs';
 import { supabase } from '@/lib/supabase';
 
@@ -30,47 +30,51 @@ type ProjectOption = { id: string; name: string };
 type TestOption = { id: string; name: string; project_id: string | null };
 
 const severityColors: Record<Severity, string> = {
-    critical: 'bg-red-500/20 text-red-500',
-    high:     'bg-orange-500/20 text-orange-500',
-    medium:   'bg-yellow-500/20 text-yellow-500',
-    low:      'bg-green-500/20 text-green-500',
+    critical: 'bg-red-500/20 text-red-400 border-red-500/30',
+    high:     'bg-orange-500/20 text-orange-400 border-orange-500/30',
+    medium:   'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+    low:      'bg-green-500/20 text-green-400 border-green-500/30',
 };
 
-const statusLabel: Record<BugStatus, string> = {
-    open: 'Aberto',
-    in_progress: 'Em andamento',
-    resolved: 'Resolvido',
-    wont_fix: "Won't fix",
+const statusConfig: Record<BugStatus, { label: string; classes: string }> = {
+    open:        { label: 'Aberto',       classes: 'bg-warning/15 text-warning border-warning/30' },
+    in_progress: { label: 'Em andamento', classes: 'bg-brand/15 text-brand border-brand/30' },
+    resolved:    { label: 'Resolvido',    classes: 'bg-success/15 text-success border-success/30' },
+    wont_fix:    { label: "Won't fix",    classes: 'bg-foreground/10 text-muted-foreground border-border' },
 };
+
+// Extrai o número do card Jira da URL (ex.: "INNO-123").
+function extractJiraKey(url: string | null): string | null {
+    if (!url) return null;
+    const m = url.match(/\/browse\/([A-Z]+-\d+)/i);
+    return m ? m[1].toUpperCase() : null;
+}
 
 function formatBugDate(iso: string): string {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '—';
     const now = new Date();
-    const sameDay = d.toDateString() === now.toDateString();
-    const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
-    const wasYesterday = d.toDateString() === yesterday.toDateString();
     const hh = String(d.getHours()).padStart(2, '0');
     const mm = String(d.getMinutes()).padStart(2, '0');
+    const sameDay = d.toDateString() === now.toDateString();
+    const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
     if (sameDay) return `Hoje, ${hh}:${mm}`;
-    if (wasYesterday) return `Ontem, ${hh}:${mm}`;
-    return d.toLocaleDateString('pt-BR');
+    if (d.toDateString() === yesterday.toDateString()) return `Ontem, ${hh}:${mm}`;
+    return `${d.toLocaleDateString('pt-BR')} ${hh}:${mm}`;
 }
 
 export default function BugTrackerPage() {
     const [globalFilter, setGlobalFilter] = useQueryState('q', { defaultValue: '' });
     const [severityFilter, setSeverityFilter] = useQueryState('severity', { defaultValue: 'all' });
+    const [projectFilter, setProjectFilter] = useQueryState('project', { defaultValue: '' });
     const [bugs, setBugs] = useState<BugReportRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [migrationMissing, setMigrationMissing] = useState(false);
 
-    // Create / Edit modal state
     const [editing, setEditing] = useState<Partial<BugReportRow> | null>(null);
     const [saving, setSaving] = useState(false);
     const [projects, setProjects] = useState<ProjectOption[]>([]);
     const [tests, setTests] = useState<TestOption[]>([]);
-
-    // Delete confirmation
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
     const loadBugs = async () => {
@@ -106,51 +110,30 @@ export default function BugTrackerPage() {
     const filteredBugs = useMemo(() => {
         const q = globalFilter.toLowerCase();
         return bugs.filter(b => {
-            const projName = b.projects?.name || '';
-            const testName = b.test_cases?.name || '';
-            const matchesQuery = !q
-                || b.title.toLowerCase().includes(q)
-                || (b.description || '').toLowerCase().includes(q)
-                || projName.toLowerCase().includes(q)
-                || testName.toLowerCase().includes(q);
-            const matchesSeverity = severityFilter === 'all' || b.severity === severityFilter;
-            return matchesQuery && matchesSeverity;
+            if (projectFilter && b.project_id !== projectFilter) return false;
+            if (severityFilter !== 'all' && b.severity !== severityFilter) return false;
+            if (!q) return true;
+            const jiraKey = extractJiraKey(b.jira_url) || '';
+            return (
+                b.title.toLowerCase().includes(q) ||
+                (b.description || '').toLowerCase().includes(q) ||
+                (b.projects?.name || '').toLowerCase().includes(q) ||
+                (b.test_cases?.name || '').toLowerCase().includes(q) ||
+                jiraKey.toLowerCase().includes(q)
+            );
         });
-    }, [bugs, globalFilter, severityFilter]);
+    }, [bugs, globalFilter, severityFilter, projectFilter]);
 
-    // Pagination — purely client-side: bug counts are low enough that loading
-    // all and slicing in the browser beats round-tripping per page. If the
-    // list ever grows past a few hundred rows we'd move this to Supabase
-    // .range() with server-side count.
     const PAGE_SIZE = 10;
     const [currentPage, setCurrentPage] = useState(1);
     const totalPages = Math.max(1, Math.ceil(filteredBugs.length / PAGE_SIZE));
+    useEffect(() => { if (currentPage > totalPages) setCurrentPage(1); }, [currentPage, totalPages]);
+    const pagedBugs = useMemo(() => filteredBugs.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE), [filteredBugs, currentPage]);
 
-    // Reset to page 1 whenever the result set shrinks below the current page
-    // (e.g. user types a more specific search) so we don't strand them on an
-    // empty page.
-    useEffect(() => {
-        if (currentPage > totalPages) setCurrentPage(1);
-    }, [currentPage, totalPages]);
-
-    const pagedBugs = useMemo(() => {
-        const start = (currentPage - 1) * PAGE_SIZE;
-        return filteredBugs.slice(start, start + PAGE_SIZE);
-    }, [filteredBugs, currentPage]);
-
-    const openNewBug = () => {
-        setEditing({
-            severity: 'medium',
-            status: 'open',
-            source: 'manual',
-            title: '',
-            description: '',
-            project_id: null,
-            test_case_id: null,
-            attachment_url: null,
-            jira_url: null,
-        });
-    };
+    const openNewBug = () => setEditing({
+        severity: 'medium', status: 'open', source: 'manual',
+        title: '', description: '', project_id: null, test_case_id: null, attachment_url: null, jira_url: null,
+    });
 
     const submitBug = async () => {
         if (!editing) return;
@@ -160,29 +143,40 @@ export default function BugTrackerPage() {
         if (!severity) { alert('Severidade é obrigatória.'); return; }
         setSaving(true);
         try {
-            const payload: Record<string, unknown> = {
-                title,
-                severity,
-                description: editing.description || null,
-                project_id: editing.project_id || null,
-                test_case_id: editing.test_case_id || null,
-                attachment_url: editing.attachment_url || null,
-                jira_url: editing.jira_url || null,
-                status: editing.status || 'open',
-                source: editing.source || 'manual',
-            };
             if (editing.id) {
-                const { error } = await supabase.from('bug_reports').update(payload).eq('id', editing.id);
+                const { error } = await supabase.from('bug_reports').update({
+                    title, severity,
+                    description: editing.description || null,
+                    project_id: editing.project_id || null,
+                    test_case_id: editing.test_case_id || null,
+                    attachment_url: editing.attachment_url || null,
+                    jira_url: editing.jira_url || null,
+                    status: editing.status || 'open',
+                    source: editing.source || 'manual',
+                }).eq('id', editing.id);
                 if (error) throw error;
             } else {
-                const { error } = await supabase.from('bug_reports').insert(payload);
-                if (error) throw error;
+                const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+                const res = await fetch(`${API}/bugs`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title, severity,
+                        description: editing.description || null,
+                        project_id: editing.project_id || null,
+                        test_case_id: editing.test_case_id || null,
+                        attachment_url: editing.attachment_url || null,
+                        jira_url: editing.jira_url || null,
+                        status: editing.status || 'open',
+                    }),
+                });
+                const body = await res.json().catch(() => ({})) as { error?: string };
+                if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
             }
             const fresh = await loadBugs();
             setBugs(fresh);
             setEditing(null);
         } catch (e) {
-            console.error('bug save failed:', e);
             alert('Erro ao salvar bug: ' + ((e as { message?: string })?.message || e));
         } finally {
             setSaving(false);
@@ -191,239 +185,235 @@ export default function BugTrackerPage() {
 
     const confirmDelete = async () => {
         if (!deletingId) return;
-        const targetId = deletingId;
-        setDeletingId(null);
+        const id = deletingId; setDeletingId(null);
         try {
-            const { error } = await supabase.from('bug_reports').delete().eq('id', targetId);
+            const { error } = await supabase.from('bug_reports').delete().eq('id', id);
             if (error) throw error;
-            setBugs(prev => prev.filter(b => b.id !== targetId));
+            setBugs(prev => prev.filter(b => b.id !== id));
         } catch (e) {
             alert('Erro ao excluir: ' + ((e as { message?: string })?.message || e));
         }
     };
 
-    // Filter tests by selected project in the form
-    const projectScopedTests = useMemo(() => {
-        if (!editing?.project_id) return tests;
-        return tests.filter(t => t.project_id === editing.project_id);
-    }, [tests, editing?.project_id]);
+    const projectScopedTests = useMemo(() =>
+        editing?.project_id ? tests.filter(t => t.project_id === editing.project_id) : tests,
+        [tests, editing?.project_id]);
+
+    const selectClass = 'h-9 bg-card border border-border rounded-lg px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/20';
 
     return (
-        <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-[1500px] mx-auto flex flex-col gap-6 h-full overflow-y-auto custom-scrollbar">
 
-            {/* Header & Filters */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+            {/* Header */}
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
                         <Bug className="w-6 h-6 text-brand" /> Bug Tracker
                     </h1>
-                    <p className="text-textSecondary mt-1">Bugs reportados manualmente ou capturados automaticamente em execuções que falharam.</p>
+                    <p className="text-muted-foreground text-sm mt-0.5">Bugs reportados manualmente ou capturados automaticamente em execuções que falharam.</p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3">
-                    <div className="relative flex-1 min-w-[180px]">
+                {/* Filtros */}
+                <div className="flex flex-wrap items-center gap-2">
+                    {/* Busca */}
+                    <div className="relative">
                         <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
                         <input
                             type="text"
                             placeholder="Buscar bugs..."
                             value={globalFilter}
-                            onChange={(e) => setGlobalFilter(e.target.value)}
-                            className="h-9 bg-card border border-border rounded-lg pl-9 pr-4 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/20 w-full sm:w-[250px]"
+                            onChange={e => setGlobalFilter(e.target.value)}
+                            className="h-9 bg-card border border-border rounded-lg pl-9 pr-4 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/20 w-48 sm:w-56"
                         />
                     </div>
-
-                    <div className="relative">
-                        <Filter className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-                        <select
-                            value={severityFilter}
-                            onChange={(e) => setSeverityFilter(e.target.value)}
-                            className="h-9 bg-card border border-border rounded-lg pl-9 pr-4 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/20 appearance-none min-w-[160px]"
-                        >
-                            <option value="all">Todas Severidades</option>
-                            <option value="critical">Crítico</option>
-                            <option value="high">Alta</option>
-                            <option value="medium">Média</option>
-                            <option value="low">Baixa</option>
-                        </select>
-                    </div>
-
-                    {/* Button height matches search/filter (h-9) so the toolbar is flush. */}
+                    {/* Projeto */}
+                    <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)} className={`${selectClass} min-w-[150px]`}>
+                        <option value="">Todos os Projetos</option>
+                        {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                    {/* Severidade */}
+                    <select value={severityFilter} onChange={e => setSeverityFilter(e.target.value)} className={`${selectClass} min-w-[150px]`}>
+                        <option value="all">Todas Severidades</option>
+                        <option value="critical">Crítico</option>
+                        <option value="high">Alta</option>
+                        <option value="medium">Média</option>
+                        <option value="low">Baixa</option>
+                    </select>
                     <button
                         onClick={openNewBug}
                         disabled={migrationMissing}
-                        className="h-9 bg-brand text-white px-4 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all inline-flex items-center gap-2"
-                        title={migrationMissing ? 'Aplique a migration antes de criar bugs' : 'Reportar novo bug'}
+                        className="h-9 bg-brand text-black px-4 rounded-lg text-sm font-bold hover:bg-brand/90 disabled:opacity-50 transition-all inline-flex items-center gap-2"
                     >
                         <Plus className="w-4 h-4" /> Novo Bug
                     </button>
                 </div>
             </div>
 
-            {/* Table */}
+            {/* Tabela */}
             <div className="bg-card rounded-2xl shadow-sm border border-border flex flex-col overflow-hidden">
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto custom-scrollbar">
                     <table className="w-full text-left text-sm text-muted-foreground whitespace-nowrap">
-                        <thead className="text-[10px] uppercase bg-surface-muted/50 text-muted-foreground font-bold tracking-widest border-b border-border">
+                        <thead className="text-[10px] uppercase bg-foreground/[0.03] text-muted-foreground font-bold tracking-widest border-b border-border">
                             <tr>
-                                <th className="px-6 py-4">Severidade</th>
-                                <th className="px-6 py-4">Título</th>
-                                <th className="px-6 py-4">Projeto</th>
-                                <th className="px-6 py-4">Teste</th>
-                                <th className="px-6 py-4">Origem</th>
-                                <th className="px-6 py-4">Status</th>
-                                <th className="px-6 py-4">Data</th>
-                                <th className="px-6 py-4 text-right">Ações</th>
+                                <th className="px-4 py-3.5">Severidade</th>
+                                <th className="px-4 py-3.5">Jira</th>
+                                <th className="px-4 py-3.5">Título</th>
+                                <th className="px-4 py-3.5">Projeto</th>
+                                <th className="px-4 py-3.5">Origem</th>
+                                <th className="px-4 py-3.5">Status</th>
+                                <th className="px-4 py-3.5">Data / Hora</th>
+                                <th className="px-4 py-3.5 text-right">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
-                            {pagedBugs.map(bug => (
-                                <tr
-                                    key={bug.id}
-                                    onClick={() => setEditing(bug)}
-                                    className="hover:bg-accent transition-colors cursor-pointer"
-                                    title="Clique para visualizar/editar"
-                                >
-                                    <td className="px-6 py-4">
-                                        <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-bold uppercase tracking-wide ${severityColors[bug.severity]}`}>
-                                            {bug.severity}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 font-bold text-foreground max-w-[320px] truncate" title={bug.title}>
-                                        {bug.title}
-                                    </td>
-                                    <td className="px-6 py-4 text-xs">{bug.projects?.name || '—'}</td>
-                                    <td className="px-6 py-4">
-                                        {bug.test_cases?.name
-                                            ? <span className="text-brand font-medium">{bug.test_cases.name}</span>
-                                            : <span className="text-muted-foreground">—</span>}
-                                    </td>
-                                    <td className="px-6 py-4 text-xs">
-                                        {bug.source === 'automation'
-                                            ? <span className="inline-flex px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 text-[10px] font-bold">AUTO</span>
-                                            : <span className="inline-flex px-1.5 py-0.5 rounded bg-surface-muted text-muted-foreground text-[10px] font-bold">MANUAL</span>}
-                                    </td>
-                                    <td className="px-6 py-4 text-xs">{statusLabel[bug.status]}</td>
-                                    <td className="px-6 py-4 text-xs">{formatBugDate(bug.created_at)}</td>
-                                    {/* Action links use stopPropagation so they don't also trigger the row's edit-open click. */}
-                                    <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                                        <div className="flex items-center justify-end gap-3 text-muted-foreground">
-                                            {bug.jira_url && (
-                                                <a href={bug.jira_url} target="_blank" rel="noopener noreferrer"
-                                                   className="hover:text-brand flex items-center gap-1 text-xs"
-                                                   title="Abrir no Jira">
-                                                    <Link2 className="w-3.5 h-3.5" /> Jira
+                            {pagedBugs.map(bug => {
+                                const jiraKey = extractJiraKey(bug.jira_url);
+                                const st = statusConfig[bug.status] ?? statusConfig.open;
+                                const isAuto = bug.source === 'automation';
+                                return (
+                                    <tr key={bug.id} onClick={() => setEditing(bug)}
+                                        className="hover:bg-accent/50 transition-colors cursor-pointer">
+                                        <td className="px-4 py-3">
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wide ${severityColors[bug.severity]}`}>
+                                                {bug.severity}
+                                            </span>
+                                        </td>
+                                        {/* Jira card */}
+                                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                                            {jiraKey ? (
+                                                <a href={bug.jira_url!} target="_blank" rel="noopener noreferrer"
+                                                    className="inline-flex items-center gap-1 text-xs font-bold text-brand hover:underline bg-brand/10 border border-brand/20 rounded-md px-2 py-0.5">
+                                                    {jiraKey} <ExternalLink className="w-2.5 h-2.5" />
                                                 </a>
+                                            ) : (
+                                                <span className="text-muted-foreground/40 text-xs">—</span>
                                             )}
-                                            {bug.attachment_url && (
-                                                <a href={bug.attachment_url} target="_blank" rel="noopener noreferrer"
-                                                   className="hover:text-brand flex items-center gap-1 text-xs"
-                                                   title="Abrir anexo">
-                                                    <Paperclip className="w-3.5 h-3.5" /> Anexo
-                                                </a>
+                                        </td>
+                                        {/* Título */}
+                                        <td className="px-4 py-3 max-w-[280px]">
+                                            <div className="flex flex-col gap-0.5">
+                                                <span className="font-bold text-foreground truncate" title={bug.title}>{bug.title}</span>
+                                                {bug.test_cases?.name && (
+                                                    <span className="text-[10px] text-brand font-medium truncate">{bug.test_cases.name}</span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 text-xs text-muted-foreground">{bug.projects?.name || '—'}</td>
+                                        {/* Origem */}
+                                        <td className="px-4 py-3">
+                                            {isAuto ? (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold bg-violet-500/15 text-violet-400 border-violet-500/30">
+                                                    <GitBranch className="w-2.5 h-2.5" /> Auto
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold bg-foreground/8 text-muted-foreground border-border">
+                                                    <User className="w-2.5 h-2.5" /> Manual
+                                                </span>
                                             )}
-                                            {bug.pdf_url && (
-                                                <a href={bug.pdf_url} target="_blank" rel="noopener noreferrer"
-                                                   className="hover:text-brand flex items-center gap-1 text-xs"
-                                                   title="Relatório PDF">
-                                                    <FileText className="w-3.5 h-3.5" /> PDF
-                                                </a>
-                                            )}
-                                            <button onClick={() => setDeletingId(bug.id)}
-                                                    className="text-muted-foreground hover:text-danger transition-colors"
-                                                    title="Excluir bug">
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
+                                        </td>
+                                        {/* Status */}
+                                        <td className="px-4 py-3">
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded border text-[10px] font-bold ${st.classes}`}>
+                                                {st.label}
+                                            </span>
+                                        </td>
+                                        {/* Data/hora */}
+                                        <td className="px-4 py-3 text-xs text-muted-foreground">{formatBugDate(bug.created_at)}</td>
+                                        {/* Ações */}
+                                        <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
+                                            <div className="flex items-center justify-end gap-2">
+                                                {bug.attachment_url && (
+                                                    <a href={bug.attachment_url} target="_blank" rel="noopener noreferrer"
+                                                        className="text-muted-foreground hover:text-brand transition-colors" title="Anexo">
+                                                        <Paperclip className="w-3.5 h-3.5" />
+                                                    </a>
+                                                )}
+                                                {bug.pdf_url && (
+                                                    <a href={bug.pdf_url} target="_blank" rel="noopener noreferrer"
+                                                        className="text-muted-foreground hover:text-brand transition-colors" title="PDF">
+                                                        <FileText className="w-3.5 h-3.5" />
+                                                    </a>
+                                                )}
+                                                <button onClick={() => setDeletingId(bug.id)}
+                                                    className="text-muted-foreground hover:text-danger transition-colors" title="Excluir">
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
 
-                {/* Loading / empty */}
                 {loading && (
-                    <div className="p-8 text-center text-textSecondary text-sm">
-                        <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
-                        Carregando bugs…
+                    <div className="p-8 text-center text-muted-foreground text-sm">
+                        <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Carregando bugs…
                     </div>
                 )}
                 {!loading && filteredBugs.length === 0 && (
-                    <div className="p-8 text-center text-textSecondary text-sm">
-                        {migrationMissing
-                            ? <span className="inline-flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-amber-500" /> A tabela <code className="font-mono bg-warning/10 text-warning px-1.5 py-0.5 rounded">bug_reports</code> ainda não existe. Aplique a migration <code className="font-mono bg-warning/10 text-warning px-1.5 py-0.5 rounded">supabase/migrations/002_test_runs_bugs.sql</code>.</span>
-                            : bugs.length === 0
-                                ? 'Nenhum bug registrado ainda. Clique em "Novo Bug" para reportar um.'
-                                : 'Nenhum bug encontrado com os filtros atuais.'}
+                    <div className="p-8 text-center text-muted-foreground text-sm">
+                        {migrationMissing ? (
+                            <span className="inline-flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4 text-warning" />
+                                Tabela <code className="font-mono bg-warning/10 text-warning px-1.5 py-0.5 rounded">bug_reports</code> não existe. Aplique a migration 002.
+                            </span>
+                        ) : bugs.length === 0
+                            ? 'Nenhum bug registrado ainda.'
+                            : 'Nenhum bug encontrado com os filtros aplicados.'}
                     </div>
                 )}
 
-                {/* Pagination footer — only shown when there's more than one
-                    page so a small dataset doesn't get a permanent footer. */}
                 {!loading && filteredBugs.length > PAGE_SIZE && (
-                    <div className="px-6 py-3 border-t border-border bg-surface-muted/40 flex items-center justify-between text-xs text-muted-foreground">
+                    <div className="px-6 py-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
                         <span>
-                            Mostrando <span className="font-bold text-foreground">{((currentPage - 1) * PAGE_SIZE) + 1}</span>
-                            – <span className="font-bold text-foreground">{Math.min(currentPage * PAGE_SIZE, filteredBugs.length)}</span>
-                            {' '}de <span className="font-bold text-foreground">{filteredBugs.length}</span> bugs
+                            Mostrando <strong className="text-foreground">{(currentPage - 1) * PAGE_SIZE + 1}</strong>–<strong className="text-foreground">{Math.min(currentPage * PAGE_SIZE, filteredBugs.length)}</strong> de <strong className="text-foreground">{filteredBugs.length}</strong> bugs
                         </span>
                         <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                disabled={currentPage === 1}
-                                className="inline-flex items-center gap-1 px-3 h-8 rounded-md border border-border bg-card hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed text-muted-foreground font-medium"
-                            >
-                                <ChevronLeft className="w-3.5 h-3.5" /> Anterior
+                            <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+                                className="inline-flex items-center gap-1 px-3 h-7 rounded border border-border bg-card hover:bg-accent disabled:opacity-40 text-xs font-medium">
+                                <ChevronLeft className="w-3 h-3" /> Anterior
                             </button>
-                            <span className="px-2">
-                                Página <span className="font-bold text-foreground">{currentPage}</span> de <span className="font-bold text-foreground">{totalPages}</span>
-                            </span>
-                            <button
-                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                                disabled={currentPage >= totalPages}
-                                className="inline-flex items-center gap-1 px-3 h-8 rounded-md border border-border bg-card hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed text-muted-foreground font-medium"
-                            >
-                                Próximo <ChevronRight className="w-3.5 h-3.5" />
+                            <span>Página <strong className="text-foreground">{currentPage}</strong> de <strong className="text-foreground">{totalPages}</strong></span>
+                            <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
+                                className="inline-flex items-center gap-1 px-3 h-7 rounded border border-border bg-card hover:bg-accent disabled:opacity-40 text-xs font-medium">
+                                Próximo <ChevronRight className="w-3 h-3" />
                             </button>
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* Create / Edit Modal */}
+            {/* Modal criar/editar */}
             {editing && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-card border border-border rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
-                        <div className="p-6 border-b border-border flex items-center justify-between">
+                        <div className="p-5 border-b border-border flex items-center justify-between">
                             <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
                                 <Bug className="w-5 h-5 text-brand" />
                                 {editing.id ? 'Editar Bug' : 'Novo Bug'}
                             </h2>
-                            <button onClick={() => setEditing(null)} className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-accent">
+                            {!editing.id && (
+                                <span className="text-[11px] text-muted-foreground bg-brand/10 border border-brand/20 rounded-md px-2 py-0.5">
+                                    Jira será aberto automaticamente
+                                </span>
+                            )}
+                            <button onClick={() => setEditing(null)} className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-accent ml-2">
                                 <X className="w-4 h-4" />
                             </button>
                         </div>
 
-                        <div className="p-6 flex flex-col gap-4 overflow-y-auto">
+                        <div className="p-5 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div className="md:col-span-2 flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Título *</label>
-                                    <input
-                                        type="text"
-                                        value={editing.title || ''}
-                                        onChange={e => setEditing({ ...editing, title: e.target.value })}
-                                        placeholder="Resumo curto do bug"
-                                        className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50"
-                                        autoFocus
-                                    />
+                                    <label className={labelClass}>Título *</label>
+                                    <input type="text" value={editing.title || ''} onChange={e => setEditing({ ...editing, title: e.target.value })}
+                                        placeholder="Resumo curto do bug" className={inputClass} autoFocus />
                                 </div>
                                 <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Severidade *</label>
-                                    <select
-                                        value={editing.severity || 'medium'}
-                                        onChange={e => setEditing({ ...editing, severity: e.target.value as Severity })}
-                                        className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50"
-                                    >
+                                    <label className={labelClass}>Severidade *</label>
+                                    <select value={editing.severity || 'medium'} onChange={e => setEditing({ ...editing, severity: e.target.value as Severity })} className={inputClass}>
                                         <option value="critical">Crítico</option>
                                         <option value="high">Alta</option>
                                         <option value="medium">Média</option>
@@ -433,41 +423,27 @@ export default function BugTrackerPage() {
                             </div>
 
                             <div className="flex flex-col gap-1.5">
-                                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Descrição</label>
-                                <textarea
-                                    value={editing.description || ''}
-                                    onChange={e => setEditing({ ...editing, description: e.target.value })}
-                                    placeholder="Passos para reproduzir, comportamento esperado vs observado, ambiente, etc."
-                                    rows={5}
-                                    className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50 resize-none"
-                                />
+                                <label className={labelClass}>Descrição</label>
+                                <textarea value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })}
+                                    placeholder="Passos para reproduzir, comportamento esperado vs observado, ambiente…"
+                                    rows={4} className={`${inputClass} resize-none`} />
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Projeto</label>
-                                    <select
-                                        value={editing.project_id || ''}
-                                        onChange={e => setEditing({
-                                            ...editing,
-                                            project_id: e.target.value || null,
-                                            // Reset test if it doesn't belong to the new project
-                                            test_case_id: tests.find(t => t.id === editing.test_case_id)?.project_id === e.target.value ? editing.test_case_id : null,
-                                        })}
-                                        className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50"
-                                    >
+                                    <label className={labelClass}>Projeto</label>
+                                    <select value={editing.project_id || ''} onChange={e => setEditing({
+                                        ...editing, project_id: e.target.value || null,
+                                        test_case_id: tests.find(t => t.id === editing.test_case_id)?.project_id === e.target.value ? editing.test_case_id : null,
+                                    })} className={inputClass}>
                                         <option value="">— Nenhum —</option>
                                         {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                     </select>
                                 </div>
                                 <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Teste relacionado</label>
-                                    <select
-                                        value={editing.test_case_id || ''}
-                                        onChange={e => setEditing({ ...editing, test_case_id: e.target.value || null })}
-                                        className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50 disabled:opacity-50"
-                                        disabled={projectScopedTests.length === 0}
-                                    >
+                                    <label className={labelClass}>Teste relacionado</label>
+                                    <select value={editing.test_case_id || ''} onChange={e => setEditing({ ...editing, test_case_id: e.target.value || null })}
+                                        className={`${inputClass} disabled:opacity-50`} disabled={projectScopedTests.length === 0}>
                                         <option value="">— Nenhum —</option>
                                         {projectScopedTests.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                                     </select>
@@ -476,38 +452,21 @@ export default function BugTrackerPage() {
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                                        <Paperclip className="w-3 h-3" /> Anexo (URL)
-                                    </label>
-                                    <input
-                                        type="url"
-                                        value={editing.attachment_url || ''}
-                                        onChange={e => setEditing({ ...editing, attachment_url: e.target.value })}
-                                        placeholder="https://drive.google.com/..."
-                                        className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50"
-                                    />
+                                    <label className={`${labelClass} flex items-center gap-1`}><Paperclip className="w-3 h-3" /> Anexo (URL)</label>
+                                    <input type="url" value={editing.attachment_url || ''} onChange={e => setEditing({ ...editing, attachment_url: e.target.value })}
+                                        placeholder="https://drive.google.com/…" className={inputClass} />
                                 </div>
                                 <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                                        <Link2 className="w-3 h-3" /> Link do Jira
-                                    </label>
-                                    <input
-                                        type="url"
-                                        value={editing.jira_url || ''}
-                                        onChange={e => setEditing({ ...editing, jira_url: e.target.value })}
-                                        placeholder="https://foxbit.atlassian.net/browse/ISS-123"
-                                        className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50"
-                                    />
+                                    <label className={`${labelClass} flex items-center gap-1`}><Link2 className="w-3 h-3" /> Link do Jira (opcional)</label>
+                                    <input type="url" value={editing.jira_url || ''} onChange={e => setEditing({ ...editing, jira_url: e.target.value })}
+                                        placeholder="https://foxbit.atlassian.net/browse/INNO-123" className={inputClass} />
+                                    {!editing.id && <p className="text-[10px] text-muted-foreground">Deixe vazio para criar automaticamente.</p>}
                                 </div>
                             </div>
 
-                            <div className="flex flex-col gap-1.5">
-                                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Status</label>
-                                <select
-                                    value={editing.status || 'open'}
-                                    onChange={e => setEditing({ ...editing, status: e.target.value as BugStatus })}
-                                    className="bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50 max-w-xs"
-                                >
+                            <div className="flex flex-col gap-1.5 max-w-xs">
+                                <label className={labelClass}>Status</label>
+                                <select value={editing.status || 'open'} onChange={e => setEditing({ ...editing, status: e.target.value as BugStatus })} className={inputClass}>
                                     <option value="open">Aberto</option>
                                     <option value="in_progress">Em andamento</option>
                                     <option value="resolved">Resolvido</option>
@@ -516,15 +475,10 @@ export default function BugTrackerPage() {
                             </div>
                         </div>
 
-                        <div className="p-6 pt-2 flex gap-3 justify-end border-t border-border">
-                            <button onClick={() => setEditing(null)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
-                                Cancelar
-                            </button>
-                            <button
-                                onClick={submitBug}
-                                disabled={saving || !(editing.title || '').trim()}
-                                className="px-5 py-2 bg-brand text-white text-sm font-bold rounded-lg hover:bg-brand/90 disabled:opacity-50 transition-all flex items-center gap-2"
-                            >
+                        <div className="p-5 pt-3 flex gap-3 justify-end border-t border-border">
+                            <button onClick={() => setEditing(null)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Cancelar</button>
+                            <button onClick={submitBug} disabled={saving || !(editing.title || '').trim()}
+                                className="px-5 py-2 bg-brand text-black text-sm font-bold rounded-lg hover:bg-brand/90 disabled:opacity-50 flex items-center gap-2">
                                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                                 {editing.id ? 'Salvar alterações' : 'Reportar Bug'}
                             </button>
@@ -533,24 +487,27 @@ export default function BugTrackerPage() {
                 </div>
             )}
 
-            {/* Delete confirmation */}
+            {/* Confirmar exclusão */}
             {deletingId && (() => {
                 const target = bugs.find(b => b.id === deletingId);
-                const title = target?.title || '';
                 return (
                     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                         <div className="bg-card border border-border rounded-2xl w-full max-w-sm p-6 shadow-2xl">
                             <h3 className="text-lg font-bold text-foreground mb-2">Excluir Bug?</h3>
-                            <p className="text-sm text-muted-foreground mb-6">O bug &quot;{title}&quot; será excluído permanentemente.</p>
+                            <p className="text-sm text-muted-foreground mb-6">
+                                &quot;{target?.title}&quot; será excluído permanentemente.
+                            </p>
                             <div className="flex gap-3 justify-end">
-                                <button onClick={() => setDeletingId(null)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">Cancelar</button>
-                                <button onClick={confirmDelete} className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 transition-colors">Excluir</button>
+                                <button onClick={() => setDeletingId(null)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Cancelar</button>
+                                <button onClick={confirmDelete} className="px-4 py-2 bg-danger text-white text-sm font-bold rounded-lg hover:bg-danger/90">Excluir</button>
                             </div>
                         </div>
                     </div>
                 );
             })()}
-
         </div>
     );
 }
+
+const labelClass = 'text-xs font-bold text-muted-foreground uppercase tracking-wider';
+const inputClass = 'bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50 w-full';

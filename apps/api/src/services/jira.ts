@@ -243,3 +243,70 @@ export async function createBugFromCase(
         url: `https://${cfg.host}/browse/${data.key}`,
     };
 }
+
+/**
+ * Abre um bug genérico no Jira (sem caso de Jornada vinculado).
+ * Usado pelo BugTracker para criar tickets a partir do formulário manual.
+ */
+export async function createBugGeneral(opts: {
+    title: string;
+    description?: string;
+    priority?: CasePriority;
+    source?: string;
+}): Promise<CreatedJiraBug> {
+    const cfg = loadConfig();
+    const summary = `[QA] ${opts.title}`.slice(0, 255);
+    const desc: object = {
+        type: 'doc',
+        version: 1,
+        content: [
+            {
+                type: 'heading',
+                attrs: { level: 3 },
+                content: [{ type: 'text', text: '🔴 Bug reportado via QAMind' }],
+            },
+            ...(opts.description ? [{
+                type: 'paragraph',
+                content: [{ type: 'text', text: opts.description }],
+            }] : []),
+            {
+                type: 'paragraph',
+                content: [{ type: 'text', text: `Fonte: ${opts.source || 'manual'} | Prioridade: ${opts.priority || 'medium'}`, marks: [{ type: 'em' }] }],
+            },
+        ],
+    };
+    const payload = {
+        fields: {
+            project: { key: cfg.projectKey },
+            issuetype: { name: cfg.issueType },
+            summary,
+            priority: { name: mapPriority((opts.priority as CasePriority) || 'medium') },
+            description: desc,
+            labels: ['qamind', 'manual'],
+        },
+    };
+    const url = `https://${cfg.host}/rest/api/3/issue`;
+    const auth = Buffer.from(`${cfg.email}:${cfg.token}`).toString('base64');
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Basic ${auth}` },
+        body: JSON.stringify(payload),
+    });
+    const text = await res.text();
+    if (res.status !== 201) {
+        let detail = text;
+        try {
+            const err = JSON.parse(text) as { errors?: Record<string, string>; errorMessages?: string[] };
+            const parts = [...(err.errorMessages || []), ...Object.entries(err.errors || {}).map(([k, v]) => `${k}: ${v}`)];
+            if (parts.length) detail = parts.join('; ');
+        } catch { /* resposta nao-JSON */ }
+        throw Object.assign(new Error(`Jira respondeu HTTP ${res.status}: ${detail.slice(0, 500)}`), { statusCode: 502 });
+    }
+    const data = JSON.parse(text) as { key: string; self: string };
+    return { key: data.key, self: data.self, url: `https://${cfg.host}/browse/${data.key}` };
+}
+
+/** Retorna true se as credenciais Jira estão configuradas (sem lançar exceção). */
+export function isJiraConfigured(): boolean {
+    return !!(process.env.JIRA_USER_EMAIL?.trim() && process.env.JIRA_API_TOKEN?.trim());
+}

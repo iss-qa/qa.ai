@@ -298,7 +298,7 @@ const qaJourneyRoutes: FastifyPluginAsync = async (fastify) => {
 
             const { data: case_, error } = await supabase
                 .from('qa_journey_cases')
-                .select('id, external_id, title, writing_mode, description, gherkin, steps_summary, expected_result, priority, platform, evidence_url, last_run_status')
+                .select('id, external_id, title, writing_mode, description, gherkin, steps_summary, expected_result, priority, platform, evidence_url, last_run_status, qa_journey_subflows(qa_journeys(project_id))')
                 .eq('id', caseId)
                 .maybeSingle();
             if (error) return handleError(reply, error);
@@ -306,12 +306,81 @@ const qaJourneyRoutes: FastifyPluginAsync = async (fastify) => {
 
             try {
                 const bug = await createBugFromCase(case_ as JiraBugCase, description);
+
+                // Grava também em bug_reports para aparecer no BugTracker.
+                const projectId = (case_ as unknown as { qa_journey_subflows?: { qa_journeys?: { project_id?: string } | null } | null })
+                    ?.qa_journey_subflows?.qa_journeys?.project_id ?? null;
+                const priorityToSeverity: Record<string, string> = { critical: 'critical', high: 'high', medium: 'medium', low: 'low' };
+                await supabase.from('bug_reports').insert({
+                    project_id: projectId,
+                    title: (case_ as { title: string }).title,
+                    description: description || null,
+                    severity: priorityToSeverity[(case_ as { priority: string }).priority] || 'medium',
+                    jira_url: bug.url,
+                    source: 'manual',
+                    status: 'open',
+                });
+
                 return bug;
             } catch (e) {
                 return handleError(reply, e);
             }
         },
     );
+
+    // POST /bugs — cria bug_report e abre ticket no Jira (se configurado).
+    fastify.post('/bugs', async (request, reply) => {
+        const body = request.body as {
+            title?: string;
+            severity?: string;
+            description?: string;
+            project_id?: string;
+            test_case_id?: string;
+            attachment_url?: string;
+            jira_url?: string;
+            status?: string;
+        };
+        if (!body?.title?.trim()) return reply.status(400).send({ error: 'title obrigatório' });
+
+        let jiraUrl = body.jira_url || null;
+
+        // Tenta abrir no Jira se não vier URL explícita.
+        if (!jiraUrl) {
+            try {
+                const { createBugGeneral, isJiraConfigured } = await import('../services/jira');
+                if (isJiraConfigured()) {
+                    const severityToPriority: Record<string, string> = { critical: 'critical', high: 'high', medium: 'medium', low: 'low' };
+                    const created = await createBugGeneral({
+                        title: body.title!.trim(),
+                        description: body.description || undefined,
+                        priority: (severityToPriority[body.severity || 'medium'] || 'medium') as 'low' | 'medium' | 'high' | 'critical',
+                        source: 'manual',
+                    });
+                    jiraUrl = created.url;
+                }
+            } catch (e) {
+                fastify.log.warn(`Jira nao disponivel ao criar bug: ${e instanceof Error ? e.message : e}`);
+            }
+        }
+
+        const { data, error } = await supabase
+            .from('bug_reports')
+            .insert({
+                title: body.title!.trim(),
+                severity: body.severity || 'medium',
+                description: body.description || null,
+                project_id: body.project_id || null,
+                test_case_id: body.test_case_id || null,
+                attachment_url: body.attachment_url || null,
+                jira_url: jiraUrl,
+                status: body.status || 'open',
+                source: 'manual',
+            })
+            .select('*')
+            .single();
+        if (error) return reply.status(400).send({ error: error.message });
+        return { bug: data };
+    });
 
     // ============================================================
     // Snapshots (Etapa 9.5)
