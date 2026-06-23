@@ -345,8 +345,26 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
                                             <Link2 className="w-3 h-3" /> Maestro
                                         </span>
                                     )}
+
+                                    {/* Ações centralizadas no espaço vazio do header */}
+                                    <div className="flex-1 flex items-center justify-center gap-3">
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); setImportDialog({ subflowId: sub.id }); }}
+                                            className="text-xs font-bold text-muted-foreground hover:text-foreground flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-foreground/5 transition-colors"
+                                            title="Importar casos de uma planilha Google Sheets"
+                                        >
+                                            <FileSpreadsheet className="w-3.5 h-3.5" /> Importar da planilha
+                                        </button>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); setCaseDialog({ subflowId: sub.id, subject: null }); }}
+                                            className="text-xs font-bold text-brand flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-brand/10 transition-colors"
+                                        >
+                                            <Plus className="w-3.5 h-3.5" /> Adicionar caso
+                                        </button>
+                                    </div>
+
                                     <span
-                                        className="text-[10px] text-muted-foreground ml-auto"
+                                        className="text-[10px] text-muted-foreground"
                                         title={totalCases !== subCases.length ? 'Inclui casos dos subfluxos filhos' : undefined}
                                     >
                                         {totalCases} {totalCases === 1 ? 'caso' : 'casos'}
@@ -375,21 +393,6 @@ export default function QAJourneyDetailPage({ params }: PageProps) {
 
                             {isOpen && (
                                 <div className="border-t border-border bg-surface-muted/30">
-                                    <div className="flex justify-end items-center gap-4 px-6 py-3">
-                                        <button
-                                            onClick={() => setImportDialog({ subflowId: sub.id })}
-                                            className="text-xs font-bold text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1"
-                                            title="Importar casos de uma planilha Google Sheets"
-                                        >
-                                            <FileSpreadsheet className="w-3 h-3" /> Importar da planilha
-                                        </button>
-                                        <button
-                                            onClick={() => setCaseDialog({ subflowId: sub.id, subject: null })}
-                                            className="text-xs font-bold text-brand hover:underline flex items-center gap-1"
-                                        >
-                                            <Plus className="w-3 h-3" /> Adicionar caso
-                                        </button>
-                                    </div>
 
                                     {subCases.length === 0 ? (
                                         <div className="px-6 pb-4 text-xs text-muted-foreground">

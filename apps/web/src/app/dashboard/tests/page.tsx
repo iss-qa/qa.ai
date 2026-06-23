@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { Plus, Search, Filter, Play, Loader2, Wand2, Globe, ExternalLink } from 'lucide-react';
+import { Plus, Search, Filter, Play, Loader2, Wand2, Globe, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+
+const PAGE_SIZE = 25;
 
 type TestRow = {
     id: string;
@@ -13,21 +15,9 @@ type TestRow = {
     created_at: string | null;
     status: string | null;
     projects?: { name: string | null; platform: string | null } | null;
-    // campos extras para testes Web
     _type?: 'mobile' | 'web';
     _spec_path?: string;
     _gh_run_url?: string | null;
-    _run_status?: string | null;
-};
-
-// Testes Web: agrupados por spec + projeto a partir de web_test_runs.
-type WebSpecRow = {
-    spec: string | null;
-    project_id: string;
-    project_name: string;
-    last_status: string | null;
-    last_run_at: string | null;
-    gh_run_url: string | null;
 };
 
 function formatLastRun(iso: string | null): string {
@@ -35,20 +25,12 @@ function formatLastRun(iso: string | null): string {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '—';
     const now = new Date();
-    const sameDay =
-        d.getFullYear() === now.getFullYear() &&
-        d.getMonth() === now.getMonth() &&
-        d.getDate() === now.getDate();
     const hh = d.getHours().toString().padStart(2, '0');
     const mm = d.getMinutes().toString().padStart(2, '0');
+    const sameDay = d.toDateString() === now.toDateString();
     if (sameDay) return `Hoje, ${hh}:${mm}`;
-    const yesterday = new Date(now);
-    yesterday.setDate(now.getDate() - 1);
-    const sameYesterday =
-        d.getFullYear() === yesterday.getFullYear() &&
-        d.getMonth() === yesterday.getMonth() &&
-        d.getDate() === yesterday.getDate();
-    if (sameYesterday) return `Ontem, ${hh}:${mm}`;
+    const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return `Ontem, ${hh}:${mm}`;
     return d.toLocaleDateString('pt-BR');
 }
 
@@ -64,20 +46,29 @@ function statusBadge(status: string | null): { label: string; classes: string } 
     return { label: 'Pendente', classes: 'bg-muted text-muted-foreground' };
 }
 
+// Timestamp de referência para ordenação: last_run_at > created_at > 0
+function sortKey(t: TestRow): number {
+    const iso = t.last_run_at || t.created_at;
+    if (!iso) return 0;
+    const ts = new Date(iso).getTime();
+    return Number.isNaN(ts) ? 0 : ts;
+}
+
 export default function TestsPage() {
     const [tests, setTests] = useState<TestRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [projectFilter, setProjectFilter] = useState('');
     const [platformFilter, setPlatformFilter] = useState<'all' | 'mobile' | 'web'>('all');
+    const [page, setPage] = useState(1);
 
     useEffect(() => {
         let cancelled = false;
         (async () => {
-            // Testes Mobile (Maestro — test_cases)
+            // ── Mobile (test_cases) ──────────────────────────────────────────
             const { data: mobileData } = await supabase
                 .from('test_cases')
-                .select('id, name, project_id, last_run_at, created_at, status, projects:project_id ( name, platform )')
+                .select('id, name, project_id, last_run_at, created_at, status, projects:project_id(name, platform)')
                 .order('last_run_at', { ascending: false, nullsFirst: false })
                 .order('created_at', { ascending: false });
 
@@ -85,34 +76,48 @@ export default function TestsPage() {
                 ...r, _type: 'mobile' as const,
             }));
 
-            // Testes Web — lê web_test_runs diretamente (sempre populado após trigger,
-            // independente de a ingestão de resultados ter ocorrido).
-            // Agrupa por spec+project_id → um entry por spec file distinto.
-            // Runs com spec=null representam a suite completa do projeto.
-            const { data: webRunsData } = await supabase
+            // ── Web (web_test_runs) ──────────────────────────────────────────
+            // Fetch sem join para evitar falha silenciosa do PostgREST.
+            // Nomes dos projetos são buscados em query separada.
+            const { data: webRunsData, error: webError } = await supabase
                 .from('web_test_runs')
-                .select('id, project_id, status, spec, gh_run_url, ended_at, created_at, projects(name)')
+                .select('id, project_id, status, spec, gh_run_url, ended_at, created_at')
                 .order('created_at', { ascending: false })
                 .limit(500);
 
-            const webMap = new Map<string, WebSpecRow>();
-            for (const run of (webRunsData as unknown as Array<{
-                id: string;
-                project_id: string;
-                status: string | null;
-                spec: string | null;
-                gh_run_url: string | null;
-                ended_at: string | null;
-                created_at: string;
-                projects: { name: string } | null;
-            }>) || []) {
+            if (webError) console.warn('[tests] web_test_runs query error:', webError.message);
+
+            const webRuns = (webRunsData || []) as {
+                id: string; project_id: string; status: string | null;
+                spec: string | null; gh_run_url: string | null;
+                ended_at: string | null; created_at: string;
+            }[];
+
+            // Busca nomes dos projetos web em query separada
+            const webProjectIds = [...new Set(webRuns.map(r => r.project_id).filter(Boolean))];
+            const projectNameMap = new Map<string, string>();
+            if (webProjectIds.length > 0) {
+                const { data: projData } = await supabase
+                    .from('projects')
+                    .select('id, name')
+                    .in('id', webProjectIds);
+                for (const p of (projData || []) as { id: string; name: string }[])
+                    projectNameMap.set(p.id, p.name);
+            }
+
+            // Agrupa por spec+project_id → entrada única por spec, status do run mais recente
+            const webMap = new Map<string, {
+                spec: string | null; project_id: string; project_name: string;
+                last_status: string | null; last_run_at: string | null; gh_run_url: string | null;
+            }>();
+            for (const run of webRuns) {
                 if (!run.project_id) continue;
                 const key = `${run.project_id}::${run.spec ?? '__suite__'}`;
                 if (!webMap.has(key)) {
                     webMap.set(key, {
                         spec: run.spec,
                         project_id: run.project_id,
-                        project_name: run.projects?.name || run.project_id,
+                        project_name: projectNameMap.get(run.project_id) || run.project_id,
                         last_status: run.status,
                         last_run_at: run.ended_at || run.created_at,
                         gh_run_url: run.gh_run_url,
@@ -131,23 +136,23 @@ export default function TestsPage() {
                 _type: 'web' as const,
                 _spec_path: w.spec || undefined,
                 _gh_run_url: w.gh_run_url,
-                _run_status: w.last_status,
             }));
 
             if (cancelled) return;
-            // Mobile primeiro, depois Web
-            setTests([...mobileRows, ...webRows]);
+
+            // Ordena globalmente por last_run_at desc (mais recente no topo)
+            const allTests = [...mobileRows, ...webRows].sort((a, b) => sortKey(b) - sortKey(a));
+            setTests(allTests);
             setLoading(false);
         })();
         return () => { cancelled = true; };
     }, []);
 
-    // Projetos presentes na lista (para o combobox de filtro)
+    // Projetos para o filtro
     const projectOptions = useMemo(() => {
         const map = new Map<string, string>();
-        for (const t of tests) {
+        for (const t of tests)
             if (t.project_id && t.projects?.name) map.set(t.project_id, t.projects.name);
-        }
         return Array.from(map.entries())
             .map(([id, name]) => ({ id, name }))
             .sort((a, b) => a.name.localeCompare(b.name));
@@ -168,45 +173,70 @@ export default function TestsPage() {
         });
     }, [tests, search, projectFilter, platformFilter]);
 
+    // Reseta página quando filtros mudam
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const safePage = Math.min(page, totalPages);
+    const pageStart = (safePage - 1) * PAGE_SIZE;
+    const pageRows = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+
+    const goTo = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
+
+    // Reseta para pg 1 quando filtro muda
+    const handleSearch = (v: string) => { setSearch(v); setPage(1); };
+    const handleProject = (v: string) => { setProjectFilter(v); setPage(1); };
+    const handlePlatform = (v: 'all' | 'mobile' | 'web') => { setPlatformFilter(v); setPage(1); };
+
+    const mobileCt = tests.filter(t => t._type === 'mobile').length;
+    const webCt    = tests.filter(t => t._type === 'web').length;
+
     return (
         <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto flex flex-col gap-8">
+            {/* Header */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-foreground">Testes</h1>
-                    <p className="text-textSecondary/80 text-sm mt-1">Gerencie e execute seus casos de teste.</p>
+                    <p className="text-muted-foreground text-sm mt-1">
+                        Gerencie e execute seus casos de teste.
+                        {!loading && (
+                            <span className="ml-2 text-xs">
+                                <span className="text-muted-foreground">{mobileCt} mobile</span>
+                                {webCt > 0 && <><span className="mx-1 text-border">·</span><span className="text-brand">{webCt} web</span></>}
+                            </span>
+                        )}
+                    </p>
                 </div>
-                <Link href="/dashboard/tests/editor" prefetch={true} className="bg-brand text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 transition-all flex items-center gap-2">
+                <Link href="/dashboard/tests/editor" prefetch={true}
+                    className="bg-brand text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-brand/90 transition-all flex items-center gap-2 self-start sm:self-auto">
                     <Plus className="w-4 h-4" /> NOVO TESTE
                 </Link>
             </div>
 
             <div className="bg-card rounded-2xl shadow-sm border border-border flex flex-col overflow-hidden">
+                {/* Filtros */}
                 <div className="p-4 border-b border-border flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-surface-muted/50">
                     <div className="relative flex-1 sm:max-w-xl">
                         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                         <input
                             type="text"
                             value={search}
-                            onChange={(e) => setSearch(e.target.value)}
+                            onChange={e => handleSearch(e.target.value)}
                             placeholder="Buscar testes por nome ou projeto..."
                             className="pl-10 pr-4 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 w-full text-foreground"
                         />
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
                         <Filter className="w-4 h-4 text-muted-foreground hidden sm:block" />
-                        {/* Filtro plataforma */}
                         <div className="inline-flex bg-foreground/5 border border-border rounded-lg p-0.5 gap-0.5">
                             {(['all', 'mobile', 'web'] as const).map(p => (
-                                <button key={p} onClick={() => setPlatformFilter(p)}
+                                <button key={p} onClick={() => handlePlatform(p)}
                                     className={`px-2.5 py-1 text-xs font-bold rounded-md transition-colors ${platformFilter === p ? 'bg-brand/15 text-brand' : 'text-muted-foreground hover:text-foreground'}`}>
                                     {p === 'all' ? 'Todos' : p === 'mobile' ? 'Mobile' : 'Web'}
                                 </button>
                             ))}
                         </div>
                         <select
-                            id="tests-project-filter"
                             value={projectFilter}
-                            onChange={e => setProjectFilter(e.target.value)}
+                            onChange={e => handleProject(e.target.value)}
                             className="bg-card border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/20 min-w-[150px]"
                         >
                             <option value="">Todos os projetos</option>
@@ -217,6 +247,7 @@ export default function TestsPage() {
                     </div>
                 </div>
 
+                {/* Tabela */}
                 <div className="overflow-x-auto custom-scrollbar">
                     <table className="w-full text-left text-sm text-muted-foreground whitespace-nowrap">
                         <thead className="text-[10px] uppercase bg-surface-muted/50 text-muted-foreground font-bold tracking-widest">
@@ -233,19 +264,20 @@ export default function TestsPage() {
                             {loading && (
                                 <tr>
                                     <td colSpan={6} className="px-6 py-10 text-center text-muted-foreground">
-                                        <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
-                                        Carregando testes...
+                                        <Loader2 className="w-4 h-4 animate-spin inline mr-2" />Carregando testes…
                                     </td>
                                 </tr>
                             )}
-                            {!loading && filtered.length === 0 && (
+                            {!loading && pageRows.length === 0 && (
                                 <tr>
                                     <td colSpan={6} className="px-6 py-10 text-center text-muted-foreground text-sm">
-                                        {search || projectFilter ? 'Nenhum teste encontrado para este filtro.' : 'Nenhum teste cadastrado ainda.'}
+                                        {search || projectFilter || platformFilter !== 'all'
+                                            ? 'Nenhum teste encontrado para este filtro.'
+                                            : 'Nenhum teste cadastrado ainda.'}
                                     </td>
                                 </tr>
                             )}
-                            {!loading && filtered.map((test) => {
+                            {!loading && pageRows.map(test => {
                                 const badge = statusBadge(test.status);
                                 const projName = test.projects?.name || '—';
                                 const platform = test.projects?.platform || '—';
@@ -274,7 +306,6 @@ export default function TestsPage() {
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
-                                                {/* Ações Web */}
                                                 {isWeb ? (
                                                     <>
                                                         {test._gh_run_url && (
@@ -291,33 +322,24 @@ export default function TestsPage() {
                                                         )}
                                                     </>
                                                 ) : (
-                                                <>
-                                                <Link
-                                                    href={`/dashboard/tests/editor?testId=${test.id}`}
-                                                    className="p-2 hover:bg-brand/10 text-brand rounded-lg transition-colors"
-                                                    title="Abrir no editor"
-                                                >
-                                                    <Play className="w-4 h-4 fill-current" />
-                                                </Link>
-                                                {test.project_id ? (
-                                                    <Link
-                                                        href={`/dashboard/projects/${test.project_id}?openStudioFor=${test.id}`}
-                                                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-violet-500/10 hover:bg-violet-500/20 text-violet-600 rounded-lg transition-colors border border-violet-500/20 text-xs font-bold"
-                                                        title="Abrir no Maestro Studio"
-                                                    >
-                                                        <Wand2 className="w-3.5 h-3.5" />
-                                                        Studio
-                                                    </Link>
-                                                ) : (
-                                                    <span
-                                                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-muted text-muted-foreground rounded-lg text-xs font-bold cursor-not-allowed"
-                                                        title="Teste sem projeto: salve via Maestro Studio para habilitar"
-                                                    >
-                                                        <Wand2 className="w-3.5 h-3.5" />
-                                                        Studio
-                                                    </span>
-                                                )}
-                                                </>
+                                                    <>
+                                                        <Link href={`/dashboard/tests/editor?testId=${test.id}`}
+                                                            className="p-2 hover:bg-brand/10 text-brand rounded-lg transition-colors" title="Abrir no editor">
+                                                            <Play className="w-4 h-4 fill-current" />
+                                                        </Link>
+                                                        {test.project_id ? (
+                                                            <Link href={`/dashboard/projects/${test.project_id}?openStudioFor=${test.id}`}
+                                                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-violet-500/10 hover:bg-violet-500/20 text-violet-600 rounded-lg transition-colors border border-violet-500/20 text-xs font-bold"
+                                                                title="Abrir no Maestro Studio">
+                                                                <Wand2 className="w-3.5 h-3.5" /> Studio
+                                                            </Link>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-muted text-muted-foreground rounded-lg text-xs font-bold cursor-not-allowed"
+                                                                title="Teste sem projeto">
+                                                                <Wand2 className="w-3.5 h-3.5" /> Studio
+                                                            </span>
+                                                        )}
+                                                    </>
                                                 )}
                                             </div>
                                         </td>
@@ -327,6 +349,44 @@ export default function TestsPage() {
                         </tbody>
                     </table>
                 </div>
+
+                {/* Paginação */}
+                {!loading && filtered.length > 0 && (
+                    <div className="px-6 py-3 border-t border-border flex items-center justify-between bg-surface-muted/30 flex-wrap gap-2">
+                        <p className="text-xs text-muted-foreground">
+                            Mostrando <span className="text-foreground font-medium">{pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filtered.length)}</span> de <span className="text-foreground font-medium">{filtered.length}</span> testes
+                        </p>
+                        <div className="flex items-center gap-1">
+                            <button onClick={() => goTo(safePage - 1)} disabled={safePage === 1}
+                                className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                                <ChevronLeft className="w-4 h-4" />
+                            </button>
+                            {/* Números de página: mostra até 7 botões */}
+                            {Array.from({ length: totalPages }, (_, i) => i + 1)
+                                .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 2)
+                                .reduce<(number | '…')[]>((acc, p, idx, arr) => {
+                                    if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push('…');
+                                    acc.push(p);
+                                    return acc;
+                                }, [])
+                                .map((p, i) =>
+                                    p === '…' ? (
+                                        <span key={`e${i}`} className="px-2 text-xs text-muted-foreground">…</span>
+                                    ) : (
+                                        <button key={p} onClick={() => goTo(p as number)}
+                                            className={`min-w-[32px] h-8 px-2 rounded-lg text-xs font-bold border transition-colors ${safePage === p ? 'bg-brand/15 border-brand/30 text-brand' : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'}`}>
+                                            {p}
+                                        </button>
+                                    )
+                                )
+                            }
+                            <button onClick={() => goTo(safePage + 1)} disabled={safePage === totalPages}
+                                className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                                <ChevronRight className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
