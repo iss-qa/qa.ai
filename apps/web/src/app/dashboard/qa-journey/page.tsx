@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useQueryState } from 'nuqs';
-import { BarChart3, ChevronLeft, LayoutGrid, Loader2, Plus, Settings } from 'lucide-react';
+import { BarChart3, ChevronLeft, LayoutGrid, Loader2, Settings } from 'lucide-react';
 import { useShell } from '@/components/layout/shell-context';
 
 // JourneyMap pulls in React Flow (~300kB). Lazy-load it so the page shell +
@@ -17,9 +17,7 @@ const JourneyMap = dynamic(
 import { MigrationMissingBanner } from '@/components/qa-journey/MigrationMissingBanner';
 import { ProjectHub } from '@/components/qa-journey/hub/ProjectHub';
 import { JourneyColumnView } from '@/components/qa-journey/columns/JourneyColumnView';
-import { JourneyFormModal } from '@/components/qa-journey/JourneyFormModal';
 import {
-    createJourney,
     loadJourneyMapData,
     loadProjectsHub,
     loadTestCaseOptions,
@@ -30,7 +28,6 @@ import type { JourneyViewMode, ProjectHubCard, TestCaseOption } from '@/lib/qa-j
 import type {
     QAJourney,
     QAJourneyCase,
-    QAJourneyDraft,
     QAJourneySubflow,
 } from '@/types/qa-journey';
 
@@ -57,7 +54,6 @@ export default function QAJourneyPublicPage() {
     // Bump para re-buscar os dados do projeto após mutações no layout de colunas.
     const [refreshNonce, setRefreshNonce] = useState(0);
     const reload = useCallback(() => setRefreshNonce(n => n + 1), []);
-    const [journeyFormOpen, setJourneyFormOpen] = useState(false);
     const { setHeaderSlot } = useShell();
 
     // Lista de projetos do hub (com modo + nº de jornadas) — carregada uma vez.
@@ -163,28 +159,6 @@ export default function QAJourneyPublicPage() {
         goToCards();
     }, [projectId, handleToggleMode, goToCards]);
 
-    // "+ Nova Jornada" no header — cria a jornada no projeto atual e recarrega.
-    const saveJourney = useCallback(async (draft: QAJourneyDraft) => {
-        try {
-            await createJourney(draft);
-            setJourneyFormOpen(false);
-            reload();
-        } catch (e) {
-            alert('Erro ao criar jornada: ' + (e instanceof Error ? e.message : String(e)));
-            throw e;
-        }
-    }, [reload]);
-
-    // Modal de nova jornada — renderizado nas vistas com projeto selecionado.
-    const journeyModal = journeyFormOpen && projectId ? (
-        <JourneyFormModal
-            projectId={projectId}
-            defaultSequence={journeys.length}
-            onClose={() => setJourneyFormOpen(false)}
-            onSave={saveJourney}
-        />
-    ) : null;
-
     // Header global (linha do dark mode/avatar). No hub fica vazio; nas demais
     // vistas tem o "voltar" contextual + seletor de projeto + insights/admin.
     useEffect(() => {
@@ -240,15 +214,6 @@ export default function QAJourneyPublicPage() {
                     <Settings className="w-3.5 h-3.5" />
                     <span className="hidden lg:inline">Admin</span>
                 </Link>
-                <button
-                    type="button"
-                    onClick={() => setJourneyFormOpen(true)}
-                    title="Criar nova jornada neste projeto"
-                    className="text-xs font-bold text-white bg-brand hover:bg-brand/90 rounded-lg px-2.5 py-1.5 inline-flex items-center gap-1.5 transition-colors shrink-0"
-                >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Nova Jornada</span>
-                </button>
             </div>,
         );
         return () => setHeaderSlot(null);
@@ -305,7 +270,6 @@ export default function QAJourneyPublicPage() {
                         }
                     />
                 )}
-                {journeyModal}
             </div>
         );
     }
@@ -313,7 +277,6 @@ export default function QAJourneyPublicPage() {
     // Mapa (single, view=all, ou solo).
     return (
         <div className="p-2 sm:p-3 flex flex-col h-full">
-            {journeyModal}
             <div className="flex-1 min-h-0">
                 {loading ? (
                     <LoadingState />

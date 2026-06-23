@@ -63,9 +63,12 @@ export function SubflowBlock({
             {/* SEM overflow-hidden: o menu de ações precisa transbordar o card.
                 Chevron + 3 pontinhos ficam no RODAPÉ e o menu abre PARA CIMA
                 (bottom-full), então nunca é cortado.
-                Filho (isChild): borda + leve fundo em brand e card mais largo
-                (sobra espaço à direita) para exibir melhor os títulos dos casos. */}
-            <div className={`bg-card border rounded-xl flex flex-col min-h-[104px] w-full shrink-0 ${isChild ? 'sm:w-80 lg:w-96' : 'sm:w-96 lg:w-[30rem] xl:w-[34rem]'} ${isChild ? 'border-brand/30 bg-brand/[0.03]' : 'border-border'}`}>
+                Raiz: largura DINÂMICA (sm:w-auto entre min 18rem e max 34rem) —
+                encolhe para títulos curtos ("[WEB] - Cadastro") e cresce até o
+                teto para títulos/casos longos, sem deixar buraco na tela.
+                Filho (isChild): borda + leve fundo em brand, largura fixa
+                (sm:w-80 lg:w-96) para exibir bem os títulos dos casos. */}
+            <div className={`bg-card border rounded-xl flex flex-col min-h-[104px] w-full shrink-0 ${isChild ? 'sm:w-80 lg:w-96' : 'sm:w-auto sm:min-w-[18rem] sm:max-w-[34rem]'} ${isChild ? 'border-brand/30 bg-brand/[0.03]' : 'border-border'}`}>
                 {/* Cabeçalho — título em linha própria; badge + contador embaixo. */}
                 <div className="px-2.5 pt-2.5 pb-1.5 flex flex-col gap-1">
                     <div className="flex items-center gap-2">

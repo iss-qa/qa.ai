@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { loadProjectInsights } from '@/lib/qa-journey/insights-api';
 import type { InsightsAggregate } from '@/types/qa-journey-insights';
 
-export type ReportPeriodDays = 7 | 30 | 90;
+export type ReportPeriodDays = 7 | 15 | 30 | 90;
 
 export type RunStatus = 'passed' | 'failed' | 'running' | 'cancelled';
 export type BugSeverity = 'critical' | 'high' | 'medium' | 'low';
@@ -20,7 +20,34 @@ export interface ReportRun {
     steps_failed: number | null;
     triggered_by: string | null;
     error_message: string | null;
+    test_case_id: string | null;
     test_name: string;
+    platform: string | null;     // 'mobile' | 'web' | ...
+    folder: string | null;       // folder_path — usado como "fluxo"
+}
+
+// Agregado por caso de teste no período — base das frases descritivas.
+export interface FailingTestAgg {
+    testCaseId: string | null;
+    name: string;
+    platform: string | null;
+    flow: string | null;         // fluxo (pasta) — ex.: "Cadastro", "KYC"
+    runs: number;                // execuções concluídas (pass + fail)
+    failed: number;
+    passed: number;
+    failRate: number;            // 0-100 sobre execuções concluídas
+    lastFailureAt: string | null;
+    topError: string | null;     // mensagem de erro mais recorrente
+}
+
+// Agregado por fluxo (pasta) + plataforma — ranking de cenários problemáticos.
+export interface FlowFailureAgg {
+    flow: string;                // rótulo do fluxo ("Cadastro", "Sem fluxo")
+    platform: string | null;
+    runs: number;                // execuções concluídas
+    failed: number;
+    failRate: number;            // 0-100
+    failingTests: number;        // casos distintos com ao menos 1 falha
 }
 
 export interface ReportBug {
@@ -49,6 +76,9 @@ export interface ProjectReport {
     trend: RunsTrendPoint[];
     byTrigger: { name: string; count: number }[];
     recentFailures: ReportRun[];
+    // Cenários problemáticos (base das frases descritivas)
+    topFailingTests: FailingTestAgg[];
+    failuresByFlow: FlowFailureAgg[];
     // Qualidade
     openBugs: number;
     resolvedInPeriod: number;
@@ -66,14 +96,23 @@ export async function loadProjectReport(projectId: string, days: ReportPeriodDay
     since.setDate(since.getDate() - days);
     const sinceIso = since.toISOString();
 
-    const [runsRes, bugsRes, casesRes, insights] = await Promise.all([
+    // Tenta com platform/folder_path (migrations 009/018); cai para o conjunto
+    // antigo se as colunas ainda não existirem, sem zerar o relatório.
+    const runsQuery = (caseColumns: string) =>
         supabase
             .from('test_runs')
-            .select('id, status, started_at, duration_ms, steps_total, steps_failed, triggered_by, error_message, test_cases:test_case_id ( name )')
+            .select(`id, status, started_at, duration_ms, steps_total, steps_failed, triggered_by, error_message, test_case_id, test_cases:test_case_id ( ${caseColumns} )`)
             .eq('project_id', projectId)
             .gte('started_at', sinceIso)
             .order('started_at', { ascending: false })
-            .limit(1000),
+            .limit(1000);
+
+    const [runsRes, bugsRes, casesRes, insights] = await Promise.all([
+        (async () => {
+            const full = await runsQuery('name, platform, folder_path');
+            if (!full.error) return full;
+            return runsQuery('name');
+        })(),
         supabase
             .from('bug_reports')
             .select('id, severity, status, title, created_at, resolved_at, jira_url')
@@ -91,7 +130,9 @@ export async function loadProjectReport(projectId: string, days: ReportPeriodDay
     if (bugsRes.error) console.error('report bugs failed:', bugsRes.error);
     if (casesRes.error) console.error('report cases failed:', casesRes.error);
 
-    type RunRow = Omit<ReportRun, 'test_name'> & { test_cases: { name: string } | null };
+    type RunRow = Omit<ReportRun, 'test_name' | 'platform' | 'folder'> & {
+        test_cases: { name: string; platform?: string | null; folder_path?: string | null } | null;
+    };
     const runs: ReportRun[] = ((runsRes.data || []) as unknown as RunRow[]).map(r => ({
         id: r.id,
         status: r.status,
@@ -101,7 +142,10 @@ export async function loadProjectReport(projectId: string, days: ReportPeriodDay
         steps_failed: r.steps_failed,
         triggered_by: r.triggered_by,
         error_message: r.error_message,
+        test_case_id: r.test_case_id ?? null,
         test_name: r.test_cases?.name || '(teste removido)',
+        platform: r.test_cases?.platform ?? null,
+        folder: r.test_cases?.folder_path ?? null,
     }));
 
     const bugs = (bugsRes.data || []) as ReportBug[];
@@ -154,6 +198,9 @@ export async function loadProjectReport(projectId: string, days: ReportPeriodDay
         if (b.status === 'resolved' && b.resolved_at && b.resolved_at >= sinceIso) resolvedInPeriod++;
     }
 
+    // --- Cenários problemáticos: agrega por caso e por fluxo ---
+    const { topFailingTests, failuresByFlow } = aggregateFailures(runs);
+
     return {
         totalRuns: runs.length,
         passedRuns: passed,
@@ -165,6 +212,8 @@ export async function loadProjectReport(projectId: string, days: ReportPeriodDay
         trend,
         byTrigger,
         recentFailures: runs.filter(r => r.status === 'failed').slice(0, 8),
+        topFailingTests,
+        failuresByFlow,
         openBugs,
         resolvedInPeriod,
         bugsBySeverity,
@@ -173,6 +222,113 @@ export async function loadProjectReport(projectId: string, days: ReportPeriodDay
         activeTestCases: cases.filter(c => c.is_active !== false).length,
         journeys: insights.aggregate,
     };
+}
+
+// Deriva o rótulo do "fluxo" a partir do folder_path (ex.: "Cadastro/Mobile" → "Cadastro").
+// Sem pasta, tenta inferir o macro-fluxo por palavras-chave no nome do teste.
+export function flowLabel(folder: string | null, testName?: string): string {
+    if (folder && folder.trim()) {
+        const top = folder.split('/').map(s => s.trim()).filter(Boolean)[0];
+        if (top) return top;
+    }
+    const n = (testName || '').toLowerCase();
+    const keywords: [RegExp, string][] = [
+        [/\bkyc\b/, 'KYC'],
+        [/onboard/, 'Onboarding'],
+        [/cadastr|sign[\s-]?up|registr/, 'Cadastro'],
+        [/(envio|upload).*(doc|documento)|doc(umento)?s?\b/, 'Envio de documentos'],
+        [/login|autenticad?|sign[\s-]?in/, 'Login'],
+        [/dep(o|ó)sit|saque|withdraw|transfer|pix/, 'Financeiro'],
+        [/trade|ordem|order|book|matching/, 'Trading'],
+    ];
+    for (const [re, label] of keywords) if (re.test(n)) return label;
+    return 'Sem fluxo';
+}
+
+const PLATFORM_LABELS: Record<string, string> = { mobile: 'Mobile', web: 'Web', android: 'Android', ios: 'iOS' };
+export function platformLabel(platform: string | null): string | null {
+    if (!platform) return null;
+    return PLATFORM_LABELS[platform.toLowerCase()] || platform;
+}
+
+function aggregateFailures(runs: ReportRun[]): { topFailingTests: FailingTestAgg[]; failuresByFlow: FlowFailureAgg[] } {
+    // Por caso de teste (agrupa pelo id; cai para o nome quando o caso foi removido).
+    const byTest = new Map<string, {
+        name: string; platform: string | null; folder: string | null;
+        passed: number; failed: number; lastFailureAt: string | null; errors: Map<string, number>;
+    }>();
+    for (const r of runs) {
+        if (r.status !== 'passed' && r.status !== 'failed') continue;
+        const key = r.test_case_id || `name:${r.test_name}`;
+        let acc = byTest.get(key);
+        if (!acc) {
+            acc = { name: r.test_name, platform: r.platform, folder: r.folder, passed: 0, failed: 0, lastFailureAt: null, errors: new Map() };
+            byTest.set(key, acc);
+        }
+        if (r.status === 'passed') acc.passed++;
+        else {
+            acc.failed++;
+            if (!acc.lastFailureAt || r.started_at > acc.lastFailureAt) acc.lastFailureAt = r.started_at;
+            const err = (r.error_message || '').trim().slice(0, 160);
+            if (err) acc.errors.set(err, (acc.errors.get(err) || 0) + 1);
+        }
+    }
+
+    const topFailingTests: FailingTestAgg[] = Array.from(byTest.entries())
+        .map(([key, a]) => {
+            const total = a.passed + a.failed;
+            const topError = Array.from(a.errors.entries()).sort((x, y) => y[1] - x[1])[0]?.[0] || null;
+            return {
+                testCaseId: key.startsWith('name:') ? null : key,
+                name: a.name,
+                platform: a.platform,
+                flow: flowLabel(a.folder, a.name),
+                runs: total,
+                failed: a.failed,
+                passed: a.passed,
+                failRate: total > 0 ? Math.round((a.failed / total) * 100) : 0,
+                lastFailureAt: a.lastFailureAt,
+                topError,
+            };
+        })
+        .filter(t => t.failed > 0)
+        .sort((x, y) => y.failed - x.failed || y.failRate - x.failRate)
+        .slice(0, 12);
+
+    // Por fluxo + plataforma.
+    const byFlow = new Map<string, { flow: string; platform: string | null; passed: number; failed: number; tests: Set<string> }>();
+    for (const r of runs) {
+        if (r.status !== 'passed' && r.status !== 'failed') continue;
+        const flow = flowLabel(r.folder, r.test_name);
+        const key = `${flow}::${r.platform || ''}`;
+        let acc = byFlow.get(key);
+        if (!acc) {
+            acc = { flow, platform: r.platform, passed: 0, failed: 0, tests: new Set() };
+            byFlow.set(key, acc);
+        }
+        if (r.status === 'passed') acc.passed++;
+        else {
+            acc.failed++;
+            acc.tests.add(r.test_case_id || `name:${r.test_name}`);
+        }
+    }
+    const failuresByFlow: FlowFailureAgg[] = Array.from(byFlow.values())
+        .map(a => {
+            const total = a.passed + a.failed;
+            return {
+                flow: a.flow,
+                platform: a.platform,
+                runs: total,
+                failed: a.failed,
+                failRate: total > 0 ? Math.round((a.failed / total) * 100) : 0,
+                failingTests: a.tests.size,
+            };
+        })
+        .filter(f => f.failed > 0)
+        .sort((x, y) => y.failed - x.failed || y.failRate - x.failRate)
+        .slice(0, 8);
+
+    return { topFailingTests, failuresByFlow };
 }
 
 export function formatDurationMs(ms: number | null): string {

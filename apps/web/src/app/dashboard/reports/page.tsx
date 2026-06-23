@@ -9,6 +9,8 @@ import { RunsTrendCard } from '@/components/reports/RunsTrendCard';
 import { BugsCard } from '@/components/reports/BugsCard';
 import { JourneyCoverageCard } from '@/components/reports/JourneyCoverageCard';
 import { FailuresTable } from '@/components/reports/FailuresTable';
+import { FlowFailuresCard } from '@/components/reports/FlowFailuresCard';
+import { NarrativeReportCard } from '@/components/reports/NarrativeReportCard';
 
 import {
     errorMessage,
@@ -21,6 +23,7 @@ import { loadProjectReport, type ProjectReport, type ReportPeriodDays } from '@/
 
 const PERIODS: { value: ReportPeriodDays; label: string }[] = [
     { value: 7, label: 'Últimos 7 dias' },
+    { value: 15, label: 'Últimos 15 dias' },
     { value: 30, label: 'Últimos 30 dias' },
     { value: 90, label: 'Últimos 90 dias' },
 ];
@@ -172,12 +175,16 @@ export default function ReportsPage() {
                 <>
                     <ReportKpis report={report} periodLabel={periodLabel} />
 
+                    <NarrativeReportCard report={report} projectName={projectName} days={days} />
+
                     <RunsTrendCard report={report} />
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                        <FlowFailuresCard report={report} />
                         <BugsCard report={report} />
-                        <JourneyCoverageCard report={report} projectId={projectId} />
                     </div>
+
+                    <JourneyCoverageCard report={report} projectId={projectId} />
 
                     <FailuresTable report={report} />
 

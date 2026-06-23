@@ -269,7 +269,7 @@ export function JourneyColumnView({
                             {tree.map(node => (
                                 <SubflowBlock key={node.subflow.id} node={node} casesBySubflow={casesBySubflow} cb={cb} />
                             ))}
-                            <div className="w-full sm:w-96 lg:w-[30rem] xl:w-[34rem]">
+                            <div className="w-full sm:w-[18rem]">
                                 <AddRootButton onClick={() => setSubflowForm({ open: true, initial: null, defaultParentId: null })} />
                             </div>
                         </div>
