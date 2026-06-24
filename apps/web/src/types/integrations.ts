@@ -7,6 +7,7 @@ export interface IntegrationRecord {
     id: string;
     org_id: string;
     provider: IntegrationProvider;
+    name: string;       // rótulo da conta; '' para providers de conta única
     metadata: Record<string, unknown>;
     is_active: boolean;
     last_tested_at: string | null;
@@ -39,6 +40,7 @@ export interface GitHubMetadata {
     login?: string;
     scopes?: string | null;
     token_masked?: string;
+    name?: string | null;
 }
 
 // Inputs (so o que o cliente envia, sem dados sensiveis vindos do servidor)
@@ -62,6 +64,7 @@ export interface SlackCredentialsInput {
 
 export interface GitHubCredentialsInput {
     token: string;
+    name?: string;  // rótulo da conta (ex: "Pessoal", "Foxbit")
 }
 
 export interface IntegrationTestResult {

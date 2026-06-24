@@ -27,7 +27,8 @@ export interface SlackCredentials {
 }
 
 export interface GitHubCredentials {
-    token: string;              // PAT clássico ou fine-grained (escopos: actions:write + contents:read)
+    token: string;   // PAT clássico ou fine-grained (escopos: actions:write + contents:read)
+    name?: string;   // rótulo da conta (ex: "Pessoal", "Foxbit") — usado no upsert multi-conta
 }
 
 // Metadados visiveis na UI (nunca incluem segredos)
@@ -40,6 +41,7 @@ export interface OrgIntegrationRecord {
     id: string;
     org_id: string;
     provider: IntegrationProvider;
+    name: string;
     metadata: Record<string, unknown>;
     is_active: boolean;
     last_tested_at: string | null;
@@ -48,6 +50,8 @@ export interface OrgIntegrationRecord {
     created_at: string;
     updated_at: string;
 }
+
+const INTEGRATION_SELECT = 'id, org_id, provider, name, metadata, is_active, last_tested_at, last_test_status, last_test_error, created_at, updated_at';
 
 // ============================================================
 // Org lookup
@@ -81,22 +85,30 @@ export async function resolveDefaultOrgId(): Promise<string> {
 export async function listIntegrations(orgId: string): Promise<OrgIntegrationRecord[]> {
     const { data, error } = await supabase
         .from('org_integrations')
-        .select('id, org_id, provider, metadata, is_active, last_tested_at, last_test_status, last_test_error, created_at, updated_at')
+        .select(INTEGRATION_SELECT)
         .eq('org_id', orgId);
     if (error) throw error;
     return (data || []) as OrgIntegrationRecord[];
 }
 
+/**
+ * Retorna as credenciais decifradas do primeiro registro ativo de um provider.
+ * Para providers de conta única (google_sheets, jira, slack) sempre há no máximo um.
+ * Para github, retorna o primeiro ativo encontrado (ordena por created_at).
+ */
 export async function getDecryptedCredentials<T>(orgId: string, provider: IntegrationProvider): Promise<T | null> {
     const { data, error } = await supabase
         .from('org_integrations')
-        .select('credentials_cipher, is_active')
+        .select('credentials_cipher')
         .eq('org_id', orgId)
         .eq('provider', provider)
-        .maybeSingle();
+        .eq('is_active', true)
+        .order('created_at', { ascending: true })
+        .limit(1);
     if (error) throw error;
-    if (!data || !data.is_active || !data.credentials_cipher) return null;
-    return decryptJson<T>(data.credentials_cipher as string);
+    const row = data?.[0];
+    if (!row?.credentials_cipher) return null;
+    return decryptJson<T>(row.credentials_cipher as string);
 }
 
 // ============================================================
@@ -155,6 +167,8 @@ export async function saveGitHubIntegration(
     creds: GitHubCredentials,
 ): Promise<OrgIntegrationRecord> {
     const token = (creds.token || '').trim();
+    const name = (creds.name || '').trim();
+
     if (!token) {
         throw new Error('GitHub: token é obrigatório');
     }
@@ -173,8 +187,9 @@ export async function saveGitHubIntegration(
         login: body.login || null,
         scopes: scopes || null,
         token_masked: `…${token.slice(-4)}`,
+        name: name || null,
     };
-    return upsertIntegration(orgId, 'github', cipher, metadata);
+    return upsertIntegration(orgId, 'github', cipher, metadata, name);
 }
 
 export function githubHeaders(token: string): Record<string, string> {
@@ -191,12 +206,14 @@ async function upsertIntegration(
     provider: IntegrationProvider,
     credentialsCipher: string,
     metadata: Record<string, unknown>,
+    name = '',
 ): Promise<OrgIntegrationRecord> {
     const { data, error } = await supabase
         .from('org_integrations')
         .upsert({
             org_id: orgId,
             provider,
+            name,
             credentials_cipher: credentialsCipher,
             metadata,
             is_active: true,
@@ -204,8 +221,8 @@ async function upsertIntegration(
             last_tested_at: null,
             last_test_status: null,
             last_test_error: null,
-        }, { onConflict: 'org_id,provider' })
-        .select('id, org_id, provider, metadata, is_active, last_tested_at, last_test_status, last_test_error, created_at, updated_at')
+        }, { onConflict: 'org_id,provider,name' })
+        .select(INTEGRATION_SELECT)
         .single();
     if (error) throw error;
     return data as OrgIntegrationRecord;
@@ -217,6 +234,22 @@ export async function deleteIntegration(orgId: string, provider: IntegrationProv
         .delete()
         .eq('org_id', orgId)
         .eq('provider', provider);
+    if (error) throw error;
+}
+
+export async function deleteIntegrationById(id: string): Promise<void> {
+    const { error } = await supabase
+        .from('org_integrations')
+        .delete()
+        .eq('id', id);
+    if (error) throw error;
+}
+
+export async function toggleIntegrationActive(id: string, isActive: boolean): Promise<void> {
+    const { error } = await supabase
+        .from('org_integrations')
+        .update({ is_active: isActive })
+        .eq('id', id);
     if (error) throw error;
 }
 
@@ -256,6 +289,53 @@ export async function testIntegration(
         })
         .eq('org_id', orgId)
         .eq('provider', provider);
+    return result;
+}
+
+/**
+ * Testa uma integração específica pelo seu ID (UUID).
+ * Usado para GitHub multi-conta: cada card tem seu próprio botão "Testar".
+ */
+export async function testIntegrationById(id: string): Promise<TestResult> {
+    const { data, error } = await supabase
+        .from('org_integrations')
+        .select('provider, credentials_cipher')
+        .eq('id', id)
+        .maybeSingle();
+    if (error) throw error;
+    if (!data?.credentials_cipher) return { ok: false, detail: 'Integração não encontrada' };
+
+    const provider = data.provider as IntegrationProvider;
+    let result: TestResult;
+
+    try {
+        if (provider === 'github') {
+            const creds = decryptJson<GitHubCredentials>(data.credentials_cipher as string);
+            const res = await fetch('https://api.github.com/user', { headers: githubHeaders(creds.token) });
+            if (!res.ok) {
+                const txt = await res.text().catch(() => '');
+                result = { ok: false, detail: `GitHub respondeu HTTP ${res.status}: ${txt.slice(0, 200)}` };
+            } else {
+                const body = await res.json().catch(() => ({})) as { login?: string };
+                result = { ok: true, detail: `Autenticado como ${body.login || 'usuário GitHub'}` };
+            }
+        } else {
+            const orgId = await resolveDefaultOrgId();
+            result = await testIntegration(orgId, provider);
+        }
+    } catch (e) {
+        result = { ok: false, detail: e instanceof Error ? e.message : String(e) };
+    }
+
+    await supabase
+        .from('org_integrations')
+        .update({
+            last_tested_at: new Date().toISOString(),
+            last_test_status: result.ok ? 'ok' : 'error',
+            last_test_error: result.ok ? null : result.detail.slice(0, 500),
+        })
+        .eq('id', id);
+
     return result;
 }
 

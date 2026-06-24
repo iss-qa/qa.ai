@@ -327,6 +327,8 @@ const webRunsRoutes: FastifyPluginAsync = async (fastify) => {
                 }
             }
 
+            const ghRunUrl = q.gh_run_url || null;
+
             await supabase.from('web_test_runs').update({
                 status,
                 total: parsed.total,
@@ -337,9 +339,56 @@ const webRunsRoutes: FastifyPluginAsync = async (fastify) => {
                 duration_ms: parsed.duration_ms,
                 commit_sha: q.commit || null,
                 gh_run_id: q.gh_run_id ? Number(q.gh_run_id) : undefined,
-                gh_run_url: q.gh_run_url || undefined,
+                gh_run_url: ghRunUrl || undefined,
                 ended_at: nowIso,
             }).eq('id', runId);
+
+            // Para cada teste que falhou: cria bug_report + abre Jira (se configurado).
+            const failedResults = parsed.results.filter(
+                r => r.status === 'failed' || r.status === 'timedOut' || r.status === 'interrupted',
+            );
+            if (failedResults.length > 0) {
+                void (async () => {
+                    const { createBugGeneral, isJiraConfigured } = await import('../services/jira');
+                    const jiraEnabled = isJiraConfigured();
+                    for (const r of failedResults) {
+                        try {
+                            let jiraUrl: string | null = null;
+                            const bugTitle = r.title
+                                ? `[Web] ${r.title.split(' › ').pop() || r.title}`
+                                : `[Web] Falha em ${r.spec_file || 'spec desconhecido'}`;
+                            const bugDesc = [
+                                `Spec: ${r.spec_file || '—'}`,
+                                `Teste: ${r.title || '—'}`,
+                                r.error_message ? `\nErro:\n${r.error_message.slice(0, 1000)}` : '',
+                                ghRunUrl ? `\nGitHub Actions: ${ghRunUrl}` : '',
+                            ].filter(Boolean).join('\n');
+
+                            if (jiraEnabled) {
+                                const created = await createBugGeneral({
+                                    title: bugTitle,
+                                    description: bugDesc,
+                                    priority: 'high',
+                                    source: 'playwright_ci',
+                                }).catch(() => null);
+                                jiraUrl = created?.url ?? null;
+                            }
+
+                            await supabase.from('bug_reports').insert({
+                                project_id: projectId,
+                                title: bugTitle,
+                                description: bugDesc,
+                                severity: 'high',
+                                jira_url: jiraUrl,
+                                source: 'automation',
+                                status: 'open',
+                            });
+                        } catch (bugErr) {
+                            fastify.log.warn(`bug_report for failed playwright test falhou: ${bugErr instanceof Error ? bugErr.message : bugErr}`);
+                        }
+                    }
+                })();
+            }
 
             return { ok: true, status, total: parsed.total, passed: parsed.passed, failed: parsed.failed };
         } catch (e) {

@@ -5,6 +5,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import {
     deleteIntegration,
+    deleteIntegrationById,
     listIntegrations,
     resolveDefaultOrgId,
     saveGoogleSheetsIntegration,
@@ -12,6 +13,8 @@ import {
     saveJiraIntegration,
     saveSlackIntegration,
     testIntegration,
+    testIntegrationById,
+    toggleIntegrationActive,
     type GitHubCredentials,
     type GoogleSheetsCredentials,
     type IntegrationProvider,
@@ -105,8 +108,10 @@ const integrationsRoutes: FastifyPluginAsync = async (fastify) => {
         }
     });
 
-    // POST /integrations/github - salva ou atualiza
-    // Body: { credentials: { token } }
+    // POST /integrations/github - salva ou atualiza uma conta GitHub
+    // Body: { credentials: { token, name? } }
+    // 'name' é o rótulo da conta (ex: "Pessoal", "Foxbit"). Contas com nomes
+    // diferentes são registros independentes, permitindo múltiplas por org.
     fastify.post('/integrations/github', async (request, reply) => {
         if (!requireEncryption(reply)) return;
         try {
@@ -124,7 +129,7 @@ const integrationsRoutes: FastifyPluginAsync = async (fastify) => {
         }
     });
 
-    // POST /integrations/:provider/test - testa a conexao
+    // POST /integrations/:provider/test - testa a conexao (provider-level, para conta única)
     fastify.post<{ Params: { provider: string } }>('/integrations/:provider/test', async (request, reply) => {
         if (!requireEncryption(reply)) return;
         const provider = request.params.provider;
@@ -141,7 +146,7 @@ const integrationsRoutes: FastifyPluginAsync = async (fastify) => {
         }
     });
 
-    // DELETE /integrations/:provider
+    // DELETE /integrations/:provider - remove por provider (para providers de conta única)
     fastify.delete<{ Params: { provider: string } }>('/integrations/:provider', async (request, reply) => {
         const provider = request.params.provider;
         if (!VALID_PROVIDERS.has(provider)) {
@@ -150,6 +155,52 @@ const integrationsRoutes: FastifyPluginAsync = async (fastify) => {
         try {
             const orgId = await resolveDefaultOrgId();
             await deleteIntegration(orgId, provider as IntegrationProvider);
+            return { ok: true };
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            return reply.status(500).send({ error: 'delete_failed', detail: msg });
+        }
+    });
+
+    // ============================================================
+    // Rotas por ID (multi-conta GitHub)
+    // ============================================================
+
+    // POST /integrations/account/:id/test - testa uma conta específica por ID
+    fastify.post<{ Params: { id: string } }>('/integrations/account/:id/test', async (request, reply) => {
+        if (!requireEncryption(reply)) return;
+        const { id } = request.params;
+        try {
+            const result = await testIntegrationById(id);
+            return result;
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            return reply.status(500).send({ error: 'test_failed', detail: msg });
+        }
+    });
+
+    // PATCH /integrations/account/:id/active - desconecta ou reconecta sem excluir
+    // Body: { is_active: boolean }
+    fastify.patch<{ Params: { id: string } }>('/integrations/account/:id/active', async (request, reply) => {
+        const { id } = request.params;
+        const body = request.body as { is_active?: boolean };
+        if (typeof body?.is_active !== 'boolean') {
+            return reply.status(400).send({ error: 'invalid_body', detail: 'is_active boolean obrigatorio' });
+        }
+        try {
+            await toggleIntegrationActive(id, body.is_active);
+            return { ok: true };
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            return reply.status(500).send({ error: 'toggle_failed', detail: msg });
+        }
+    });
+
+    // DELETE /integrations/account/:id - remove por ID (multi-conta)
+    fastify.delete<{ Params: { id: string } }>('/integrations/account/:id', async (request, reply) => {
+        const { id } = request.params;
+        try {
+            await deleteIntegrationById(id);
             return { ok: true };
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);

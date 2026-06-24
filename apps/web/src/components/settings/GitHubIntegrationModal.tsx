@@ -7,16 +7,20 @@ import { saveGitHubCredentials } from '@/lib/integrations/api';
 import type { IntegrationRecord, GitHubCredentialsInput } from '@/types/integrations';
 
 interface Props {
+    initialName?: string;   // pré-preenche o rótulo quando editando conta existente
     onClose: () => void;
     onSaved: (rec: IntegrationRecord) => void;
 }
 
 const inputClass = 'bg-foreground/5 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-brand/50';
 
-export function GitHubIntegrationModal({ onClose, onSaved }: Props) {
+export function GitHubIntegrationModal({ initialName, onClose, onSaved }: Props) {
+    const [name, setName] = useState(initialName ?? '');
     const [token, setToken] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
+
+    const isEditing = initialName !== undefined;
 
     const handleSubmit = async () => {
         setError(null);
@@ -24,7 +28,7 @@ export function GitHubIntegrationModal({ onClose, onSaved }: Props) {
         if (!t) { setError('Informe o token do GitHub.'); return; }
         setSaving(true);
         try {
-            const creds: GitHubCredentialsInput = { token: t };
+            const creds: GitHubCredentialsInput = { token: t, name: name.trim() || undefined };
             const saved = await saveGitHubCredentials(creds);
             onSaved(saved);
         } catch (e) {
@@ -36,7 +40,7 @@ export function GitHubIntegrationModal({ onClose, onSaved }: Props) {
 
     return (
         <ModalShell
-            title={<><Github className="w-5 h-5 text-brand" /> Configurar GitHub</>}
+            title={<><Github className="w-5 h-5 text-brand" /> {isEditing ? 'Atualizar token' : 'Adicionar conta GitHub'}</>}
             onClose={onClose}
             maxWidth="max-w-xl"
             footer={
@@ -59,9 +63,28 @@ export function GitHubIntegrationModal({ onClose, onSaved }: Props) {
                 <p className="text-xs text-muted-foreground leading-relaxed">
                     Gere um <strong>Personal Access Token</strong> (clássico ou fine-grained) com acesso ao repositório
                     de testes Web. Escopos necessários: <code className="font-mono">actions:write</code> (disparar o
-                    workflow) e <code className="font-mono">contents:read</code> (listar os specs). O QAMind usa esse
-                    token para projetos da plataforma <strong>Web</strong> (Playwright via GitHub Actions).
+                    workflow) e <code className="font-mono">contents:read</code> (listar os specs).
                 </p>
+
+                <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                        Rótulo da conta <span className="font-normal normal-case">(opcional)</span>
+                    </label>
+                    <input
+                        type="text"
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                        placeholder='ex: "Pessoal", "Foxbit"'
+                        className={inputClass}
+                        disabled={isEditing}
+                        title={isEditing ? 'Para renomear, remova e adicione a conta novamente.' : undefined}
+                    />
+                    {!isEditing && (
+                        <p className="text-[10px] text-muted-foreground">
+                            Identifica a conta na lista. Use um rótulo diferente para cada conta GitHub conectada.
+                        </p>
+                    )}
+                </div>
 
                 <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Token</label>

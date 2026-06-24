@@ -88,6 +88,28 @@ export async function testIntegration(provider: IntegrationProvider): Promise<In
     return handleResponse<IntegrationTestResult>(res);
 }
 
+// Testa uma conta específica pelo ID (para GitHub multi-conta).
+export async function testIntegrationById(id: string): Promise<IntegrationTestResult> {
+    const res = await safeFetch(`${API_URL}/integrations/account/${id}/test`, { method: 'POST' });
+    return handleResponse<IntegrationTestResult>(res);
+}
+
+// Desconecta ou reconecta uma integração sem excluir (toggle is_active).
+export async function toggleIntegrationActive(id: string, isActive: boolean): Promise<void> {
+    const res = await safeFetch(`${API_URL}/integrations/account/${id}/active`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: isActive }),
+    });
+    await handleResponse<{ ok: boolean }>(res);
+}
+
+// Remove uma integração pelo ID (para GitHub multi-conta).
+export async function deleteIntegrationById(id: string): Promise<void> {
+    const res = await safeFetch(`${API_URL}/integrations/account/${id}`, { method: 'DELETE' });
+    await handleResponse<{ ok: boolean }>(res);
+}
+
 export async function deleteIntegration(provider: IntegrationProvider): Promise<void> {
     const res = await safeFetch(`${API_URL}/integrations/${provider}`, { method: 'DELETE' });
     await handleResponse<{ ok: boolean }>(res);
