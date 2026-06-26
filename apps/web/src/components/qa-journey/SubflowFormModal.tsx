@@ -3,10 +3,11 @@
 import { useRef, useState } from 'react';
 import { Bell, FileArchive, FileCode2, GitBranch, Loader2, Trash2, Upload } from 'lucide-react';
 import { ModalShell } from './ModalShell';
+import { VideoStoryboardField } from './VideoStoryboardField';
 import { AUTOMATION_ALERT_DAYS, AUTOMATION_STATUS_OPTIONS } from '@/lib/qa-journey/constants';
 import { readHtmlDocument } from '@/lib/qa-journey/html-bundle';
 import type { TestCaseOption } from '@/lib/qa-journey/api';
-import type { QAJourneySubflow, QAJourneySubflowDraft, AutomationStatus } from '@/types/qa-journey';
+import type { QAJourneySubflow, QAJourneySubflowDraft, AutomationStatus, VideoStep } from '@/types/qa-journey';
 
 interface SubflowFormModalProps {
     journeyId: string;
@@ -47,6 +48,27 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
     const [htmlLoading, setHtmlLoading] = useState(false);
     const htmlInputRef = useRef<HTMLInputElement>(null);
 
+    // Storyboard de vídeo anexado ao sub-fluxo (migration 025). Mutuamente
+    // exclusivo com o documento HTML: ligar um desliga o outro.
+    const [videoEnabled, setVideoEnabled] = useState(Boolean(initial?.video_steps?.length));
+    const [videoSteps, setVideoSteps] = useState<VideoStep[] | null>(initial?.video_steps ?? null);
+    const [videoBusy, setVideoBusy] = useState(false);
+
+    const toggleHtml = () => {
+        setHtmlEnabled(v => {
+            const next = !v;
+            if (next) setVideoEnabled(false);
+            return next;
+        });
+    };
+    const toggleVideo = () => {
+        setVideoEnabled(v => {
+            const next = !v;
+            if (next) setHtmlEnabled(false);
+            return next;
+        });
+    };
+
     const handleHtmlFile = async (file: File | undefined) => {
         setHtmlError(null);
         if (!file) return;
@@ -71,8 +93,10 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
     };
 
     const isEdit = Boolean(initial?.id);
-    const canSave = (draft.title || '').trim().length > 0 && !saving && !htmlLoading;
+    const canSave = (draft.title || '').trim().length > 0 && !saving && !htmlLoading && !videoBusy;
     const alertDays = draft.automation_alert_days ?? null;
+    // "Modo documento" (HTML ou storyboard de vídeo): sem comportamento de casos.
+    const docMode = htmlEnabled || videoEnabled;
 
     const submit = async () => {
         if (!canSave) return;
@@ -83,6 +107,10 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
             const htmlPayload = htmlEnabled
                 ? (htmlDoc ?? null)
                 : (initial?.html_doc ? null : undefined);
+            // Storyboard de vídeo: mesmo padrão tolerante a migration do html_doc.
+            const videoPayload = videoEnabled
+                ? (videoSteps ?? null)
+                : (initial?.video_steps?.length ? null : undefined);
             // Mesmo padrão do html_doc: só manda parent_subflow_id quando há um
             // pai definido ou quando se está limpando um pai existente. Raiz que
             // nunca teve pai -> undefined (omitido), compatível com banco sem 015.
@@ -93,13 +121,14 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
                 ...draft,
                 title: (draft.title || '').trim(),
                 description: (draft.description || '').trim() || null,
-                // Sub-fluxo com documento HTML é "modo documento": não tem
-                // comportamento de casos de teste, então automação/teste vinculado
-                // são zerados (manual + sem vínculo) e ficam ocultos no form.
-                automation_status: htmlEnabled ? 'manual' : (draft.automation_status || 'manual'),
-                test_case_id: htmlEnabled ? null : (draft.test_case_id || null),
+                // Sub-fluxo em "modo documento" (HTML ou storyboard de vídeo) não
+                // tem comportamento de casos de teste, então automação/teste
+                // vinculado são zerados (manual + sem vínculo) e ficam ocultos.
+                automation_status: docMode ? 'manual' : (draft.automation_status || 'manual'),
+                test_case_id: docMode ? null : (draft.test_case_id || null),
                 parent_subflow_id: parentPayload,
                 html_doc: htmlPayload,
+                video_steps: videoPayload,
             });
         } catch {
             // O pai já alertou o erro — só não fecha o modal.
@@ -124,6 +153,7 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
                 </>
             }
             onClose={onClose}
+            maxWidth={videoEnabled ? 'max-w-4xl' : 'max-w-2xl'}
             footer={
                 <>
                     <button onClick={onClose} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
@@ -192,8 +222,9 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
             </div>
 
             {/* Automação e teste vinculado só fazem sentido em sub-fluxo de CASOS.
-                Sub-fluxo de documento (HTML ligado) não tem esse comportamento. */}
-            {!htmlEnabled && (
+                Sub-fluxo de documento (HTML ou storyboard de vídeo) não tem esse
+                comportamento. */}
+            {!docMode && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="flex flex-col gap-1.5">
                         <Label>Status de automação</Label>
@@ -227,14 +258,16 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
                 </div>
             )}
 
-            {/* Documento HTML anexado */}
+            {/* Documento HTML anexado — oculto quando o storyboard de vídeo está
+                ligado (ganha espaço; os modos são mutuamente exclusivos). */}
+            {!videoEnabled && (
             <div className="border border-border rounded-xl p-4 flex flex-col gap-3">
                 <div className="flex items-start gap-3">
                     <button
                         type="button"
                         role="switch"
                         aria-checked={htmlEnabled}
-                        onClick={() => setHtmlEnabled(v => !v)}
+                        onClick={toggleHtml}
                         className={`relative w-9 h-5 rounded-full shrink-0 mt-0.5 transition-colors ${
                             htmlEnabled ? 'bg-brand' : 'bg-foreground/15'
                         }`}
@@ -296,8 +329,19 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
                     </div>
                 )}
             </div>
+            )}
 
-            {/* Alerta de automação (sino) */}
+            {/* Vídeo → Storyboard (migration 025) */}
+            <VideoStoryboardField
+                enabled={videoEnabled}
+                onToggle={toggleVideo}
+                steps={videoSteps}
+                onChange={setVideoSteps}
+                onBusyChange={setVideoBusy}
+            />
+
+            {/* Alerta de automação (sino) — também oculto no modo storyboard. */}
+            {!videoEnabled && (
             <div className="border border-border rounded-xl p-4 flex flex-col gap-3">
                 <button type="button" onClick={() => setAlertOpen(v => !v)} className="flex items-start gap-3 text-left">
                     <span className={`relative w-9 h-5 rounded-full shrink-0 mt-0.5 transition-colors ${alertDays ? 'bg-brand' : 'bg-foreground/15'}`}>
@@ -335,6 +379,7 @@ export function SubflowFormModal({ journeyId, journeyTitle, initial, defaultSequ
                     </div>
                 )}
             </div>
+            )}
         </ModalShell>
     );
 }

@@ -37,6 +37,7 @@ Roteiro — QAMind Tech Talk (20 min)
 
 [13:00 – 14:30] Slide 10 · Ciclo de automação
 
+
 "Um detalhe importante: o alerta de automação. Crio um caso manual, configuro 15 dias. A feature é entregue e validada. Em 15 dias chega um alerta. O QA então automatiza — Playwright se for web, Maestro se for mobile. O caso é atualizado. O ciclo fecha."
 
 [14:30 – 16:00] Slide 11 · Playwright

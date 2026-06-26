@@ -10,6 +10,7 @@ import type {
     QAJourneyDraft,
     QAJourneySubflowDraft,
     QAJourneyCaseDraft,
+    VideoStep,
 } from '@/types/qa-journey';
 import { QA_JOURNEY_MIGRATION_MISSING_CODE } from '@/types/qa-journey';
 
@@ -419,6 +420,20 @@ export async function deleteSubflow(id: string): Promise<void> {
     if (error) throw error;
 }
 
+// Atualiza SOMENTE o storyboard de vídeo de um sub-fluxo (migration 025).
+// Usado pela edição inline de legendas/ordem no mapa — não toca nos demais
+// campos (evita o clobber que um update via draft completo causaria).
+export async function updateSubflowVideoSteps(id: string, steps: VideoStep[]): Promise<QAJourneySubflow> {
+    const { data, error } = await supabase
+        .from('qa_journey_subflows')
+        .update({ video_steps: steps })
+        .eq('id', id)
+        .select('*')
+        .single();
+    if (error) throw error;
+    return data as QAJourneySubflow;
+}
+
 function sanitizeSubflowPayload(draft: QAJourneySubflowDraft): Record<string, unknown> {
     const payload: Record<string, unknown> = {
         journey_id: draft.journey_id,
@@ -432,6 +447,8 @@ function sanitizeSubflowPayload(draft: QAJourneySubflowDraft): Record<string, un
     // Só envia html_doc quando o form mexeu no campo — evita erro de coluna
     // inexistente em instalações que ainda não adicionaram html_doc ao subflow.
     if (draft.html_doc !== undefined) payload.html_doc = draft.html_doc;
+    // Storyboard de vídeo (migration 025) — mesmo padrão tolerante a migration.
+    if (draft.video_steps !== undefined) payload.video_steps = draft.video_steps ?? null;
     // parent_subflow_id (migration 015) — só entra no payload quando definido,
     // p/ não quebrar bancos sem a coluna. null é válido (subfluxo raiz).
     if (draft.parent_subflow_id !== undefined) payload.parent_subflow_id = draft.parent_subflow_id;

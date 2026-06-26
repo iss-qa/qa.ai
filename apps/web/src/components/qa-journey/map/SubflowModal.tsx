@@ -6,11 +6,12 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronRight, FileCode2, FileText, GitBranch, Link2, X } from 'lucide-react';
+import { ChevronRight, Clapperboard, FileCode2, FileText, GitBranch, Link2, X } from 'lucide-react';
 import { AUTOMATION_STATUS_OPTIONS, PRIORITY_OPTIONS, RUN_STATUS_DISPLAY, RUN_STATUS_OPTIONS } from '@/lib/qa-journey/constants';
 import { HtmlDocModal } from './HtmlDocModal';
+import { ImageLightbox } from './ImageLightbox';
 import { formatExternalId } from '@/components/qa-journey/columns/helpers';
-import type { QAJourney, QAJourneyCase, QAJourneySubflow } from '@/types/qa-journey';
+import type { QAJourney, QAJourneyCase, QAJourneySubflow, VideoStep } from '@/types/qa-journey';
 
 interface SubflowModalProps {
     journey: QAJourney;
@@ -23,10 +24,15 @@ interface SubflowModalProps {
 export function SubflowModal({ journey, subflow, cases, onSelectCase, onClose }: SubflowModalProps) {
     const statusOpt = AUTOMATION_STATUS_OPTIONS.find(o => o.value === subflow.automation_status);
     const [docOpen, setDocOpen] = useState(false);
+    const [zoom, setZoom] = useState<{ step: VideoStep; index: number } | null>(null);
+    // Storyboard de vídeo: telas em sequência (passo a passo) — tem prioridade
+    // sobre os outros modos de exibição.
+    const steps = (subflow.video_steps || []).slice().sort((a, b) => a.order - b.order);
+    const isVideo = steps.length > 0;
     // Sub-fluxo de documento (HTML anexado) não tem comportamento de casos de
     // teste: escondemos automação / total de casos / lista de casos e
     // destacamos o documento.
-    const isDoc = Boolean(subflow.html_doc);
+    const isDoc = !isVideo && Boolean(subflow.html_doc);
 
     return (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
@@ -67,7 +73,37 @@ export function SubflowModal({ journey, subflow, cases, onSelectCase, onClose }:
                         <p className="text-sm text-muted-foreground leading-relaxed">{subflow.description}</p>
                     )}
 
-                    {isDoc ? (
+                    {isVideo ? (
+                        // Modo storyboard: passo a passo das telas do vídeo.
+                        <div className="flex flex-col gap-3">
+                            <div className="flex items-center gap-2">
+                                <Clapperboard className="w-4 h-4 text-brand" />
+                                <h3 className="text-sm font-bold text-foreground">
+                                    Storyboard ({steps.length} {steps.length === 1 ? 'tela' : 'telas'})
+                                </h3>
+                            </div>
+                            <ol className="flex flex-col gap-3">
+                                {steps.map((step, i) => (
+                                    <li key={step.id} className="flex gap-3 items-start">
+                                        <button
+                                            type="button"
+                                            onClick={() => setZoom({ step, index: i + 1 })}
+                                            className="relative shrink-0 rounded-lg border border-border overflow-hidden bg-foreground/5 hover:border-brand/50 transition-colors"
+                                        >
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img src={step.image_url} alt={`Tela ${i + 1}`} className="w-24 h-32 object-contain" />
+                                            <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-popover/90 border border-border text-[9px] font-bold text-foreground">
+                                                {i + 1}
+                                            </span>
+                                        </button>
+                                        <p className="text-xs text-foreground leading-relaxed flex-1 pt-1">
+                                            {step.caption || <span className="text-muted-foreground/60 italic">Sem descrição</span>}
+                                        </p>
+                                    </li>
+                                ))}
+                            </ol>
+                        </div>
+                    ) : isDoc ? (
                         // Modo documento: card de destaque que abre o HTML.
                         <button
                             type="button"
@@ -157,6 +193,10 @@ export function SubflowModal({ journey, subflow, cases, onSelectCase, onClose }:
                     accentColor={journey.color || undefined}
                     onClose={() => setDocOpen(false)}
                 />
+            )}
+
+            {zoom && (
+                <ImageLightbox step={zoom.step} index={zoom.index} onClose={() => setZoom(null)} />
             )}
         </div>
     );

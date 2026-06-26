@@ -23,12 +23,14 @@ import {
     loadTestCaseOptions,
     setLastProjectId,
     setProjectJourneyViewMode,
+    updateSubflowVideoSteps,
 } from '@/lib/qa-journey/api';
 import type { JourneyViewMode, ProjectHubCard, TestCaseOption } from '@/lib/qa-journey/api';
 import type {
     QAJourney,
     QAJourneyCase,
     QAJourneySubflow,
+    VideoStep,
 } from '@/types/qa-journey';
 
 export default function QAJourneyPublicPage() {
@@ -54,6 +56,17 @@ export default function QAJourneyPublicPage() {
     // Bump para re-buscar os dados do projeto após mutações no layout de colunas.
     const [refreshNonce, setRefreshNonce] = useState(0);
     const reload = useCallback(() => setRefreshNonce(n => n + 1), []);
+
+    // Edição inline do storyboard no mapa: atualiza otimista o estado e
+    // persiste só a coluna video_steps do sub-fluxo (migration 025).
+    const handleSubflowStepsChange = useCallback(async (subflowId: string, steps: VideoStep[]) => {
+        setSubflows(prev => prev.map(s => (s.id === subflowId ? { ...s, video_steps: steps } : s)));
+        try {
+            await updateSubflowVideoSteps(subflowId, steps);
+        } catch (e) {
+            console.error('Falha ao salvar legenda do storyboard:', e);
+        }
+    }, []);
     const { setHeaderSlot } = useShell();
 
     // Lista de projetos do hub (com modo + nº de jornadas) — carregada uma vez.
@@ -294,6 +307,7 @@ export default function QAJourneyPublicPage() {
                         onCaseUpdated={updated =>
                             setCases(prev => prev.map(c => c.id === updated.id ? updated : c))
                         }
+                        onSubflowStepsChange={handleSubflowStepsChange}
                     />
                 )}
             </div>

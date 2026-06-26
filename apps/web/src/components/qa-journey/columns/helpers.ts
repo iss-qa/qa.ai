@@ -110,6 +110,7 @@ export interface JourneyMetrics {
     failing: number;          // last_run_status === 'fail'
     healthPct: number | null; // passing / (passing+failing); null se sem execuções
     docCount: number;         // sub-fluxos "documento" (html_doc anexado)
+    videoCount: number;       // sub-fluxos "storyboard de vídeo" (video_steps)
 }
 
 /**
@@ -122,9 +123,10 @@ export function computeMetrics(
     subflows: QAJourneySubflow[],
     casesBySubflow: Record<string, QAJourneyCase[]>,
 ): JourneyMetrics {
-    let totalCases = 0, automatedCases = 0, manualCases = 0, passing = 0, failing = 0, docCount = 0;
+    let totalCases = 0, automatedCases = 0, manualCases = 0, passing = 0, failing = 0, docCount = 0, videoCount = 0;
     for (const s of subflows) {
-        if (s.html_doc) docCount++;
+        if (s.video_steps?.length) videoCount++;
+        else if (s.html_doc) docCount++;
         const cases = casesBySubflow[s.id] || [];
         for (const c of cases) {
             totalCases++;
@@ -138,5 +140,5 @@ export function computeMetrics(
     const coveragePct = totalCases > 0 ? Math.round((automatedCases / totalCases) * 100) : 0;
     const runs = passing + failing;
     const healthPct = runs > 0 ? Math.round((passing / runs) * 100) : null;
-    return { totalCases, automatedCases, manualCases, coveragePct, passing, failing, healthPct, docCount };
+    return { totalCases, automatedCases, manualCases, coveragePct, passing, failing, healthPct, docCount, videoCount };
 }

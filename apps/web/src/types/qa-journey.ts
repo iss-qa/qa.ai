@@ -41,10 +41,23 @@ export interface QAJourneySubflow {
     // Documento HTML completo importado pelo admin (espelha o campo da jornada).
     // Renderizado em iframe sandbox quando o sub-fluxo é aberto no mapa.
     html_doc?: string | null;
+    // Storyboard de vídeo (migration 025): telas extraídas de um vídeo curto,
+    // renderizadas como nós-imagem encadeados (com setas) no mapa.
+    video_steps?: VideoStep[] | null;
     // Alerta de automação (migration 022): prazo em dias a partir de created_at.
     automation_alert_days?: number | null;
     created_at: string;
     updated_at: string;
+}
+
+// Uma "tela" do storyboard de vídeo (migration 025). Derivada de uma mudança
+// de tela detectada no vídeo: print + legenda editável.
+export interface VideoStep {
+    id: string;
+    order: number;
+    image_url: string;   // URL pública (bucket qa-evidence, prefixo storyboard/)
+    caption: string;     // legenda exibida abaixo da imagem (editável)
+    time?: number;       // segundo no vídeo de origem (referência)
 }
 
 export type AutomationEngine = 'maestro' | 'playwright';

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import {
-    ChevronRight, Download, FileCode2, GitBranch, GripVertical, Map as MapIcon, PanelLeftClose, PanelLeftOpen, Plus,
+    ChevronRight, Clapperboard, Download, FileCode2, GitBranch, GripVertical, Map as MapIcon, PanelLeftClose, PanelLeftOpen, Plus,
 } from 'lucide-react';
 import {
     DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors,
@@ -385,9 +385,11 @@ function SortableJourneyCard({
         zIndex: isDragging ? 2 : 1,
         opacity: isDragging ? 0.85 : 1,
     };
-    // Jornada só de documentação (nenhum caso, mas há sub-fluxos-documento):
-    // métricas de cobertura/execução não se aplicam — mostra a tag "Documentação".
-    const docOnly = metrics.totalCases === 0 && metrics.docCount > 0;
+    // Jornada só de mídia (nenhum caso, mas há sub-fluxos de documento e/ou de
+    // storyboard de vídeo): métricas de cobertura/execução não se aplicam —
+    // mostra uma tag em vez de "0 auto / 0 manual / 0 ok / 0 falhas".
+    const isVideoJourney = metrics.videoCount > 0;
+    const docOnly = metrics.totalCases === 0 && (metrics.docCount > 0 || metrics.videoCount > 0);
 
     if (collapsed) {
         return (
@@ -430,11 +432,19 @@ function SortableJourneyCard({
                 )}
             </div>
             {docOnly ? (
-                <div className="mt-1.5">
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-brand bg-brand/15 rounded-md px-2 py-0.5">
-                        <FileCode2 className="w-3 h-3" />
-                        {metrics.docCount === 1 ? 'Documentação' : `Documentação · ${metrics.docCount}`}
-                    </span>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {isVideoJourney && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-brand bg-brand/15 rounded-md px-2 py-0.5">
+                            <Clapperboard className="w-3 h-3" />
+                            {metrics.videoCount === 1 ? 'Vídeo/Imagem' : `Vídeo/Imagem · ${metrics.videoCount}`}
+                        </span>
+                    )}
+                    {metrics.docCount > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-brand bg-brand/15 rounded-md px-2 py-0.5">
+                            <FileCode2 className="w-3 h-3" />
+                            {metrics.docCount === 1 ? 'Documentação' : `Documentação · ${metrics.docCount}`}
+                        </span>
+                    )}
                 </div>
             ) : (
                 <>

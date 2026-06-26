@@ -4,15 +4,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
     Background,
     BackgroundVariant,
+    ConnectionMode,
     Controls,
+    MarkerType,
     MiniMap,
     SelectionMode,
+    type Connection,
     type Edge,
     type Node,
     type NodeDragHandler,
     type NodeTypes,
     type OnNodesChange,
     type OnEdgesChange,
+    type ReactFlowInstance,
     applyNodeChanges,
     applyEdgeChanges,
 } from 'reactflow';
@@ -27,6 +31,25 @@ import { JourneyNode, type JourneyNodeData } from './JourneyNode';
 import { SubflowNode, type SubflowNodeData } from './SubflowNode';
 import { CaseNode, type CaseNodeData } from './CaseNode';
 import { HtmlDocNode, type HtmlDocNodeData } from './HtmlDocNode';
+import { VideoStepNode, type VideoStepNodeData } from './VideoStepNode';
+import { StickyNoteNode, type AnnotationNodeData } from './StickyNoteNode';
+import { ShapeNode } from './ShapeNode';
+import { ImageAnnotationNode } from './ImageAnnotationNode';
+import { CanvasToolbar } from './CanvasToolbar';
+import { ImageLightbox } from './ImageLightbox';
+import {
+    ANNOTATION_COLORS,
+    genAnnotationId,
+    genManualEdgeId,
+    isAnnotationId,
+    isManualEdgeId,
+    loadAnnotations,
+    saveAnnotations,
+    uploadCanvasImage,
+    type CanvasAnnotation,
+    type ManualEdge,
+    type ShapeVariant,
+} from './canvas-annotations';
 import { ParticleBackground } from './ParticleBackground';
 import { SubflowModal } from './SubflowModal';
 import { CaseDetailModal } from './CaseDetailModal';
@@ -36,7 +59,7 @@ import { MapSettingsPopover } from './MapSettingsPopover';
 import { useMapSettings } from './useMapSettings';
 import { animateNodesTo, collectDescendants, resolveCollisions } from './collision';
 import { computeMetrics } from '../columns/helpers';
-import type { QAJourney, QAJourneyCase, QAJourneySubflow } from '@/types/qa-journey';
+import type { QAJourney, QAJourneyCase, QAJourneySubflow, VideoStep } from '@/types/qa-journey';
 
 interface JourneyMapProps {
     projectId: string;
@@ -45,6 +68,9 @@ interface JourneyMapProps {
     casesBySubflow: Record<string, QAJourneyCase[]>;
     // Registro manual de execução no modal de caso — o pai atualiza o estado.
     onCaseUpdated?: (updated: QAJourneyCase) => void;
+    // Edição inline do storyboard no mapa (legendas). Quando ausente, o
+    // storyboard fica somente-leitura. O pai persiste e atualiza o estado.
+    onSubflowStepsChange?: (subflowId: string, steps: VideoStep[]) => void;
     // Deep-link: jornada que deve abrir já expandida (?journey= na URL).
     initialExpandedJourneyId?: string;
 }
@@ -54,7 +80,16 @@ const NODE_TYPES: NodeTypes = {
     subflow: SubflowNode,
     case: CaseNode,
     htmlDoc: HtmlDocNode,
+    videoStep: VideoStepNode,
+    sticky: StickyNoteNode,
+    shape: ShapeNode,
+    imageAnno: ImageAnnotationNode,
 };
+
+// Tamanhos default das anotações ao criar.
+const STICKY_DEFAULT = { width: 200, height: 150 };
+const SHAPE_DEFAULT = { width: 150, height: 110 };
+const IMAGE_DEFAULT = { width: 260, height: 200 };
 
 // Tamanhos default por tipo de node
 const JOURNEY_DEFAULT = { width: 240, height: 110 };
@@ -66,9 +101,42 @@ const HTML_DOC_DEFAULT = { width: 880, height: 620 };
 // Prévia de documento de sub-fluxo: um pouco menor que a da jornada (são mais
 // numerosos no grafo). Também redimensionável/expansível.
 const SUBFLOW_HTML_DOC_DEFAULT = { width: 720, height: 520 };
+// Tela do storyboard de vídeo: retrato por padrão (prints de celular), mas o
+// object-contain acomoda paisagem também. Redimensionável.
+const VIDEO_STEP_DEFAULT = { width: 200, height: 300 };
 
 // Layout customizado pelo usuario (drag + resize), persistido em localStorage por projeto.
 type CustomLayout = Record<string, { x?: number; y?: number; width?: number; height?: number }>;
+
+// Item da área de transferência interna: o que é necessário para recriar um nó
+// como anotação ao colar. Geometria preservada para o offset do paste.
+interface CopyItem {
+    kind: CanvasAnnotation['kind'];
+    x: number; y: number; width: number; height: number;
+    text?: string;
+    color?: string;
+    shape?: ShapeVariant;
+    imageUrl?: string;
+}
+
+// Converte um nó selecionado em um item copiável. Storyboard/imagens viram
+// imagem-anotação; sticky/forma duplicam o mesmo tipo; demais nós (jornada,
+// sub-fluxo, caso, doc) não são copiáveis (retorna null).
+function nodeToCopyItem(n: Node): CopyItem | null {
+    const w = n.width ?? 200;
+    const h = n.height ?? 120;
+    const base = { x: n.position.x, y: n.position.y, width: w, height: h };
+    if (n.type === 'videoStep') {
+        const url = (n.data as { step?: { image_url?: string } })?.step?.image_url;
+        return url ? { kind: 'image', imageUrl: url, ...base } : null;
+    }
+    if (n.type === 'imageAnno' || n.type === 'sticky' || n.type === 'shape') {
+        const a = (n.data as { annotation?: CanvasAnnotation })?.annotation;
+        if (!a) return null;
+        return { kind: a.kind, imageUrl: a.imageUrl, text: a.text, color: a.color, shape: a.shape, ...base };
+    }
+    return null;
+}
 
 function layoutStorageKey(projectId: string): string {
     return `qa-journey-map-layout:${projectId}`;
@@ -99,7 +167,7 @@ function writeStoredSet(key: string, value: Set<string>): void {
     }
 }
 
-export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubflow, onCaseUpdated, initialExpandedJourneyId }: JourneyMapProps) {
+export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubflow, onCaseUpdated, onSubflowStepsChange, initialExpandedJourneyId }: JourneyMapProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [expanded, setExpanded] = useState<Set<string>>(() => {
         const initial = readStoredSet(expandedStorageKey(projectId, 'journeys'));
@@ -124,6 +192,35 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
     const [htmlJourneyId, setHtmlJourneyId] = useState<string | null>(null);
     // Sub-fluxo cujo documento HTML anexado está aberto no modal.
     const [htmlSubflowId, setHtmlSubflowId] = useState<string | null>(null);
+    // Tela do storyboard (ou imagem-anotação) ampliada no lightbox.
+    const [zoomStep, setZoomStep] = useState<{ step: VideoStep; index?: number } | null>(null);
+
+    // Anotações livres (sticky/formas/imagens) + conexões manuais, por projeto.
+    const [annotations, setAnnotations] = useState<CanvasAnnotation[]>([]);
+    const [manualEdges, setManualEdges] = useState<ManualEdge[]>([]);
+    const [annoLoaded, setAnnoLoaded] = useState(false);
+    // Instância do React Flow (p/ converter tela→canvas no spawn) + último ponteiro.
+    const rfInstance = useRef<ReactFlowInstance | null>(null);
+    const lastPointer = useRef<{ x: number; y: number } | null>(null);
+    // Nós atualmente selecionados (para copiar/colar só o que foi selecionado).
+    const selectedNodesRef = useRef<Node[]>([]);
+    // Área de transferência interna (cópia de nós do canvas).
+    const copyBufferRef = useRef<CopyItem[]>([]);
+
+    // Carrega anotações ao montar / trocar de projeto.
+    useEffect(() => {
+        setAnnoLoaded(false);
+        const state = loadAnnotations(projectId);
+        setAnnotations(state.annotations);
+        setManualEdges(state.edges);
+        setAnnoLoaded(true);
+    }, [projectId]);
+
+    // Persiste anotações sempre que mudam (após load inicial).
+    useEffect(() => {
+        if (!annoLoaded) return;
+        saveAnnotations(projectId, { annotations, edges: manualEdges });
+    }, [annotations, manualEdges, projectId, annoLoaded]);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [mapSettings, updateMapSettings] = useMapSettings();
     // 'pan' = mãozinha (arrastar a tela); 'select' = ponteiro (caixa de
@@ -191,6 +288,39 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
     const openCaseFromSubflow = useCallback((caseId: string) => {
         // Mantém o sub-fluxo ativo atrás — é para onde o "voltar" retorna.
         setActiveCaseId(caseId);
+    }, []);
+
+    // Amplia uma tela do storyboard no lightbox.
+    const openZoom = useCallback((step: VideoStep, index: number) => setZoomStep({ step, index }), []);
+
+    // --- Anotações livres (sticky/formas/imagens) + conexões manuais ---
+    const updateAnnotation = useCallback((id: string, patch: Partial<CanvasAnnotation>) => {
+        setAnnotations(prev => prev.map(a => (a.id === id ? { ...a, ...patch } : a)));
+    }, []);
+    const deleteAnnotation = useCallback((id: string) => {
+        setAnnotations(prev => prev.filter(a => a.id !== id));
+        setManualEdges(prev => prev.filter(e => e.source !== id && e.target !== id));
+        setCustomLayout(prev => { const n = { ...prev }; delete n[id]; return n; });
+    }, []);
+    const openZoomAnnotation = useCallback((a: CanvasAnnotation) => {
+        if (a.imageUrl) setZoomStep({ step: { id: a.id, order: 0, image_url: a.imageUrl, caption: a.text || '' } });
+    }, []);
+    // Liga dois nós (qualquer par) — vira uma edge manual persistida.
+    const onConnect = useCallback((c: Connection) => {
+        if (!c.source || !c.target || c.source === c.target) return;
+        setManualEdges(prev => (
+            // Mesma origem+borda → destino+borda já existe? não duplica.
+            prev.some(e => e.source === c.source && e.target === c.target
+                && e.sourceHandle === c.sourceHandle && e.targetHandle === c.targetHandle)
+                ? prev
+                : [...prev, {
+                    id: genManualEdgeId(),
+                    source: c.source!,
+                    target: c.target!,
+                    sourceHandle: c.sourceHandle,
+                    targetHandle: c.targetHandle,
+                }]
+        ));
     }, []);
 
     // Reconstroi grafo (nodes/edges) - aplica dagre + sobrescreve com customLayout
@@ -338,6 +468,50 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                         });
                     }
 
+                    // Storyboard de vídeo (migration 025): telas encadeadas por
+                    // setas (passo a passo). Aparece enquanto a jornada está
+                    // expandida — igual ao documento HTML do sub-fluxo.
+                    const steps = (subflow.video_steps || []).slice().sort((a, b) => a.order - b.order);
+                    if (steps.length > 0) {
+                        let prevId = subflow.id;
+                        steps.forEach((step, idx) => {
+                            const vId = `vstep:${subflow.id}:${step.id}`;
+                            const vCustom = customLayout[vId];
+                            const vw = vCustom?.width ?? VIDEO_STEP_DEFAULT.width;
+                            const vh = vCustom?.height ?? VIDEO_STEP_DEFAULT.height;
+                            const vData: VideoStepNodeData = {
+                                step,
+                                index: idx + 1,
+                                color: journey.color || undefined,
+                                onZoom: s => openZoom(s, idx + 1),
+                                onCaptionCommit: onSubflowStepsChange
+                                    ? (caption: string) => onSubflowStepsChange(
+                                        subflow.id,
+                                        steps.map(s => (s.id === step.id ? { ...s, caption } : s)),
+                                    )
+                                    : undefined,
+                            };
+                            nodes.push({
+                                id: vId,
+                                type: 'videoStep',
+                                position: { x: 0, y: 0 },
+                                data: vData,
+                                width: vw,
+                                height: vh,
+                                style: { width: vw, height: vh },
+                            });
+                            edges.push({
+                                id: `${prevId}->${vId}`,
+                                source: prevId,
+                                target: vId,
+                                animated: false,
+                                markerEnd: { type: MarkerType.ArrowClosed, color: journey.color || '#7c3aed', width: 16, height: 16 },
+                                style: { stroke: journey.color || '#7c3aed', strokeWidth: 1.5, opacity: 0.75 },
+                            });
+                            prevId = vId;
+                        });
+                    }
+
                     // 3º nível: ramo de casos de teste (quando o sub-fluxo está expandido)
                     if (expandedSubflows.has(subflow.id)) {
                         cases.forEach(c => {
@@ -414,8 +588,45 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
             return n;
         });
 
-        return { layoutedNodes: final, layoutedEdges: edges };
-    }, [journeys, subflowsByJourney, casesBySubflow, expanded, expandedSubflows, activeSubflowId, activeCaseId, customLayout, toggleJourney, selectSubflow, openCaseFromMap]);
+        // Anotações livres — NÃO passam pelo dagre (posição é do usuário).
+        // Geometria: base na própria anotação, sobrescrita pelo customLayout
+        // (mesmo mecanismo de drag/resize/persistência dos demais nós).
+        const annoNodes: Node[] = annotations.map(a => {
+            const c = customLayout[a.id];
+            const w = c?.width ?? a.width;
+            const h = c?.height ?? a.height;
+            const nodeData: AnnotationNodeData = {
+                annotation: a,
+                onChange: updateAnnotation,
+                onDelete: deleteAnnotation,
+                onZoom: openZoomAnnotation,
+            };
+            return {
+                id: a.id,
+                type: a.kind === 'sticky' ? 'sticky' : a.kind === 'shape' ? 'shape' : 'imageAnno',
+                position: { x: c?.x ?? a.x, y: c?.y ?? a.y },
+                data: nodeData,
+                width: w,
+                height: h,
+                style: { width: w, height: h },
+            };
+        });
+        const annoEdges: Edge[] = manualEdges.map(e => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            // Reaplica as bordas exatas para a seta sair/chegar onde foi puxada.
+            sourceHandle: e.sourceHandle ?? undefined,
+            targetHandle: e.targetHandle ?? undefined,
+            type: 'default',
+            animated: false,
+            markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8', width: 16, height: 16 },
+            style: { stroke: '#94a3b8', strokeWidth: 1.5 },
+            data: { manual: true },
+        }));
+
+        return { layoutedNodes: [...final, ...annoNodes], layoutedEdges: [...edges, ...annoEdges] };
+    }, [journeys, subflowsByJourney, casesBySubflow, expanded, expandedSubflows, activeSubflowId, activeCaseId, customLayout, toggleJourney, selectSubflow, openCaseFromMap, openZoom, onSubflowStepsChange, annotations, manualEdges, updateAnnotation, deleteAnnotation, openZoomAnnotation]);
 
     // Controlled nodes/edges para o ReactFlow
     const [rfNodes, setRfNodes] = useState<Node[]>(layoutedNodes);
@@ -453,7 +664,23 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
     // StrictMode invoca updaters duas vezes, e side effects lá dentro
     // (mutação do ref resizingDims) faziam a persistência do resize falhar.
     const onNodesChange = useCallback<OnNodesChange>(changes => {
-        setRfNodes(ns => applyNodeChanges(changes, ns));
+        // Remoção (Delete/Backspace): só anotações podem ser apagadas; nós de
+        // dado (jornada/sub-fluxo/caso/storyboard) são protegidos.
+        const removedAnno: string[] = [];
+        const safe = changes.filter(c => {
+            if (c.type === 'remove') {
+                if (isAnnotationId(c.id)) { removedAnno.push(c.id); return true; }
+                return false;
+            }
+            return true;
+        });
+        setRfNodes(ns => applyNodeChanges(safe, ns));
+        if (removedAnno.length) {
+            const rm = new Set(removedAnno);
+            setAnnotations(prev => prev.filter(a => !rm.has(a.id)));
+            setManualEdges(prev => prev.filter(e => !rm.has(e.source) && !rm.has(e.target)));
+            setCustomLayout(prev => { const n = { ...prev }; removedAnno.forEach(id => delete n[id]); return n; });
+        }
 
         const updates: CustomLayout = {};
         let hasUpdates = false;
@@ -488,7 +715,20 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
         }
     }, []);
     const onEdgesChange = useCallback<OnEdgesChange>(changes => {
-        setRfEdges(es => applyEdgeChanges(changes, es));
+        // Só conexões manuais podem ser removidas; edges de dado são protegidas.
+        const removedManual: string[] = [];
+        const safe = changes.filter(c => {
+            if (c.type === 'remove') {
+                if (isManualEdgeId(c.id)) { removedManual.push(c.id); return true; }
+                return false;
+            }
+            return true;
+        });
+        setRfEdges(es => applyEdgeChanges(safe, es));
+        if (removedManual.length) {
+            const rm = new Set(removedManual);
+            setManualEdges(prev => prev.filter(e => !rm.has(e.id)));
+        }
     }, []);
 
     // --- Drag agrupado (jornada move filhas) + anti-sobreposição ---
@@ -569,6 +809,154 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
         setCustomLayout({});
     }, []);
 
+    // --- Spawn de anotações (estilo Figma/Miro) ---
+
+    // Converte coordenadas de tela em coordenadas do canvas (flow). Sem args =
+    // centro do viewport atual.
+    const flowPoint = useCallback((clientX?: number, clientY?: number) => {
+        const inst = rfInstance.current;
+        const el = containerRef.current;
+        if (inst && el) {
+            const rect = el.getBoundingClientRect();
+            const vp = inst.getViewport();
+            const sx = clientX ?? rect.left + rect.width / 2;
+            const sy = clientY ?? rect.top + rect.height / 2;
+            return { x: (sx - rect.left - vp.x) / vp.zoom, y: (sy - rect.top - vp.y) / vp.zoom };
+        }
+        return { x: 0, y: 0 };
+    }, []);
+
+    // Acha um ponto livre perto do desejado (cascata) — evita nascer em cima de
+    // outro nó. Atende "não deixar uma imagem ficar por cima da outra".
+    const findFreeSpot = useCallback((x: number, y: number, w: number, h: number) => {
+        const boxes = rfNodesRef.current.map(n => ({ x: n.position.x, y: n.position.y, w: n.width ?? 200, h: n.height ?? 80 }));
+        const pad = 20;
+        let px = x, py = y;
+        for (let i = 0; i < 80; i++) {
+            const hit = boxes.some(b => px < b.x + b.w + pad && px + w + pad > b.x && py < b.y + b.h + pad && py + h + pad > b.y);
+            if (!hit) break;
+            px += 28; py += 24;
+        }
+        return { x: px, y: py };
+    }, []);
+
+    // Cria uma anotação numa posição-base (achando um ponto livre próximo).
+    const createAnnotation = useCallback((
+        partial: Omit<CanvasAnnotation, 'id' | 'x' | 'y' | 'width' | 'height'>,
+        w: number, h: number, baseX: number, baseY: number,
+    ) => {
+        const spot = findFreeSpot(baseX, baseY, w, h);
+        setAnnotations(prev => [...prev, { id: genAnnotationId(), x: spot.x, y: spot.y, width: w, height: h, ...partial }]);
+    }, [findFreeSpot]);
+
+    // Cria centrado no cursor/viewport (toolbar, paste de imagem externa).
+    const spawnAnnotation = useCallback((
+        partial: Omit<CanvasAnnotation, 'id' | 'x' | 'y' | 'width' | 'height'>,
+        w: number, h: number, clientX?: number, clientY?: number,
+    ) => {
+        const p = flowPoint(clientX, clientY);
+        createAnnotation(partial, w, h, p.x - w / 2, p.y - h / 2);
+    }, [flowPoint, createAnnotation]);
+
+    // Cola os itens copiados (somente os que estavam selecionados), com offset.
+    const pasteCopyBuffer = useCallback(() => {
+        const items = copyBufferRef.current;
+        if (!items.length) return;
+        items.forEach(it => {
+            const { x, y, width, height, ...rest } = it;
+            createAnnotation(rest, width, height, x + 28, y + 28);
+        });
+    }, [createAnnotation]);
+
+    const addSticky = useCallback(() => {
+        spawnAnnotation({ kind: 'sticky', text: '', color: ANNOTATION_COLORS[0] }, STICKY_DEFAULT.width, STICKY_DEFAULT.height);
+    }, [spawnAnnotation]);
+
+    const addShape = useCallback((shape: ShapeVariant) => {
+        spawnAnnotation(
+            { kind: 'shape', shape, text: '', color: shape === 'diamond' ? ANNOTATION_COLORS[3] : ANNOTATION_COLORS[2] },
+            SHAPE_DEFAULT.width, SHAPE_DEFAULT.height,
+        );
+    }, [spawnAnnotation]);
+
+    const addImageFromBlob = useCallback(async (blob: Blob, clientX?: number, clientY?: number) => {
+        try {
+            const url = await uploadCanvasImage(projectId, blob);
+            const dims = await new Promise<{ w: number; h: number }>(res => {
+                const im = new Image();
+                im.onload = () => res({ w: im.naturalWidth, h: im.naturalHeight });
+                im.onerror = () => res({ w: IMAGE_DEFAULT.width, h: IMAGE_DEFAULT.height });
+                im.src = url;
+            });
+            const scale = Math.min(1, 320 / Math.max(1, dims.w));
+            const w = Math.round(dims.w * scale) || IMAGE_DEFAULT.width;
+            const h = Math.round(dims.h * scale) || IMAGE_DEFAULT.height;
+            spawnAnnotation({ kind: 'image', imageUrl: url }, w, h, clientX, clientY);
+        } catch (e) {
+            console.error('upload de imagem no canvas falhou:', e);
+            alert('Falha ao enviar a imagem para o canvas.');
+        }
+    }, [projectId, spawnAnnotation]);
+
+    const addImageFile = useCallback((file: File) => { void addImageFromBlob(file); }, [addImageFromBlob]);
+
+    // Não interceptar atalhos quando o foco está num campo de texto (edição de
+    // legenda/sticky/forma) — ali Ctrl+C/V é copiar/colar texto normal.
+    const isEditingText = () => {
+        const el = document.activeElement;
+        if (!el) return false;
+        const tag = el.tagName;
+        return tag === 'INPUT' || tag === 'TEXTAREA' || (el as HTMLElement).isContentEditable;
+    };
+
+    // Ctrl/Cmd+C: copia SOMENTE os nós selecionados para a área interna e
+    // impede o navegador de copiar um screenshot da região (causa de "copiou
+    // os 3" em vez do card selecionado).
+    useEffect(() => {
+        const onCopy = (e: KeyboardEvent) => {
+            if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'c') return;
+            if (isEditingText()) return;
+            // Se há texto selecionado na página, é cópia de texto — não interfere.
+            if (window.getSelection()?.toString()) return;
+            const items = selectedNodesRef.current.map(nodeToCopyItem).filter((x): x is CopyItem => x !== null);
+            if (items.length) {
+                copyBufferRef.current = items;
+                e.preventDefault();
+            }
+        };
+        window.addEventListener('keydown', onCopy);
+        return () => window.removeEventListener('keydown', onCopy);
+    }, []);
+
+    // Colar: prioriza a cópia interna (só o selecionado); se não houver, e o
+    // clipboard tiver uma imagem externa, cria uma imagem-anotação.
+    useEffect(() => {
+        const onPaste = (e: ClipboardEvent) => {
+            if (isEditingText()) return;
+            if (copyBufferRef.current.length) {
+                e.preventDefault();
+                pasteCopyBuffer();
+                return;
+            }
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            for (const it of Array.from(items)) {
+                if (it.type.startsWith('image/')) {
+                    const f = it.getAsFile();
+                    if (f) { e.preventDefault(); void addImageFromBlob(f, lastPointer.current?.x, lastPointer.current?.y); }
+                    return;
+                }
+            }
+        };
+        window.addEventListener('paste', onPaste);
+        return () => window.removeEventListener('paste', onPaste);
+    }, [addImageFromBlob, pasteCopyBuffer]);
+
+    // Mantém o ref de seleção atualizado (origem do copiar).
+    const onSelectionChange = useCallback(({ nodes }: { nodes: Node[] }) => {
+        selectedNodesRef.current = nodes;
+    }, []);
+
     // Export PNG
     const exportPng = useCallback(async () => {
         const el = containerRef.current?.querySelector('.react-flow') as HTMLElement | null;
@@ -636,8 +1024,17 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
         <div
             ref={containerRef}
             className="relative w-full h-full bg-card rounded-2xl overflow-hidden border border-border"
+            onMouseMove={e => { lastPointer.current = { x: e.clientX, y: e.clientY }; }}
+            onDragOver={e => { if (Array.from(e.dataTransfer.types).includes('Files')) e.preventDefault(); }}
+            onDrop={e => {
+                const f = e.dataTransfer.files?.[0];
+                if (f && f.type.startsWith('image/')) { e.preventDefault(); void addImageFromBlob(f, e.clientX, e.clientY); }
+            }}
         >
             <ParticleBackground />
+
+            {/* Paleta de componentes (sticky / formas / imagem) */}
+            <CanvasToolbar onAddSticky={addSticky} onAddShape={addShape} onAddImageFile={addImageFile} />
 
             {/* Top bar */}
             <div className="absolute top-4 left-4 right-4 z-10 flex items-center justify-between gap-3 pointer-events-none">
@@ -714,13 +1111,20 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                 onNodeDragStart={onNodeDragStart}
                 onNodeDrag={onNodeDrag}
                 onNodeDragStop={onNodeDragStop}
+                onInit={inst => { rfInstance.current = inst; }}
+                onConnect={onConnect}
+                onSelectionChange={onSelectionChange}
                 fitView
                 fitViewOptions={{ padding: 0.25, includeHiddenNodes: false }}
                 minZoom={0.4}
                 maxZoom={1.5}
                 proOptions={{ hideAttribution: true }}
                 nodesDraggable={true}
-                nodesConnectable={false}
+                nodesConnectable={true}
+                // Conexão mais "tolerante": qualquer borda serve de origem/alvo
+                // e o raio de captura maior facilita ligar um bloco a outro.
+                connectionMode={ConnectionMode.Loose}
+                connectionRadius={48}
                 panOnScroll
                 zoomOnDoubleClick={false}
                 // Modo ponteiro: arrastar no fundo desenha a caixa de seleção
@@ -740,6 +1144,9 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                     nodeColor={n => (
                         n.type === 'journey' ? '#7c3aed'
                         : n.type === 'htmlDoc' ? '#0ea5e9'
+                        : n.type === 'videoStep' ? '#10b981'
+                        : n.type === 'sticky' || n.type === 'shape' ? '#f59e0b'
+                        : n.type === 'imageAnno' ? '#10b981'
                         : n.type === 'case' ? '#475569'
                         : '#3b82f6'
                     )}
@@ -802,6 +1209,17 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                         />
                     ) : null;
                 })()}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {zoomStep && (
+                    <ImageLightbox
+                        key={zoomStep.step.id}
+                        step={zoomStep.step}
+                        index={zoomStep.index}
+                        onClose={() => setZoomStep(null)}
+                    />
+                )}
             </AnimatePresence>
         </div>
     );

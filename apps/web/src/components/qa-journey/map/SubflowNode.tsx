@@ -2,7 +2,7 @@
 
 import { memo } from 'react';
 import { Handle, NodeResizer, Position } from 'reactflow';
-import { CheckCircle2, FileCode2, GitBranch, Link2 } from 'lucide-react';
+import { CheckCircle2, Clapperboard, FileCode2, GitBranch, Link2 } from 'lucide-react';
 import { AUTOMATION_STATUS_OPTIONS } from '@/lib/qa-journey/constants';
 import type { QAJourneySubflow } from '@/types/qa-journey';
 
@@ -19,6 +19,9 @@ export const SubflowNode = memo(function SubflowNode({ data, selected }: { data:
     // Sub-fluxo de documento: sem badge de automação / contagem de casos —
     // mostra só que é um documento (a prévia vive no nó-webview ao lado).
     const isDoc = Boolean(subflow.html_doc);
+    // Sub-fluxo de storyboard: telas de vídeo encadeadas no mapa ao lado.
+    const stepCount = subflow.video_steps?.length ?? 0;
+    const isVideo = stepCount > 0;
 
     return (
         <button
@@ -53,7 +56,11 @@ export const SubflowNode = memo(function SubflowNode({ data, selected }: { data:
             </div>
 
             <div className="mt-2 flex items-center justify-between gap-2">
-                {isDoc ? (
+                {isVideo ? (
+                    <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-brand" title="Storyboard de vídeo (telas no mapa)">
+                        <Clapperboard className="w-2.5 h-2.5" /> Storyboard · {stepCount} {stepCount === 1 ? 'tela' : 'telas'}
+                    </span>
+                ) : isDoc ? (
                     <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-brand" title="Documento HTML anexado (prévia no mapa)">
                         <FileCode2 className="w-2.5 h-2.5" /> Documento
                     </span>
