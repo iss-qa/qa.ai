@@ -19,6 +19,7 @@ export interface CanvasAnnotation {
     color?: string;         // cor de acento (hex)
     shape?: ShapeVariant;   // quando kind === 'shape'
     imageUrl?: string;      // quando kind === 'image'
+    fontSize?: number;      // tamanho da fonte do texto (sticky); default 12
 }
 
 export interface ManualEdge {
@@ -34,6 +35,12 @@ export interface ManualEdge {
 export interface CanvasAnnotationsState {
     annotations: CanvasAnnotation[];
     edges: ManualEdge[];
+    // IDs de setas AUTOMÁTICAS (storyboard) que o usuário removeu — não são
+    // redesenhadas. Permite "quebrar" a cadeia para inserir algo no meio.
+    suppressedEdges?: string[];
+    // Grupos do usuário: cada grupo é uma lista de IDs de nós que se movem
+    // juntos (e não desagrupam por engano).
+    groups?: string[][];
 }
 
 export const ANNOTATION_ID_PREFIX = 'anno:';
@@ -67,18 +74,22 @@ export function loadAnnotations(projectId: string): CanvasAnnotationsState {
             return {
                 annotations: Array.isArray(parsed.annotations) ? parsed.annotations : [],
                 edges: Array.isArray(parsed.edges) ? parsed.edges : [],
+                suppressedEdges: Array.isArray(parsed.suppressedEdges) ? parsed.suppressedEdges : [],
+                groups: Array.isArray(parsed.groups) ? parsed.groups : [],
             };
         }
     } catch {
         // parse/storage indisponível
     }
-    return { annotations: [], edges: [] };
+    return { annotations: [], edges: [], suppressedEdges: [], groups: [] };
 }
 
 export function saveAnnotations(projectId: string, state: CanvasAnnotationsState): void {
     try {
         const key = annotationsStorageKey(projectId);
-        if (state.annotations.length === 0 && state.edges.length === 0) {
+        const empty = state.annotations.length === 0 && state.edges.length === 0
+            && (state.suppressedEdges?.length ?? 0) === 0 && (state.groups?.length ?? 0) === 0;
+        if (empty) {
             localStorage.removeItem(key);
         } else {
             localStorage.setItem(key, JSON.stringify(state));

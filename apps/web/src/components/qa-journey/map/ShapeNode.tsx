@@ -27,7 +27,7 @@ export const ShapeNode = memo(function ShapeNode({ data, selected }: { data: Ann
 
     return (
         <div className="group relative w-full h-full">
-            <NodeResizer isVisible minWidth={90} minHeight={70} maxWidth={600} maxHeight={600}
+            <NodeResizer isVisible={selected} minWidth={90} minHeight={70} maxWidth={600} maxHeight={600}
                 lineClassName={RESIZER_LINE} handleClassName={RESIZER_HANDLE} />
             <ConnectHandles />
 

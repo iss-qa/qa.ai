@@ -15,7 +15,7 @@ export const ImageAnnotationNode = memo(function ImageAnnotationNode({ data, sel
 
     return (
         <div className={`group relative w-full h-full rounded-xl overflow-hidden border bg-card shadow-lg ${selected ? 'border-brand ring-2 ring-brand/30' : 'border-border'}`}>
-            <NodeResizer isVisible minWidth={80} minHeight={60} maxWidth={1200} maxHeight={1200}
+            <NodeResizer isVisible={selected} minWidth={80} minHeight={60} maxWidth={1200} maxHeight={1200}
                 lineClassName={RESIZER_LINE} handleClassName={RESIZER_HANDLE} />
             <ConnectHandles />
 

@@ -22,7 +22,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { Download, Hand, Maximize2, Minimize2, MousePointer2, Sparkles } from 'lucide-react';
+import { Download, Group, Hand, Maximize2, Minimize2, MousePointer2, Redo2, Sparkles, Ungroup, Undo2 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { toPng } from 'html-to-image';
 
@@ -36,6 +36,7 @@ import { StickyNoteNode, type AnnotationNodeData } from './StickyNoteNode';
 import { ShapeNode } from './ShapeNode';
 import { ImageAnnotationNode } from './ImageAnnotationNode';
 import { CanvasToolbar } from './CanvasToolbar';
+import { ManualEdge as ManualEdgeRenderer } from './ManualEdge';
 import { ImageLightbox } from './ImageLightbox';
 import {
     ANNOTATION_COLORS,
@@ -86,6 +87,9 @@ const NODE_TYPES: NodeTypes = {
     imageAnno: ImageAnnotationNode,
 };
 
+// Aresta manual (com botão de excluir). Constante estável fora do componente.
+const EDGE_TYPES = { manual: ManualEdgeRenderer };
+
 // Tamanhos default das anotações ao criar.
 const STICKY_DEFAULT = { width: 200, height: 150 };
 const SHAPE_DEFAULT = { width: 150, height: 110 };
@@ -107,6 +111,15 @@ const VIDEO_STEP_DEFAULT = { width: 200, height: 300 };
 
 // Layout customizado pelo usuario (drag + resize), persistido em localStorage por projeto.
 type CustomLayout = Record<string, { x?: number; y?: number; width?: number; height?: number }>;
+
+// Snapshot do estado editável do canvas para desfazer/refazer (Ctrl+Z).
+interface HistorySnap {
+    customLayout: CustomLayout;
+    annotations: CanvasAnnotation[];
+    manualEdges: ManualEdge[];
+    suppressedEdges: string[];
+    groups: string[][];
+}
 
 // Item da área de transferência interna: o que é necessário para recriar um nó
 // como anotação ao colar. Geometria preservada para o offset do paste.
@@ -198,12 +211,16 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
     // Anotações livres (sticky/formas/imagens) + conexões manuais, por projeto.
     const [annotations, setAnnotations] = useState<CanvasAnnotation[]>([]);
     const [manualEdges, setManualEdges] = useState<ManualEdge[]>([]);
+    // Setas automáticas (storyboard) removidas pelo usuário; grupos de nós.
+    const [suppressedEdges, setSuppressedEdges] = useState<string[]>([]);
+    const [groups, setGroups] = useState<string[][]>([]);
     const [annoLoaded, setAnnoLoaded] = useState(false);
     // Instância do React Flow (p/ converter tela→canvas no spawn) + último ponteiro.
     const rfInstance = useRef<ReactFlowInstance | null>(null);
     const lastPointer = useRef<{ x: number; y: number } | null>(null);
-    // Nós atualmente selecionados (para copiar/colar só o que foi selecionado).
+    // Nós atualmente selecionados (para copiar/colar e agrupar).
     const selectedNodesRef = useRef<Node[]>([]);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
     // Área de transferência interna (cópia de nós do canvas).
     const copyBufferRef = useRef<CopyItem[]>([]);
 
@@ -213,19 +230,26 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
         const state = loadAnnotations(projectId);
         setAnnotations(state.annotations);
         setManualEdges(state.edges);
+        setSuppressedEdges(state.suppressedEdges ?? []);
+        setGroups(state.groups ?? []);
         setAnnoLoaded(true);
     }, [projectId]);
 
     // Persiste anotações sempre que mudam (após load inicial).
     useEffect(() => {
         if (!annoLoaded) return;
-        saveAnnotations(projectId, { annotations, edges: manualEdges });
-    }, [annotations, manualEdges, projectId, annoLoaded]);
+        saveAnnotations(projectId, { annotations, edges: manualEdges, suppressedEdges, groups });
+    }, [annotations, manualEdges, suppressedEdges, groups, projectId, annoLoaded]);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [mapSettings, updateMapSettings] = useMapSettings();
     // 'pan' = mãozinha (arrastar a tela); 'select' = ponteiro (caixa de
     // seleção múltipla estilo Miro — arrasta vários nós de uma vez).
     const [interactionMode, setInteractionMode] = useState<'pan' | 'select'>('pan');
+    // Espelho em ref + estado do "pan temporário" enquanto a barra de espaço
+    // está pressionada (estilo Figma): guarda o modo anterior para restaurar.
+    const interactionModeRef = useRef<'pan' | 'select'>('pan');
+    interactionModeRef.current = interactionMode;
+    const spacePanPrev = useRef<'pan' | 'select' | null>(null);
 
     // Layout customizado (carregado do localStorage no mount/troca de projeto)
     const [customLayout, setCustomLayout] = useState<CustomLayout>({});
@@ -257,6 +281,72 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
             // localStorage cheio ou indisponivel - ignora
         }
     }, [customLayout, projectId, layoutLoaded]);
+
+    // --- Histórico do canvas (desfazer/refazer): posições + anotações + conexões ---
+    const undoStack = useRef<HistorySnap[]>([]);
+    const redoStack = useRef<HistorySnap[]>([]);
+    const lastSnap = useRef<HistorySnap | null>(null);
+    const restoringHistory = useRef(false);
+    const [canUndo, setCanUndo] = useState(false);
+    const [canRedo, setCanRedo] = useState(false);
+    const syncHistoryFlags = useCallback(() => {
+        setCanUndo(undoStack.current.length > 0);
+        setCanRedo(redoStack.current.length > 0);
+    }, []);
+
+    // Zera o histórico ao trocar de projeto.
+    useEffect(() => {
+        undoStack.current = [];
+        redoStack.current = [];
+        lastSnap.current = null;
+        setCanUndo(false);
+        setCanRedo(false);
+    }, [projectId]);
+
+    // Registra cada mudança discreta (drag/resize/add/edit/delete/conexão) como
+    // um ponto de histórico. Empilha o estado ANTERIOR; o atual vira o baseline.
+    useEffect(() => {
+        if (!layoutLoaded || !annoLoaded) return;
+        const cur: HistorySnap = { customLayout, annotations, manualEdges, suppressedEdges, groups };
+        if (restoringHistory.current) {
+            restoringHistory.current = false;
+            lastSnap.current = cur;
+            return;
+        }
+        if (lastSnap.current) {
+            undoStack.current.push(lastSnap.current);
+            if (undoStack.current.length > 100) undoStack.current.shift();
+            redoStack.current = [];
+            syncHistoryFlags();
+        }
+        lastSnap.current = cur;
+    }, [customLayout, annotations, manualEdges, suppressedEdges, groups, layoutLoaded, annoLoaded, syncHistoryFlags]);
+
+    const applySnap = useCallback((s: HistorySnap) => {
+        restoringHistory.current = true;
+        lastSnap.current = s;
+        setCustomLayout(s.customLayout);
+        setAnnotations(s.annotations);
+        setManualEdges(s.manualEdges);
+        setSuppressedEdges(s.suppressedEdges);
+        setGroups(s.groups);
+    }, []);
+
+    const undo = useCallback(() => {
+        if (undoStack.current.length === 0 || !lastSnap.current) return;
+        const prev = undoStack.current.pop()!;
+        redoStack.current.push(lastSnap.current);
+        applySnap(prev);
+        syncHistoryFlags();
+    }, [applySnap, syncHistoryFlags]);
+
+    const redo = useCallback(() => {
+        if (redoStack.current.length === 0 || !lastSnap.current) return;
+        const next = redoStack.current.pop()!;
+        undoStack.current.push(lastSnap.current);
+        applySnap(next);
+        syncHistoryFlags();
+    }, [applySnap, syncHistoryFlags]);
 
     const toggleJourney = useCallback((journeyId: string) => {
         setExpanded(prev => {
@@ -304,6 +394,37 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
     }, []);
     const openZoomAnnotation = useCallback((a: CanvasAnnotation) => {
         if (a.imageUrl) setZoomStep({ step: { id: a.id, order: 0, image_url: a.imageUrl, caption: a.text || '' } });
+    }, []);
+    const deleteManualEdge = useCallback((id: string) => {
+        setManualEdges(prev => prev.filter(e => e.id !== id));
+    }, []);
+    // Remove (esconde) uma seta AUTOMÁTICA do storyboard, quebrando a cadeia.
+    const suppressEdge = useCallback((id: string) => {
+        setSuppressedEdges(prev => (prev.includes(id) ? prev : [...prev, id]));
+    }, []);
+
+    // --- Agrupar / desagrupar nós (move juntos; não desagrupa por engano) ---
+    const groupOf = useCallback((id: string): string[] | null => {
+        return groups.find(g => g.includes(id)) ?? null;
+    }, [groups]);
+    const groupSelected = useCallback(() => {
+        const ids = selectedNodesRef.current.map(n => n.id);
+        if (ids.length < 2) return;
+        // Une com qualquer grupo que já contenha um dos selecionados (merge).
+        setGroups(prev => {
+            const set = new Set(ids);
+            const untouched: string[][] = [];
+            for (const g of prev) {
+                if (g.some(x => set.has(x))) g.forEach(x => set.add(x));
+                else untouched.push(g);
+            }
+            return [...untouched, Array.from(set)];
+        });
+    }, []);
+    const ungroupSelected = useCallback(() => {
+        const ids = new Set(selectedNodesRef.current.map(n => n.id));
+        if (ids.size === 0) return;
+        setGroups(prev => prev.filter(g => !g.some(x => ids.has(x))));
     }, []);
     // Liga dois nós (qualquer par) — vira uma edge manual persistida.
     const onConnect = useCallback((c: Connection) => {
@@ -500,14 +621,28 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                                 height: vh,
                                 style: { width: vw, height: vh },
                             });
-                            edges.push({
-                                id: `${prevId}->${vId}`,
-                                source: prevId,
-                                target: vId,
-                                animated: false,
-                                markerEnd: { type: MarkerType.ArrowClosed, color: journey.color || '#7c3aed', width: 16, height: 16 },
-                                style: { stroke: journey.color || '#7c3aed', strokeWidth: 1.5, opacity: 0.75 },
-                            });
+                            const chainId = `${prevId}->${vId}`;
+                            // Seta da cadeia: pode ser removida (suprimida) para
+                            // inserir algo no meio. Se suprimida, não desenha.
+                            if (!suppressedEdges.includes(chainId)) {
+                                const col = journey.color || '#7c3aed';
+                                edges.push({
+                                    id: chainId,
+                                    source: prevId,
+                                    target: vId,
+                                    // Encadeia da direita p/ a esquerda (o nó-imagem
+                                    // tem 4 pontos de conexão — sem fixar, a seta
+                                    // escolheria lados aleatórios).
+                                    sourceHandle: idx === 0 ? undefined : 'r',
+                                    targetHandle: 'l',
+                                    type: 'manual',
+                                    animated: false,
+                                    markerEnd: { type: MarkerType.ArrowClosed, color: col, width: 16, height: 16 },
+                                    style: { stroke: col, strokeWidth: 1.5, opacity: 0.75 },
+                                    zIndex: 1000,
+                                    data: { onDelete: () => suppressEdge(chainId) },
+                                });
+                            }
                             prevId = vId;
                         });
                     }
@@ -588,6 +723,36 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
             return n;
         });
 
+        // Novo fluxo não cai POR CIMA dos cards já arrumados: nós AINDA sem
+        // posição custom que CAIRIAM sobre o cluster já posicionado são
+        // empurrados para baixo dele (em bloco, preservando o arranjo interno).
+        // Nós que não se sobrepõem (ex.: a jornada à esquerda) ficam onde estão.
+        const customized: Node[] = [];
+        const uncustomized: Node[] = [];
+        for (const n of final) {
+            const c = customLayout[n.id];
+            (c?.x != null && c?.y != null ? customized : uncustomized).push(n);
+        }
+        if (customized.length > 0 && uncustomized.length > 0) {
+            const bbox = (ns: Node[]) => ns.reduce((b, n) => ({
+                minX: Math.min(b.minX, n.position.x),
+                minY: Math.min(b.minY, n.position.y),
+                maxX: Math.max(b.maxX, n.position.x + (n.width ?? 200)),
+                maxY: Math.max(b.maxY, n.position.y + (n.height ?? 80)),
+            }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+            const cb = bbox(customized);
+            const PAD = 24;
+            const overlapping = uncustomized.filter(n => {
+                const x = n.position.x, y = n.position.y, w = n.width ?? 200, h = n.height ?? 80;
+                return x < cb.maxX + PAD && x + w > cb.minX - PAD && y < cb.maxY + PAD && y + h > cb.minY - PAD;
+            });
+            if (overlapping.length > 0) {
+                const topOver = Math.min(...overlapping.map(n => n.position.y));
+                const shift = cb.maxY + 140 - topOver;
+                if (shift > 0) overlapping.forEach(n => { n.position = { ...n.position, y: n.position.y + shift }; });
+            }
+        }
+
         // Anotações livres — NÃO passam pelo dagre (posição é do usuário).
         // Geometria: base na própria anotação, sobrescrita pelo customLayout
         // (mesmo mecanismo de drag/resize/persistência dos demais nós).
@@ -618,15 +783,18 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
             // Reaplica as bordas exatas para a seta sair/chegar onde foi puxada.
             sourceHandle: e.sourceHandle ?? undefined,
             targetHandle: e.targetHandle ?? undefined,
-            type: 'default',
+            type: 'manual',
             animated: false,
             markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8', width: 16, height: 16 },
             style: { stroke: '#94a3b8', strokeWidth: 1.5 },
-            data: { manual: true },
+            // Conexões manuais ficam ACIMA dos nós (por padrão a edge passa por
+            // trás do card e some). zIndex alto traz a linha para a frente.
+            zIndex: 1000,
+            data: { manual: true, onDelete: () => deleteManualEdge(e.id) },
         }));
 
         return { layoutedNodes: [...final, ...annoNodes], layoutedEdges: [...edges, ...annoEdges] };
-    }, [journeys, subflowsByJourney, casesBySubflow, expanded, expandedSubflows, activeSubflowId, activeCaseId, customLayout, toggleJourney, selectSubflow, openCaseFromMap, openZoom, onSubflowStepsChange, annotations, manualEdges, updateAnnotation, deleteAnnotation, openZoomAnnotation]);
+    }, [journeys, subflowsByJourney, casesBySubflow, expanded, expandedSubflows, activeSubflowId, activeCaseId, customLayout, toggleJourney, selectSubflow, openCaseFromMap, openZoom, onSubflowStepsChange, annotations, manualEdges, updateAnnotation, deleteAnnotation, openZoomAnnotation, deleteManualEdge, suppressedEdges, suppressEdge]);
 
     // Controlled nodes/edges para o ReactFlow
     const [rfNodes, setRfNodes] = useState<Node[]>(layoutedNodes);
@@ -715,11 +883,14 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
         }
     }, []);
     const onEdgesChange = useCallback<OnEdgesChange>(changes => {
-        // Só conexões manuais podem ser removidas; edges de dado são protegidas.
+        // Removíveis: conexões manuais (apaga) e setas de storyboard (suprime,
+        // para "quebrar" a cadeia). Demais edges de dado ficam protegidas.
         const removedManual: string[] = [];
+        const removedChain: string[] = [];
         const safe = changes.filter(c => {
             if (c.type === 'remove') {
                 if (isManualEdgeId(c.id)) { removedManual.push(c.id); return true; }
+                if (c.id.includes('vstep:')) { removedChain.push(c.id); return true; }
                 return false;
             }
             return true;
@@ -728,6 +899,13 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
         if (removedManual.length) {
             const rm = new Set(removedManual);
             setManualEdges(prev => prev.filter(e => !rm.has(e.id)));
+        }
+        if (removedChain.length) {
+            setSuppressedEdges(prev => {
+                const next = new Set(prev);
+                removedChain.forEach(id => next.add(id));
+                return Array.from(next);
+            });
         }
     }, []);
 
@@ -741,10 +919,13 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
 
     const onNodeDragStart = useCallback<NodeDragHandler>((_e, node) => {
         dragCtx.current = null;
-        if (!mapSettings.groupDrag) return;
-        const descendants = collectDescendants(node.id, rfEdgesRef.current);
-        if (descendants.length === 0) return;
-        const ids = new Set(descendants);
+        const ids = new Set<string>();
+        // Grupo do usuário (move junto, sempre — independe do groupDrag).
+        const grp = groupOf(node.id);
+        if (grp) grp.forEach(id => { if (id !== node.id) ids.add(id); });
+        // Filhas no grafo (jornada → sub-fluxos → casos), se groupDrag ligado.
+        if (mapSettings.groupDrag) collectDescendants(node.id, rfEdgesRef.current).forEach(id => ids.add(id));
+        if (ids.size === 0) return;
         const childStarts = new Map<string, { x: number; y: number }>();
         for (const n of rfNodesRef.current) {
             if (ids.has(n.id)) childStarts.set(n.id, { x: n.position.x, y: n.position.y });
@@ -753,7 +934,7 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
             nodeStart: { x: node.position.x, y: node.position.y },
             childStarts,
         };
-    }, [mapSettings.groupDrag]);
+    }, [mapSettings.groupDrag, groupOf]);
 
     const onNodeDrag = useCallback<NodeDragHandler>((_e, node) => {
         const ctx = dragCtx.current;
@@ -796,6 +977,26 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
         if (!mapSettings.antiOverlap) return;
 
         // Estado corrente já reflete o fim do drag (refs atualizados via render).
+        const currentNodes = rfNodesRef.current.map(n => {
+            const f = finals.get(n.id);
+            return f ? { ...n, position: f } : n;
+        });
+        const displaced = resolveCollisions(currentNodes, movedIds);
+        if (displaced.size === 0) return;
+        animateNodesTo(setRfNodes, displaced, 240, () => persistPositions(displaced));
+    }, [mapSettings.antiOverlap, persistPositions]);
+
+    // Arrasto de MÚLTIPLOS nós (caixa de seleção / vários selecionados). Sem
+    // isso, mover vários cards de uma vez não era persistido — e qualquer
+    // rebuild (ex.: adicionar/editar um sticky note) descartava o
+    // reposicionamento, voltando ao layout automático.
+    const onSelectionDragStop = useCallback((_e: React.MouseEvent, nodes: Node[]) => {
+        const finals = new Map<string, { x: number; y: number }>();
+        for (const n of nodes) finals.set(n.id, { x: n.position.x, y: n.position.y });
+        persistPositions(finals);
+
+        if (!mapSettings.antiOverlap) return;
+        const movedIds = new Set(finals.keys());
         const currentNodes = rfNodesRef.current.map(n => {
             const f = finals.get(n.id);
             return f ? { ...n, position: f } : n;
@@ -952,9 +1153,72 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
         return () => window.removeEventListener('paste', onPaste);
     }, [addImageFromBlob, pasteCopyBuffer]);
 
+    // Atalhos de navegação estilo Figma:
+    //   V = ponteiro (seleção) · H = mãozinha (pan)
+    //   Espaço (segurar) = pan temporário; solta → volta ao modo anterior.
+    useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (isEditingText()) return;
+            if (e.code === 'Space') {
+                if (!spacePanPrev.current) {              // ignora auto-repeat
+                    spacePanPrev.current = interactionModeRef.current;
+                    setInteractionMode('pan');
+                }
+                e.preventDefault();                        // não rola a página
+                return;
+            }
+            if (e.metaKey || e.ctrlKey || e.altKey) return;
+            const k = e.key.toLowerCase();
+            if (k === 'h') setInteractionMode('pan');
+            else if (k === 'v') setInteractionMode('select');
+        };
+        const onKeyUp = (e: KeyboardEvent) => {
+            if (e.code === 'Space' && spacePanPrev.current) {
+                setInteractionMode(spacePanPrev.current);
+                spacePanPrev.current = null;
+            }
+        };
+        // Se a janela perde o foco com espaço pressionado, não trava no pan.
+        const onBlur = () => {
+            if (spacePanPrev.current) { setInteractionMode(spacePanPrev.current); spacePanPrev.current = null; }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('keyup', onKeyUp);
+        window.addEventListener('blur', onBlur);
+        return () => {
+            window.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('keyup', onKeyUp);
+            window.removeEventListener('blur', onBlur);
+        };
+    }, []);
+
+    // Desfazer/refazer: Ctrl/Cmd+Z e Ctrl/Cmd+Shift+Z (ou Ctrl+Y).
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (!(e.metaKey || e.ctrlKey)) return;
+            const k = e.key.toLowerCase();
+            if (k === 'z') {
+                if (isEditingText()) return; // deixa o textarea desfazer o texto
+                e.preventDefault();
+                if (e.shiftKey) redo(); else undo();
+            } else if (k === 'y') {
+                if (isEditingText()) return;
+                e.preventDefault();
+                redo();
+            } else if (k === 'g') {
+                if (isEditingText()) return;
+                e.preventDefault();
+                if (e.shiftKey) ungroupSelected(); else groupSelected();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [undo, redo, groupSelected, ungroupSelected]);
+
     // Mantém o ref de seleção atualizado (origem do copiar).
     const onSelectionChange = useCallback(({ nodes }: { nodes: Node[] }) => {
         selectedNodesRef.current = nodes;
+        setSelectedIds(nodes.map(n => n.id));
     }, []);
 
     // Export PNG
@@ -1053,7 +1317,7 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                             className={`p-1.5 rounded-md transition-colors ${
                                 interactionMode === 'pan' ? 'bg-brand/20 text-brand' : 'text-muted-foreground hover:text-foreground'
                             }`}
-                            title="Mover a tela (pan)"
+                            title="Mover a tela / mãozinha — tecla H (ou segure Espaço)"
                             aria-label="Modo mover a tela"
                         >
                             <Hand className="w-4 h-4" />
@@ -1064,10 +1328,33 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                             className={`p-1.5 rounded-md transition-colors ${
                                 interactionMode === 'select' ? 'bg-brand/20 text-brand' : 'text-muted-foreground hover:text-foreground'
                             }`}
-                            title="Selecionar vários nós (arraste para desenhar a seleção e mova em grupo)"
+                            title="Selecionar / ponteiro — tecla V (arraste para selecionar vários e mover em grupo)"
                             aria-label="Modo seleção múltipla"
                         >
                             <MousePointer2 className="w-4 h-4" />
+                        </button>
+                    </div>
+                    {/* Desfazer / refazer (Ctrl+Z · Ctrl+Shift+Z) */}
+                    <div className="bg-popover/80 backdrop-blur border border-border rounded-lg p-0.5 flex items-center">
+                        <button
+                            type="button"
+                            onClick={undo}
+                            disabled={!canUndo}
+                            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            title="Desfazer (Ctrl+Z)"
+                            aria-label="Desfazer"
+                        >
+                            <Undo2 className="w-4 h-4" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={redo}
+                            disabled={!canRedo}
+                            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            title="Refazer (Ctrl+Shift+Z)"
+                            aria-label="Refazer"
+                        >
+                            <Redo2 className="w-4 h-4" />
                         </button>
                     </div>
                     <MapSettingsPopover
@@ -1102,15 +1389,39 @@ export function JourneyMap({ projectId, journeys, subflowsByJourney, casesBySubf
                 </div>
             )}
 
+            {/* Barra de agrupar (aparece com 2+ nós selecionados) */}
+            {(() => {
+                const groupable = selectedIds.length >= 2;
+                const hasGroup = selectedIds.some(id => groups.some(g => g.includes(id)));
+                if (!groupable && !hasGroup) return null;
+                return (
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 bg-popover/90 backdrop-blur border border-border rounded-lg p-1 shadow-lg pointer-events-auto">
+                        {groupable && (
+                            <button type="button" onClick={groupSelected} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold text-foreground hover:bg-brand/10 hover:text-brand transition-colors" title="Agrupar selecionados (Ctrl+G)">
+                                <Group className="w-3.5 h-3.5" /> Agrupar {selectedIds.length}
+                            </button>
+                        )}
+                        {hasGroup && (
+                            <button type="button" onClick={ungroupSelected} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold text-muted-foreground hover:bg-foreground/10 hover:text-foreground transition-colors" title="Desagrupar (Ctrl+Shift+G)">
+                                <Ungroup className="w-3.5 h-3.5" /> Desagrupar
+                            </button>
+                        )}
+                    </div>
+                );
+            })()}
+
             <ReactFlow
                 nodes={rfNodes}
                 edges={rfEdges}
                 nodeTypes={NODE_TYPES}
+                edgeTypes={EDGE_TYPES}
+                deleteKeyCode={['Backspace', 'Delete']}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onNodeDragStart={onNodeDragStart}
                 onNodeDrag={onNodeDrag}
                 onNodeDragStop={onNodeDragStop}
+                onSelectionDragStop={onSelectionDragStop}
                 onInit={inst => { rfInstance.current = inst; }}
                 onConnect={onConnect}
                 onSelectionChange={onSelectionChange}

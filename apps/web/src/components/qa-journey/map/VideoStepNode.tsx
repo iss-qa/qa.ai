@@ -5,8 +5,9 @@
 // Clicar na imagem abre o lightbox (zoom). Redimensionável pelas bordas.
 
 import { memo, useEffect, useRef, useState } from 'react';
-import { Handle, NodeResizer, Position } from 'reactflow';
+import { NodeResizer } from 'reactflow';
 import { Maximize2 } from 'lucide-react';
+import { ConnectHandles, RESIZER_HANDLE, RESIZER_LINE } from './annotation-handles';
 import type { VideoStep } from '@/types/qa-journey';
 
 export interface VideoStepNodeData {
@@ -42,7 +43,7 @@ export const VideoStepNode = memo(function VideoStepNode({ data, selected }: { d
 
     return (
         <div
-            className={`relative w-full h-full bg-card border rounded-2xl shadow-lg overflow-hidden flex flex-col transition-colors ${
+            className={`group relative w-full h-full bg-card border rounded-2xl shadow-lg overflow-hidden flex flex-col transition-colors ${
                 selected ? 'border-brand ring-2 ring-brand/30' : 'border-border'
             }`}
             style={{ boxShadow: `0 0 24px ${color}22` }}
@@ -53,11 +54,11 @@ export const VideoStepNode = memo(function VideoStepNode({ data, selected }: { d
                 minHeight={180}
                 maxWidth={640}
                 maxHeight={900}
-                lineClassName="!border-brand/50"
-                handleClassName="!bg-brand !border-brand !w-2 !h-2"
+                lineClassName={RESIZER_LINE}
+                handleClassName={RESIZER_HANDLE}
             />
-            <Handle type="target" position={Position.Left} className="!bg-brand/40 !border-none !w-2 !h-2" />
-            <Handle type="source" position={Position.Right} className="!bg-brand/40 !border-none !w-2 !h-2" />
+            {/* 4 pontos de conexão (estilo Miro) — ligar imagem↔imagem, sticky↔imagem, etc. */}
+            <ConnectHandles />
 
             {/* Imagem (clique → lightbox). object-contain serve para print de
                 celular (retrato) e de web (paisagem) sem distorcer. */}
